@@ -103,7 +103,7 @@ int PIR_Experiment(int I)
     return 1;
 }
 
-int TFHE_Example(void)
+int TFHE_128_bit_Example(void)
 {
     int ok = 0;
     // Prepare the config builder for the high level API and choose which types to enable
@@ -126,12 +126,25 @@ int TFHE_Example(void)
     FheUint128 *lhs = NULL;
     FheUint128 *rhs = NULL;
     FheUint128 *result = NULL;
+    FheBool *selBit = NULL;
 
-    auto t_FHEEncStart = std::chrono::high_resolution_clock::now(); 
+    auto t_FHEBoolEncStart = std::chrono::high_resolution_clock::now(); 
     // A 128-bit unsigned integer containing value: 20 << 64 | 10
     U128 clear_lhs = { .w0 = 10, .w1 = 20 };
     // A 128-bit unsigned integer containing value: 2 << 64 | 1
     U128 clear_rhs = { .w0 = 1, .w1 = 2 };
+    
+    // A boolean value to select the bit
+    bool clear_selBit = true; // This will select the first bit of the subtraction result
+
+    ok = fhe_bool_try_encrypt_with_client_key_bool(clear_selBit, client_key, &selBit);
+    assert(ok == 0);
+    auto t_FHEBoolEncEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "Time to encrypt selectBit: " <<
+     std::chrono::duration<double, std::milli>(t_FHEBoolEncEnd - t_FHEBoolEncStart).count()
+     << " ms" << endl;
+
+    auto t_FHEEncStart = std::chrono::high_resolution_clock::now(); 
 
     ok = fhe_uint128_try_encrypt_with_client_key_u128(clear_lhs, client_key, &lhs);
     assert(ok == 0);
@@ -142,6 +155,13 @@ int TFHE_Example(void)
 
     ok = fhe_uint128_try_encrypt_with_client_key_u128(clear_rhs, client_key, &rhs);
     assert(ok == 0);
+
+    ok = fhe_uint128_if_then_else(selBit, lhs, rhs, &result);
+    assert(ok == 0);
+    auto t_FHEIfThenElseEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "Time to compute FHE if-then-else: " <<
+     std::chrono::duration<double, std::milli>(t_FHEIfThenElseEnd - t_FHEEncEnd).count()
+     << " ms" << endl;
 
     auto t_FHESubStart = std::chrono::high_resolution_clock::now();
     // Compute the subtraction
@@ -180,6 +200,94 @@ int TFHE_Example(void)
     return EXIT_SUCCESS;
 }
 
+int TFHE_64_bit_Example(void)
+{
+    int ok = 0;
+    // Prepare the config builder for the high level API and choose which types to enable
+    ConfigBuilder *builder;
+    Config *config;
+
+    // Put the builder in a default state without any types enabled
+    config_builder_default(&builder);
+    // Populate the config
+    config_builder_build(builder, &config);
+
+    ClientKey *client_key = NULL;
+    ServerKey *server_key = NULL;
+
+    // Generate the keys using the config
+    generate_keys(config, &client_key, &server_key);
+    // Set the server key for the current thread
+    set_server_key(server_key);
+
+    FheUint64 *lhs = NULL;
+    FheUint64 *rhs = NULL;
+    FheUint64 *result = NULL;
+    FheBool *selBit = NULL;
+
+    auto t_FHEBoolEncStart = std::chrono::high_resolution_clock::now(); 
+
+    uint64_t clear_lhs = 10;
+
+    uint64_t clear_rhs = 20;
+    
+    // A boolean value to select the bit
+    bool clear_selBit = true; // This will select the first bit of the subtraction result
+
+    ok = fhe_bool_try_encrypt_with_client_key_bool(clear_selBit, client_key, &selBit);
+    assert(ok == 0);
+    auto t_FHEBoolEncEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "Time to encrypt selectBit: " <<
+     std::chrono::duration<double, std::milli>(t_FHEBoolEncEnd - t_FHEBoolEncStart).count()
+     << " ms" << endl;
+
+    auto t_FHEEncStart = std::chrono::high_resolution_clock::now(); 
+
+    ok = fhe_uint64_try_encrypt_with_client_key_u64(clear_lhs, client_key, &lhs);
+    assert(ok == 0);
+    auto t_FHEEncEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "Time to encrypt FHE lhs: " <<
+     std::chrono::duration<double, std::milli>(t_FHEEncEnd - t_FHEEncStart).count()
+     << " ms" << endl;
+
+    ok = fhe_uint64_try_encrypt_with_client_key_u64(clear_rhs, client_key, &rhs);
+    assert(ok == 0);
+
+    ok = fhe_uint64_if_then_else(selBit, lhs, rhs, &result);
+    assert(ok == 0);
+    auto t_FHEIfThenElseEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "Time to compute FHE if-then-else: " <<
+     std::chrono::duration<double, std::milli>(t_FHEIfThenElseEnd - t_FHEEncEnd).count()
+     << " ms" << endl;
+
+    uint64_t clear_result;
+
+    auto t_FHEDecStart = std::chrono::high_resolution_clock::now();    
+    // Decrypt
+    ok = fhe_uint64_decrypt(result, client_key, &clear_result);
+    assert(ok == 0);
+    auto t_FHEDecEnd = std::chrono::high_resolution_clock::now();
+    std::cout << "The decryption result is:" << clear_result << ", Time to compute FHE decryption: " <<
+     std::chrono::duration<double, std::milli>(t_FHEDecEnd - t_FHEDecStart).count()
+     << " ms" << endl;
+
+    // Here the subtraction allows us to compare each word
+    assert(clear_result == clear_lhs);
+
+    // Destroy the ciphertexts
+    fhe_uint64_destroy(lhs);
+    fhe_uint64_destroy(rhs);
+    fhe_uint64_destroy(result);
+    fhe_bool_destroy(selBit);
+
+    // Destroy the keys
+    client_key_destroy(client_key);
+    server_key_destroy(server_key);
+
+    printf("64-bit FHE computation successful!\n");
+    return EXIT_SUCCESS;
+}
+
 int main()
 {
     // Set up variables
@@ -191,7 +299,7 @@ int main()
 
     PIR_Experiment(N-1);
 
-    TFHE_Example();
+    TFHE_64_bit_Example();
 
     return 0;//Skip the rest of the tests for now
 
