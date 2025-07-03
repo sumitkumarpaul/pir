@@ -200,6 +200,150 @@ int TFHE_128_bit_Example(void)
     return EXIT_SUCCESS;
 }
 
+uint8_t shortint_homomorphic_and(uint8_t a, uint8_t b) {
+    // Use a predefined parameter set
+    const ShortintPBSParameters params = SHORTINT_V1_2_PARAM_MESSAGE_4_CARRY_1_KS_PBS_GAUSSIAN_2M128;
+    ShortintClientKey* client_key = nullptr;
+    ShortintPublicKey* public_key = nullptr;
+    ShortintServerKey* server_key = nullptr;
+    ShortintCiphertext *ct_a = nullptr, *ct_b = nullptr, *ct_res = nullptr;
+    uint8_t result = 0;
+    int err = 0;
+    uint64_t tmp = 0;
+    auto t0 = std::chrono::high_resolution_clock::now();
+    auto t1 = t0, t2 = t0, t3 = t0, t4 = t0, t5 = t0;
+
+    // Key generation
+    err = shortint_gen_client_key(params, &client_key);
+    if (err) { std::cerr << "Client key gen failed\n"; goto cleanup; }
+    err = shortint_gen_public_key(client_key, &public_key);
+    if (err) { std::cerr << "Public key gen failed\n"; goto cleanup; }
+    err = shortint_gen_server_key(client_key, &server_key);
+    if (err) { std::cerr << "Server key gen failed\n"; goto cleanup; }
+
+    // Encrypt
+    t0 = std::chrono::high_resolution_clock::now();
+    err = shortint_public_key_encrypt(public_key, a, &ct_a);
+    err |= shortint_public_key_encrypt(public_key, b, &ct_b);
+    t1 = std::chrono::high_resolution_clock::now();
+    if (err) { std::cerr << "Encryption failed\n"; goto cleanup; }
+
+    // Homomorphic AND (unchecked)
+    t2 = std::chrono::high_resolution_clock::now();
+    err = shortint_server_key_unchecked_bitand(server_key, ct_a, ct_b, &ct_res);
+    t3 = std::chrono::high_resolution_clock::now();
+    if (err) { std::cerr << "Homomorphic AND failed\n"; goto cleanup; }
+
+    // Decrypt
+    t4 = std::chrono::high_resolution_clock::now();
+    err = shortint_client_key_decrypt(client_key, ct_res, &tmp);
+    result = static_cast<uint8_t>(tmp);
+    t5 = std::chrono::high_resolution_clock::now();
+    if (err) { std::cerr << "Decryption failed\n"; goto cleanup; }
+
+    std::cout << "Encryption time: " << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms\n";
+    std::cout << "Homomorphic AND time: " << std::chrono::duration<double, std::milli>(t3-t2).count() << " ms\n";
+    std::cout << "Decryption time: " << std::chrono::duration<double, std::milli>(t5-t4).count() << " ms\n";
+    std::cout << "Result: " << (int)result << std::endl;
+
+cleanup:
+    shortint_destroy_ciphertext(ct_a);
+    shortint_destroy_ciphertext(ct_b);
+    shortint_destroy_ciphertext(ct_res);
+    shortint_destroy_public_key(public_key);
+    shortint_destroy_client_key(client_key);
+    shortint_destroy_server_key(server_key);
+    return result;
+}
+
+#if 0
+
+int shortint_mul_demo() {
+    int err = 0;
+
+    // 1. Generate parameters and keys
+    struct ShortintClientKey *client_key = NULL;
+    struct ShortintServerKey *server_key = NULL;
+
+    // Use a parameter set (adjust as needed)
+    err = shortint_gen_keys_with_parameters(
+        //SHORTINT_V1_1_PARAM_MESSAGE_4_CARRY_4_KS_PBS_GAUSSIAN_2M128,
+        SHORTINT_V1_2_PARAM_MESSAGE_4_CARRY_1_KS_PBS_GAUSSIAN_2M128,
+        &client_key,
+        &server_key
+    );
+    if (err) { printf("Key generation failed\n"); return err; }
+
+    // 2. Encrypt two shortints
+    uint64_t a = 2, b = 7;
+    
+    struct ShortintCiphertext *ct_a = NULL, *ct_b = NULL;
+    err = shortint_client_key_encrypt(client_key, a, &ct_a);
+    if (err) { printf("Encrypt a with client key failed\n"); }
+    err = shortint_client_key_encrypt(client_key, b, &ct_b);
+    if (err) { printf("Encrypt b with client key failed\n");  }
+
+    /*
+    struct ShortintCiphertext *ct_a_srv = NULL, *ct_b_srv = NULL;
+    err = shortint_server_key_encrypt(server_key, a, &ct_a_srv);
+    if (err) { printf("Encrypt a with server key failed\n"); }
+    err = shortint_server_key_encrypt(server_key, b, &ct_b);
+    if (err) { printf("Encrypt b with server key failed\n");  }
+    */
+    
+    // 3. Multiply (unchecked)
+    struct ShortintCiphertext *ct_unchecked = NULL;
+    auto t_UncheckedMulStart = std::chrono::high_resolution_clock::now();
+    err = shortint_server_key_unchecked_mul(server_key, ct_a, ct_b, &ct_unchecked);
+    auto t_UncheckedMulEnd = std::chrono::high_resolution_clock::now();
+    if (err) { printf("Unchecked mul failed\n"); }
+    std::cout << "Time to multiply with unchecked: "
+        << std::chrono::duration<double, std::milli>(t_UncheckedMulEnd - t_UncheckedMulStart).count()
+        << " ms" << std::endl;
+
+    auto t_UncheckedAddStart = std::chrono::high_resolution_clock::now();
+    err = shortint_server_key_unchecked_add(server_key, ct_a, ct_b, &ct_unchecked);
+    auto t_UncheckedAddEnd = std::chrono::high_resolution_clock::now();
+    if (err) { printf("Unchecked add failed\n"); }
+    std::cout << "Time to add with unchecked: "
+        << std::chrono::duration<double, std::milli>(t_UncheckedAddEnd - t_UncheckedAddStart).count()
+        << " ms" << std::endl;
+
+
+    // 4. Multiply (smart/checked)
+    struct ShortintCiphertext *ct_smart = NULL;
+    auto t_SmartMulStart = std::chrono::high_resolution_clock::now();
+    err = shortint_server_key_smart_mul(server_key, ct_a, ct_b, &ct_smart);
+    auto t_SmartMulEnd = std::chrono::high_resolution_clock::now();
+    if (err) { printf("Smart mul failed\n");  }
+    std::cout << "Time to multiply with smart: "
+        << std::chrono::duration<double, std::milli>(t_SmartMulEnd - t_SmartMulStart).count()
+        << " ms" << std::endl;
+
+    // 5. Decrypt and print results
+    uint64_t res_unchecked = 0, res_smart = 0;
+    shortint_client_key_decrypt(client_key, ct_unchecked, &res_unchecked);
+    shortint_client_key_decrypt(client_key, ct_smart, &res_smart);
+    printf("Unchecked mul result: %lu\n", res_unchecked);
+    printf("Smart mul result: %lu\n", res_smart);
+
+    // 6. Cleanup
+    shortint_destroy_ciphertext(ct_smart);
+cleanup_unchecked:
+    shortint_destroy_ciphertext(ct_unchecked);
+cleanup_ct_b:
+    shortint_destroy_ciphertext(ct_b);
+cleanup_ct_a:
+    shortint_destroy_ciphertext(ct_a);
+cleanup_keys:
+    shortint_destroy_client_key(client_key);
+    shortint_destroy_server_key(server_key);
+
+    return err;
+}
+
+#endif
+
 int TFHE_64_bit_Example(void)
 {
     int ok = 0;
@@ -209,6 +353,12 @@ int TFHE_64_bit_Example(void)
 
     // Put the builder in a default state without any types enabled
     config_builder_default(&builder);
+    
+    // Use the custom parameters 
+    config_builder_use_custom_parameters(&builder, SHORTINT_V0_11_PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M64);
+
+    //use_dedicated_compact_public_key_parameters(&builder, SHORTINT_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128);
+
     // Populate the config
     config_builder_build(builder, &config);
 
@@ -299,7 +449,11 @@ int main()
 
     PIR_Experiment(N-1);
 
-    TFHE_64_bit_Example();
+    //TFHE_64_bit_Example();
+
+    shortint_homomorphic_and(2,3);
+
+    //shortint_mul_demo();
 
     return 0;//Skip the rest of the tests for now
 
