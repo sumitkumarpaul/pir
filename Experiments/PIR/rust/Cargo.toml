@@ -7,6 +7,9 @@ edition = "2021"
 tfhe = { version = "*", features = ["boolean", "shortint", "integer", "pbs-stats"] }
 rand = "0.8"
 
+[features]
+nightly-avx512 = ["tfhe/nightly-avx512"]
+
 [profile.dev]
 incremental = true
 

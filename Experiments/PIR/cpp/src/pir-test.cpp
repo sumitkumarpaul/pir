@@ -202,7 +202,26 @@ int TFHE_128_bit_Example(void)
 
 uint8_t shortint_homomorphic_and(uint8_t a, uint8_t b) {
     // Use a predefined parameter set
-    const ShortintPBSParameters params = SHORTINT_V1_2_PARAM_MESSAGE_4_CARRY_1_KS_PBS_GAUSSIAN_2M128;
+    //const ShortintPBSParameters params = SHORTINT_V1_2_PARAM_MESSAGE_6_CARRY_1_KS_PBS_GAUSSIAN_2M128;
+    const ShortintPBSParameters params = {
+        .lwe_dimension = 2,
+        .glwe_dimension = 1,
+        .polynomial_size = 1,
+        .lwe_noise_distribution = {0},
+        .glwe_noise_distribution = {0},
+        .pbs_base_log = 1,
+        .pbs_level = 1,
+        .ks_base_log = 1,
+        .ks_level = 1,
+        .message_modulus = 1,
+        .carry_modulus = 1,
+        .max_noise_level = 1,
+        .log2_p_fail = 1.0,
+        .modulus_power_of_2_exponent = 1,
+        .encryption_key_choice = ShortintEncryptionKeyChoiceSmall,
+        .modulus_switch_noise_reduction_params = {0},
+        },
+    };
     ShortintClientKey* client_key = nullptr;
     ShortintPublicKey* public_key = nullptr;
     ShortintServerKey* server_key = nullptr;
@@ -237,14 +256,13 @@ uint8_t shortint_homomorphic_and(uint8_t a, uint8_t b) {
     // Decrypt
     t4 = std::chrono::high_resolution_clock::now();
     err = shortint_client_key_decrypt(client_key, ct_res, &tmp);
-    result = static_cast<uint8_t>(tmp);
     t5 = std::chrono::high_resolution_clock::now();
     if (err) { std::cerr << "Decryption failed\n"; goto cleanup; }
 
     std::cout << "Encryption time: " << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms\n";
     std::cout << "Homomorphic AND time: " << std::chrono::duration<double, std::milli>(t3-t2).count() << " ms\n";
     std::cout << "Decryption time: " << std::chrono::duration<double, std::milli>(t5-t4).count() << " ms\n";
-    std::cout << "Result: " << (int)result << std::endl;
+    std::cout << "Result: " << tmp << std::endl;
 
 cleanup:
     shortint_destroy_ciphertext(ct_a);
@@ -256,7 +274,7 @@ cleanup:
     return result;
 }
 
-#if 0
+#if 1
 
 int shortint_mul_demo() {
     int err = 0;
@@ -447,11 +465,11 @@ int main()
     ServerKeyEq k0;
     ServerKeyEq k1;
 
-    PIR_Experiment(N-1);
+    //PIR_Experiment(N-1);
 
     //TFHE_64_bit_Example();
 
-    shortint_homomorphic_and(2,3);
+    shortint_homomorphic_and(63,63);
 
     //shortint_mul_demo();
 

@@ -428,10 +428,10 @@ typedef struct ModulusSwitchNoiseReductionParams {
   double ms_input_variance;
 } ModulusSwitchNoiseReductionParams;
 
-typedef struct ModulusSwitchNoiseReductionParamsOption {
+typedef struct ModulusSwitchType {
   uint64_t tag;
   struct ModulusSwitchNoiseReductionParams modulus_switch_noise_reduction_params;
-} ModulusSwitchNoiseReductionParamsOption;
+} ModulusSwitchType;
 
 typedef struct ShortintPBSParameters {
   size_t lwe_dimension;
@@ -449,7 +449,7 @@ typedef struct ShortintPBSParameters {
   double log2_p_fail;
   size_t modulus_power_of_2_exponent;
   enum ShortintEncryptionKeyChoice encryption_key_choice;
-  struct ModulusSwitchNoiseReductionParamsOption modulus_switch_noise_reduction_params;
+  struct ModulusSwitchType modulus_switch_noise_reduction_params;
 } ShortintPBSParameters;
 
 typedef uint64_t (*BivariateLookupTableCallback)(uint64_t, uint64_t);
@@ -16643,9 +16643,9 @@ int i256_from_little_endian_bytes(const uint8_t *input, size_t len, struct I256 
  */
 int i256_little_endian_bytes(struct I256 input, uint8_t *result, size_t len);
 
-struct ModulusSwitchNoiseReductionParamsOption modulus_switch_noise_reduction_params_option_none(void);
+struct ModulusSwitchType modulus_switch_noise_reduction_params_option_none(void);
 
-struct ModulusSwitchNoiseReductionParamsOption modulus_switch_noise_reduction_params_option_some(struct ModulusSwitchNoiseReductionParams modulus_switch_noise_reduction_params);
+struct ModulusSwitchType modulus_switch_noise_reduction_params_option_some(struct ModulusSwitchNoiseReductionParams modulus_switch_noise_reduction_params);
 
 struct DynamicDistribution new_gaussian_from_std_dev(double std_dev);
 

@@ -9,6 +9,7 @@ use tfhe::integer::parameters::PARAM_MESSAGE_1_CARRY_1_KS_PBS_32_BITS;
 use tfhe::integer::prelude::*;
 use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128;
 use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+use tfhe::integer::ClientKey;
 
 fn radix_if_then_else_pbs() {
     let size = 32; // 32 * 2 = 64 bits of message space
@@ -43,6 +44,44 @@ fn radix_if_then_else_pbs() {
     assert_ne!(ct_b, ct_res);
 }
 
+fn radix_if_then_else_pbs_1() {
+    let num_block = 128; // 32 * 2 = 64 bits of message space
+    let cks = ClientKey::new(PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128);
+    let sks = ServerKey::new_radix_server_key(&cks);
+    //let (cks, sks) = gen_keys_radix(PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128, num_block);
+
+    let a = 128u64;
+    let b = 55u64;
+
+    let t_start = Instant::now();
+    let ct_a = cks.encrypt_radix(a, num_block);
+    let ct_b = cks.encrypt_radix(b, num_block);
+
+    let t_end = Instant::now();
+    println!("Encryption time: {:.3} ms", (t_end - t_start).as_secs_f64() * 1000.0);
+
+    let pt_cond = rand::random::<bool>();
+    let condition = sks.create_trivial_boolean_block(pt_cond);
+
+    reset_pbs_count();
+    let t_start = Instant::now();
+    let ct_res = sks.if_then_else_parallelized(&condition, &ct_a, &ct_b);//Currently, there is no difference between `if_then_else_parallelized` and `if_then_else` for the radix PBS.
+    let t_end = Instant::now();
+    println!("If-then-else evaluation time: {:.3} ms", (t_end - t_start).as_secs_f64() * 1000.0);
+    let radix_unchecked_if_then_else_pbs_count = get_pbs_count();
+
+    println!("radix_unchecked_if_then_else_pbs_count: {radix_unchecked_if_then_else_pbs_count}");
+
+    // Decrypt:
+    let t_start = Instant::now();
+    let dec = cks.decrypt_radix(&ct_res);
+    let t_end = Instant::now();
+    println!("Decryption time: {:.3} ms", (t_end - t_start).as_secs_f64() * 1000.0);
+    assert_eq!(if a >= 66 { a } else { b }, dec);
+    assert_ne!(ct_a, ct_res);
+    assert_ne!(ct_b, ct_res);
+}
+
 fn if_then_else_1() {
     // Choose a parameter set (adjust as needed)
     let params = tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
@@ -54,13 +93,16 @@ fn if_then_else_1() {
 
     // Encrypt two random U256 values
     let mut rng = thread_rng();
-    let clear_0 = U256::from(rand::random::<u128>());
-    let clear_1 = U256::from(rand::random::<u128>());
+    //let clear_0 = U256::from(rand::random::<u128>());
+    //let clear_1 = U256::from(rand::random::<u128>());
+    let clear_0 = 0xFFFFFFFFFFFFFFFF_u64;
+    let clear_1 = 0x2345234523452345_u64;
     let ct_0 = cks.encrypt(clear_0);
     let ct_1 = cks.encrypt(clear_1);
 
     // Encrypt a random boolean as the condition
-    let cond = sks.create_trivial_boolean_block(rand::random::<bool>());
+    let pt_cond = rand::random::<bool>();
+    let cond = sks.create_trivial_boolean_block(pt_cond);
 
     // Time the if_then_else_parallelized operation
     let start = Instant::now();
@@ -68,11 +110,12 @@ fn if_then_else_1() {
     let elapsed = start.elapsed();
 
     // Decrypt and print results
-    let decrypted: U256 = cks.decrypt(&result);
+    //let decrypted: U256 = cks.decrypt(&result);
+    let decrypted: u64 = cks.decrypt(&result);
     
     println!("True branch: {:?}", clear_0);
     println!("False branch: {:?}", clear_1);
-    println!("Result: {:?}", decrypted);
+    println!("Condition: {:?} and result: {:?}", pt_cond, decrypted);
     println!("if_then_else_parallelized took {:.3} ms", elapsed.as_secs_f64() * 1000.0);
 }
 
@@ -185,8 +228,9 @@ pub fn main() {
     //FheUint32_pbs();
     //unchecked_add_pbs();
     //radix_add_pbs();
-    radix_if_then_else_pbs();
+    //radix_if_then_else_pbs();
     //radix_and_pbs();
     //if_then_else_1();
+    radix_if_then_else_pbs_1();
 }
 
