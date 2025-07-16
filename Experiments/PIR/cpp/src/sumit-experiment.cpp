@@ -219,12 +219,14 @@ int OpenFHEBGVrns_select(int select_bit){
     cryptoContext->Enable(LEVELEDSHE);
     //cryptoContext->Enable(ADVANCEDSHE);
 
+    #if 0
     std::cout << "\np = " << cryptoContext->GetCryptoParameters()->GetPlaintextModulus() << std::endl;
     std::cout << "n = " << cryptoContext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder() / 2
               << std::endl;
     std::cout << "log2 q = "
               << log2(cryptoContext->GetCryptoParameters()->GetElementParams()->GetModulus().ConvertToDouble())
               << std::endl;
+    #endif
 
     // Initialize Public Key Containers
     KeyPair<DCRTPoly> keyPair;
@@ -251,13 +253,13 @@ int OpenFHEBGVrns_select(int select_bit){
     //int min = 0x2FFF;
     //int max = 0x3FFF;
     //int range = max - min + 1;
-    int vector_sz = 2; // Size of the vector to be generated. TODO: Maximum usable is: 16384
+    int vector_sz = 314; // Size of the vector to be generated. TODO: Maximum usable is: 16384
 
     std::vector<int64_t> vectorOfPt1;
     // Use a for loop to add elements to the vector
     for (int i = 0; i < vector_sz; ++i) {
         //int num = rand() % range + min;
-        int num = 0;
+        int num = 1;
         vectorOfPt1.push_back(num);
     }
 
@@ -277,9 +279,15 @@ int OpenFHEBGVrns_select(int select_bit){
     for (int i = 0; i < vector_sz; ++i) {
         vectorOfSelect.push_back(select_bit);
     }
-    Plaintext plaintextZeros = cryptoContext->MakePackedPlaintext(vectorOfSelect);
+    Plaintext plaintextSelect = cryptoContext->MakePackedPlaintext(vectorOfSelect);
+    std::vector<int64_t> vectorOfOnes;
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < vector_sz; ++i) {
+        vectorOfOnes.push_back(1);
+    }
+    Plaintext plaintextOnes = cryptoContext->MakePackedPlaintext(vectorOfOnes);
 
-    #if 1
+    #if 0
     std::cout << "\nOriginal Plaintext #1: \n";
     std::cout << plaintext1 << std::endl;
 
@@ -299,119 +307,64 @@ int OpenFHEBGVrns_select(int select_bit){
 
     ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext1));
     ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext2));
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintextZeros));
+    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintextSelect));
+    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintextOnes));
 
     processingTime = TOC(t);
 
     //std::cout << "Completed\n";
 
-    std::cout << "\nAverage encryption time: " << processingTime / 3 << "ms" << std::endl;
+    //std::cout << "\nAverage encryption time: " << processingTime / 4 << "ms" << std::endl;
 
 
     ////////////////////////////////////////////////////////////
     // Homomorphic selection between two ciphertexts w/o any relinearization
+    // Select(a,b, select_bit) = select_bit ? a : b
+    //                         = ((1 - select_bit) * a) + (select_bit * b)
     ////////////////////////////////////////////////////////////
 
     //std::cout << "\nRunning a multiplication of two ciphertexts w/o relinearization...";
     
     TIC(t);
+    
+    // ciphertexts[3] is the ciphertext of ones and ciphertexts[2] is the ciphertext of select bit
+    auto ciphertextSelNot = cryptoContext->EvalSub(ciphertexts[3], ciphertexts[2]);
+    cryptoContext->ModReduceInPlace(ciphertextSelNot);
 
-    auto ciphertextMult12 = cryptoContext->EvalMultNoRelin(ciphertexts[0], ciphertexts[1]);
-    cryptoContext->ModReduceInPlace(ciphertextMult12);
+    // ciphertexts[0] is the ciphertext of plaintext1 
+    auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ciphertexts[0]);
+    cryptoContext->ModReduceInPlace(ciphertextSelNota);
 
-    processingTime = TOC(t);
-    std::cout << "Time for multiplying two ciphertexts w/o relinearization: " << processingTime << "ms" << std::endl;
+    // ciphertexts[1] is the ciphertext of plaintext2 and ciphertexts[2] is the ciphertext of select bit
+    auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ciphertexts[2], ciphertexts[1]);
+    cryptoContext->ModReduceInPlace(ciphertextSelb);
 
-    TIC(t);
-
-    auto ciphertextAdd12 = cryptoContext->EvalAdd(ciphertexts[0], ciphertexts[1]);
-    cryptoContext->ModReduceInPlace(ciphertextAdd12);
-
-    processingTime = TOC(t);
-    std::cout << "Time for adding two ciphertexts: " << processingTime << "ms" << std::endl;
-
-    TIC(t);
-
-    auto ciphertextSub12 = cryptoContext->EvalSub(ciphertexts[0], ciphertexts[1]);
-    cryptoContext->ModReduceInPlace(ciphertextSub12);
+    auto ciphertextSel = cryptoContext->EvalAdd(ciphertextSelNota, ciphertextSelb);
+    cryptoContext->ModReduceInPlace(ciphertextSel);
 
     processingTime = TOC(t);
-    std::cout << "Time for subtracting two ciphertexts: " << processingTime << "ms" << std::endl;
+    std::cout << "Time for selecting between two ciphertexts w/o relinearization: " << processingTime << "ms" << std::endl;
 
-    //std::cout << "Completed\n";  
-
-    Plaintext plaintextDecMult12;
+    Plaintext plaintextDecSel;
 
     TOC(t);
-    cryptoContext->Decrypt(keyPair.secretKey, ciphertextMult12, &plaintextDecMult12);
+    cryptoContext->Decrypt(keyPair.secretKey, ciphertextSel, &plaintextDecSel);
     processingTime = TOC(t);
-    std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
+    //std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
 
-    plaintextDecMult12->SetLength(plaintext1->GetLength());
+    plaintextDecSel->SetLength(plaintext1->GetLength());//TODO: What to set?
 
-    std::cout << "\nResult of homomorphic multiplication of ciphertexts #1 and #2: \n";
+    //std::cout << "\nResult of homomorphic selection of ciphertexts #1 and #2: \n";
     //TODO: I found evan multiplying 16384-14bit numbers, are done in 5ms..!!
 
-    std::cout << plaintextDecMult12 << std::endl;
+    //std::cout << plaintextDecSel << std::endl;
 
     for (int i = 0; i < vector_sz; ++i) {
-        if (plaintextDecMult12->GetPackedValue()[i] !=
-            (vectorOfPt1[i] * vectorOfPt2[i])) {
-            std::cout << "Error in multiplication of ciphertexts #1 and #2 at index " << i << std::endl;
-            std::cout << "Expected: " << (vectorOfPt1[i] * vectorOfPt2[i]) << ", got: "
-                      << plaintextDecMult12->GetPackedValue()[i] << std::endl;
-            return 1;
-        }
-    }    
-
-    //Decrypt addition result and check correctness
-
-    Plaintext plaintextDecAdd12;
-
-    TOC(t);
-    cryptoContext->Decrypt(keyPair.secretKey, ciphertextAdd12, &plaintextDecAdd12);
-    processingTime = TOC(t);
-    std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
-
-    plaintextDecAdd12->SetLength(plaintext1->GetLength());
-
-    std::cout << "\nResult of homomorphic addition of ciphertexts #1 and #2: \n";
-    //TODO: I found evan multiplying 16384-14bit numbers, are done in 5ms..!!
-
-    std::cout << plaintextDecAdd12 << std::endl;
-
-    for (int i = 0; i < vector_sz; ++i) {
-        if (plaintextDecAdd12->GetPackedValue()[i] !=
-            (vectorOfPt1[i] + vectorOfPt2[i])) {
-            std::cout << "Error in addition of ciphertexts #1 and #2 at index " << i << std::endl;
-            std::cout << "Expected: " << (vectorOfPt1[i] + vectorOfPt2[i]) << ", got: "
-                      << plaintextDecAdd12->GetPackedValue()[i] << std::endl;
-            return 1;
-        }
-    }    
-
-    //Decrypt subtraction result and check correctness
-
-    Plaintext plaintextDecSub12;
-
-    TOC(t);
-    cryptoContext->Decrypt(keyPair.secretKey, ciphertextSub12, &plaintextDecSub12);
-    processingTime = TOC(t);
-    std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
-
-    plaintextDecSub12->SetLength(plaintext1->GetLength());//TODO: What to set?
-
-    std::cout << "\nResult of homomorphic subtraction of ciphertexts #1 and #2: \n";
-    //TODO: I found evan multiplying 16384-14bit numbers, are done in 5ms..!!
-
-    std::cout << plaintextDecSub12 << std::endl;
-
-    for (int i = 0; i < vector_sz; ++i) {
-        if (plaintextDecSub12->GetPackedValue()[i] !=
-            (vectorOfPt1[i] - vectorOfPt2[i])) {
-            std::cout << "Error in subtraction of ciphertexts #1 and #2 at index " << i << std::endl;
-            std::cout << "Expected: " << (vectorOfPt1[i] - vectorOfPt2[i]) << ", got: "
-                      << plaintextDecSub12->GetPackedValue()[i] << std::endl;
+        if (plaintextDecSel->GetPackedValue()[i] !=
+            ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i])) {
+            std::cout << "Error in selection of ciphertexts #1 and #2 at index " << i << std::endl;
+            std::cout << "Expected: " << ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i]) << ", got: "
+                      << plaintextDecSel->GetPackedValue()[i] << std::endl;
             return 1;
         }
     }    
@@ -422,5 +375,11 @@ int OpenFHEBGVrns_select(int select_bit){
 
 int main(int argc, char* argv[]) {
     //OpenFHEBGVrns_example();
+    OpenFHEBGVrns_select(true);
+    OpenFHEBGVrns_select(false);
+    OpenFHEBGVrns_select(true);
+    OpenFHEBGVrns_select(false);
+    OpenFHEBGVrns_select(false);
+    OpenFHEBGVrns_select(true);
     OpenFHEBGVrns_select(true);
 }
