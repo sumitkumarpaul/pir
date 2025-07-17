@@ -10,16 +10,16 @@
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
 //
-// 1. Redistributions of source code must retain the above copyright notice, this
+// 1. Redistributions of source code must retain the above copyright noTIC1e, this
 //    list of conditions and the following disclaimer.
 //
-// 2. Redistributions in binary form must reproduce the above copyright notice,
+// 2. Redistributions in binary form must reproduce the above copyright noTIC1e,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTIC1ULAR PURPOSE ARE
 // DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
 // FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 // DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
@@ -44,6 +44,9 @@
 #include "openfhe.h"
 
 using namespace lbcrypto;
+
+#define TIC1(t)    t = std::chrono::high_resolution_clock::now()
+#define TOC1(t)    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t).count()
 
 int OpenFHEBGVrns_example(){
     ////////////////////////////////////////////////////////////
@@ -82,12 +85,12 @@ int OpenFHEBGVrns_example(){
     KeyPair<DCRTPoly> keyPair;
 
     // Perform Key Generation Operation
-    TIC(t);
+    TIC1(t);
 
     keyPair = cryptoContext->KeyGen();
 
-    processingTime = TOC(t);
-    std::cout << "Key generation time: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Key generation time: " << processingTime << "us" << std::endl;
 
     if (!keyPair.good()) {
         std::cout << "Key generation failed!" << std::endl;
@@ -138,16 +141,16 @@ int OpenFHEBGVrns_example(){
 
     std::vector<Ciphertext<DCRTPoly>> ciphertexts;
 
-    TIC(t);
+    TIC1(t);
 
     ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext1));
     ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext2));
 
-    processingTime = TOC(t);
+    processingTime = TOC1(t);
 
     //std::cout << "Completed\n";
 
-    std::cout << "\nAverage encryption time: " << processingTime / 2 << "ms" << std::endl;
+    std::cout << "\nAverage encryption time: " << processingTime / 2 << "us" << std::endl;
 
 
     ////////////////////////////////////////////////////////////
@@ -156,22 +159,22 @@ int OpenFHEBGVrns_example(){
 
     //std::cout << "\nRunning a multiplication of two ciphertexts w/o relinearization...";
     
-    TIC(t);
+    TIC1(t);
 
     auto ciphertextMult12 = cryptoContext->EvalMultNoRelin(ciphertexts[0], ciphertexts[1]);
     cryptoContext->ModReduceInPlace(ciphertextMult12);
 
-    processingTime = TOC(t);
-    std::cout << "Time for multiplying two ciphertexts w/o relinearization: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Time for multiplying two ciphertexts w/o relinearization: " << processingTime << "us" << std::endl;
 
     //std::cout << "Completed\n";  
 
     Plaintext plaintextDecMult12;
 
-    TOC(t);
+    TOC1(t);
     cryptoContext->Decrypt(keyPair.secretKey, ciphertextMult12, &plaintextDecMult12);
-    processingTime = TOC(t);
-    std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Decryption time: " << processingTime << "us" << std::endl;
 
     plaintextDecMult12->SetLength(plaintext1->GetLength());
 
@@ -208,9 +211,10 @@ int OpenFHEBGVrns_select(int select_bit){
     // generate homomorphic evaluation multiplication keys for s^2 and s^3
     CCParams<CryptoContextBGVRNS> parameters;
     parameters.SetMultiplicativeDepth(1);
-    parameters.SetPlaintextModulus(65537);//TODO, 536903681 this value must have special properties.
+    parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
     //At this moment, using the value mentioned in the original example.
-    parameters.SetMaxRelinSkDeg(2);//What does this value mean?
+    parameters.SetMaxRelinSkDeg(1);//What does this value mean?
+    parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result
 
     CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
     // enable features that you wish to use
@@ -219,25 +223,16 @@ int OpenFHEBGVrns_select(int select_bit){
     cryptoContext->Enable(LEVELEDSHE);
     //cryptoContext->Enable(ADVANCEDSHE);
 
-    #if 0
-    std::cout << "\np = " << cryptoContext->GetCryptoParameters()->GetPlaintextModulus() << std::endl;
-    std::cout << "n = " << cryptoContext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder() / 2
-              << std::endl;
-    std::cout << "log2 q = "
-              << log2(cryptoContext->GetCryptoParameters()->GetElementParams()->GetModulus().ConvertToDouble())
-              << std::endl;
-    #endif
-
     // Initialize Public Key Containers
     KeyPair<DCRTPoly> keyPair;
 
     // Perform Key Generation Operation
-    TIC(t);
+    TIC1(t);
 
     keyPair = cryptoContext->KeyGen();
 
-    processingTime = TOC(t);
-    std::cout << "Key generation time: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Key generation time: " << processingTime << "us" << std::endl;
 
     if (!keyPair.good()) {
         std::cout << "Key generation failed!" << std::endl;
@@ -247,12 +242,6 @@ int OpenFHEBGVrns_select(int select_bit){
     ////////////////////////////////////////////////////////////
     // Encode source data
     ////////////////////////////////////////////////////////////
-    //Since the plaintext modulus (536903681) is a 30-bit number.
-    // So the multiplication result can go upto 30-bits
-    // For safety(TODO) we are keeping each number in 14-bit range.
-    //int min = 0x2FFF;
-    //int max = 0x3FFF;
-    //int range = max - min + 1;
     int vector_sz = 314; // Size of the vector to be generated. TODO: Maximum usable is: 16384
 
     std::vector<int64_t> vectorOfPt1;
@@ -269,7 +258,7 @@ int OpenFHEBGVrns_select(int select_bit){
     // Use a for loop to add elements to the vector
     for (int i = 0; i < vector_sz; ++i) {
         //int num = rand() % range + min;
-        int num = 32767;
+        int num = 255;//Previous was 32767
         vectorOfPt2.push_back(num);
     }
     Plaintext plaintext2 = cryptoContext->MakePackedPlaintext(vectorOfPt2);
@@ -287,77 +276,67 @@ int OpenFHEBGVrns_select(int select_bit){
     }
     Plaintext plaintextOnes = cryptoContext->MakePackedPlaintext(vectorOfOnes);
 
-    #if 0
-    std::cout << "\nOriginal Plaintext #1: \n";
-    std::cout << plaintext1 << std::endl;
-
-    std::cout << "\nOriginal Plaintext #2: \n";
-    std::cout << plaintext2 << std::endl;
-    #endif
-
     ////////////////////////////////////////////////////////////
     // Encryption
     ////////////////////////////////////////////////////////////
 
-    //std::cout << "\nRunning encryption of all plaintexts... ";
-
     std::vector<Ciphertext<DCRTPoly>> ciphertexts;
 
-    TIC(t);
+    TIC1(t);
 
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext1));
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext2));
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintextSelect));
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintextOnes));
+    auto ct1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto ct2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext2);
+    auto ctSel = cryptoContext->Encrypt(keyPair.publicKey, plaintextSelect);
+    auto ctOnes = cryptoContext->Encrypt(keyPair.publicKey, plaintextOnes);
 
-    processingTime = TOC(t);
-
-    //std::cout << "Completed\n";
-
-    //std::cout << "\nAverage encryption time: " << processingTime / 4 << "ms" << std::endl;
-
+    processingTime = TOC1(t);
 
     ////////////////////////////////////////////////////////////
     // Homomorphic selection between two ciphertexts w/o any relinearization
     // Select(a,b, select_bit) = select_bit ? a : b
     //                         = ((1 - select_bit) * a) + (select_bit * b)
     ////////////////////////////////////////////////////////////
-
-    //std::cout << "\nRunning a multiplication of two ciphertexts w/o relinearization...";
     
-    TIC(t);
+    TIC1(t);
     
-    // ciphertexts[3] is the ciphertext of ones and ciphertexts[2] is the ciphertext of select bit
-    auto ciphertextSelNot = cryptoContext->EvalSub(ciphertexts[3], ciphertexts[2]);
+    auto ciphertextSelNot = cryptoContext->EvalSub(ctOnes, ctSel);
     cryptoContext->ModReduceInPlace(ciphertextSelNot);
 
-    // ciphertexts[0] is the ciphertext of plaintext1 
-    auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ciphertexts[0]);
+    processingTime = TOC1(t);
+    std::cout << "Time for first sub between two ciphertexts: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
+
+    auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ct1);
     cryptoContext->ModReduceInPlace(ciphertextSelNota);
 
-    // ciphertexts[1] is the ciphertext of plaintext2 and ciphertexts[2] is the ciphertext of select bit
-    auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ciphertexts[2], ciphertexts[1]);
+    processingTime = TOC1(t);
+    std::cout << "Time for first mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
+
+    auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ctSel, ct2);
     cryptoContext->ModReduceInPlace(ciphertextSelb);
+
+    processingTime = TOC1(t);
+    std::cout << "Time for sencond mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
 
     auto ciphertextSel = cryptoContext->EvalAdd(ciphertextSelNota, ciphertextSelb);
     cryptoContext->ModReduceInPlace(ciphertextSel);
 
-    processingTime = TOC(t);
-    std::cout << "Time for selecting between two ciphertexts w/o relinearization: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Time for addition: " << processingTime << "us" << std::endl;
 
     Plaintext plaintextDecSel;
 
-    TOC(t);
+    TOC1(t);
     cryptoContext->Decrypt(keyPair.secretKey, ciphertextSel, &plaintextDecSel);
-    processingTime = TOC(t);
-    //std::cout << "Decryption time: " << processingTime << "ms" << std::endl;
+    processingTime = TOC1(t);
+    std::cout << "Decryption time: " << processingTime << "us" << std::endl;
 
     plaintextDecSel->SetLength(plaintext1->GetLength());//TODO: What to set?
-
-    //std::cout << "\nResult of homomorphic selection of ciphertexts #1 and #2: \n";
-    //TODO: I found evan multiplying 16384-14bit numbers, are done in 5ms..!!
-
-    //std::cout << plaintextDecSel << std::endl;
 
     for (int i = 0; i < vector_sz; ++i) {
         if (plaintextDecSel->GetPackedValue()[i] !=
@@ -375,11 +354,13 @@ int OpenFHEBGVrns_select(int select_bit){
 
 int main(int argc, char* argv[]) {
     //OpenFHEBGVrns_example();
+    #if 0
     OpenFHEBGVrns_select(true);
     OpenFHEBGVrns_select(false);
     OpenFHEBGVrns_select(true);
     OpenFHEBGVrns_select(false);
     OpenFHEBGVrns_select(false);
     OpenFHEBGVrns_select(true);
+    #endif
     OpenFHEBGVrns_select(true);
 }
