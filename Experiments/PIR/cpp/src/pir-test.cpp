@@ -17,9 +17,9 @@
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
-#define BITS 16 
+#define num_bits_in_N 16 // 16 bits can represent up to 65536, which is more than enough for N=50000
 // And number of bits determine the evalution time drastically
-static u_int64_t DB[N];
+static mpz_class DB[N];
 
 // Client asks for the element located at location i, where 0 <= i < N 
 int PIR_Experiment(int I)
@@ -31,13 +31,15 @@ int PIR_Experiment(int I)
 
     // Initialize the database
     for(size_t i=0; i<N; i++) {
-        DB[i] = i*10000; // Each location stores a multiple of 10 of its index
+        mpz_class entry_val;
+        mpz_ui_pow_ui(entry_val.get_mpz_t(), 2, 496);
+        DB[i] = mpz_class(i)*(entry_val); // Each location stores a multiple of 10 of its index
     }  
 
     auto t_begin = std::chrono::high_resolution_clock::now();
 
     // Initialize client, use 32 bits in domain as example
-    initializeClient(&fClient, BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+    initializeClient(&fClient, num_bits_in_N, 2); // If bit length is not set properly, then incorrect answer will be returned
     // bit length must be able to store ans0 and ans1
     
     auto t_initClient = std::chrono::high_resolution_clock::now();
