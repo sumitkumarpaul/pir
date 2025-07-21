@@ -7,6 +7,7 @@
 #include <immintrin.h>  // Include AVX header
 #include <omp.h>
 #include <vector>
+#include <gmp.h>
 
 #define PROFILE
 #define NUM_CPU_CORES 16
