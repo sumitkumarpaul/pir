@@ -4,6 +4,9 @@
 #include "fss-common.h"
 #include "fss-server.h"
 #include "fss-client.h"
+#include <immintrin.h>  // Include AVX header
+#include <omp.h>
+#include <vector>
 
 #define PROFILE
 
@@ -11,13 +14,9 @@
 #include <iostream>
 #include <iterator>
 
-#include "openfhe.h"
-
-using namespace lbcrypto;
-
-#define N 10000 // Size of the database, can be adjusted as needed
-// The value of N wiil determine the bitlength during the client initialization
-#define BITS 14 
+#define N 50000 // Size of the database, can be adjusted as needed
+// The value of N will determine the bitlength during the client initialization
+#define BITS 16 
 // And number of bits determine the evalution time drastically
 static u_int64_t DB[N];
 
@@ -56,18 +55,43 @@ int PIR_Experiment(int I)
     ans0 = 0;
     ans1 = 0;
 
-    // Server 0, evalute this for all i in [0, N)
-    for(size_t i=0; i<N; i++) {
-        auto x = evaluateEq(&fServer, &k0, i);
-        ans0 += x * mpz_class(DB[i]); // Accumulate the value at each index
+    std::vector<mpz_class> thread_sums(16);
+    for (size_t i = 0; i < N; i += 16)
+    {
+        for (int t = 0; t < 16; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < 16; ++j)
+        {
+            if ((i + j) < N)
+            {
+                auto x = evaluateEq(&fServer, &k0, i + j);
+                thread_sums[j] += x * mpz_class(DB[i + j]);
+            }
+        }
+        for (int t = 0; t < 16; ++t)
+            ans0 += thread_sums[t];
     }
 
     auto t_evalServer0 = std::chrono::high_resolution_clock::now();
 
-    // Server 1, evalute this for all i in [0, N)
-    for(size_t i=0; i<N; i++) {
-        auto x = evaluateEq(&fServer, &k1, i);
-        ans1 += x * mpz_class(DB[i]); // Accumulate the value at each index
+    for (size_t i = 0; i < N; i += 16)
+    {
+        for (int t = 0; t < 16; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < 16; ++j)
+        {
+            if ((i + j) < N)
+            {
+                auto x = evaluateEq(&fServer, &k0, i + j);
+                thread_sums[j] += x * mpz_class(DB[i + j]);
+            }
+        }
+        for (int t = 0; t < 16; ++t)
+            ans1 += thread_sums[t];
     }
 
     fin = ans0 - ans1;
@@ -79,7 +103,6 @@ int PIR_Experiment(int I)
     
     if (fin != mpz_class(DB[I])) {
         cout << "!!!!!!!!!!!!!!!!!!! PIR Test: Error, the value returned does not match the expected value !!!!!!!!!!!!!" << endl;
-        return 0; // Error
     } else {
         cout << "PIR Test: Success, the value returned matches the expected value!" << endl;
     }    
@@ -112,168 +135,10 @@ int PIR_Experiment(int I)
     return 1;
 }
 
-int OpenFHEBGVrns_example(){
-    ////////////////////////////////////////////////////////////
-    // Set-up of parameters
-    ////////////////////////////////////////////////////////////
-
-    // benchmarking variables
-    TimeVar t;
-    double processingTime(0.0);
-
-    // Crypto Parameters
-    // # of evalMults = 3 (first 3) is used to support the multiplication of 7
-    // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
-    // generate homomorphic evaluation multiplication keys for s^2 and s^3
-    CCParams<CryptoContextBGVRNS> parameters;
-    parameters.SetMultiplicativeDepth(1);
-    parameters.SetPlaintextModulus(536903681);//TODO, this value must have special properties.
-    //At this moment, using the value mentioned in the original example.
-    parameters.SetMaxRelinSkDeg(2);//What does this value mean?
-
-    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
-    // enable features that you wish to use
-    cryptoContext->Enable(PKE);
-    //cryptoContext->Enable(KEYSWITCH);
-    cryptoContext->Enable(LEVELEDSHE);
-    //cryptoContext->Enable(ADVANCEDSHE);
-
-    std::cout << "\np = " << cryptoContext->GetCryptoParameters()->GetPlaintextModulus() << std::endl;
-    std::cout << "n = " << cryptoContext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder() / 2
-              << std::endl;
-    std::cout << "log2 q = "
-              << log2(cryptoContext->GetCryptoParameters()->GetElementParams()->GetModulus().ConvertToDouble())
-              << std::endl;
-
-    // Initialize Public Key Containers
-    KeyPair<DCRTPoly> keyPair;
-
-    // Perform Key Generation Operation
-
-    std::cout << "\nRunning key generation (used for source data)..." << std::endl;
-
-    TIC(t);
-
-    keyPair = cryptoContext->KeyGen();
-
-    processingTime = TOC(t);
-    std::cout << "Key generation time: " << processingTime << "ms" << std::endl;
-
-    if (!keyPair.good()) {
-        std::cout << "Key generation failed!" << std::endl;
-        exit(1);
-    }
-
-    std::cout << "Running key generation for homomorphic multiplication "
-                 "evaluation keys..."
-              << std::endl;
-
-    TIC(t);
-
-    cryptoContext->EvalMultKeysGen(keyPair.secretKey);
-
-    processingTime = TOC(t);
-    std::cout << "Key generation time for homomorphic multiplication evaluation keys: " << processingTime << "ms"
-              << std::endl;
-
-    ////////////////////////////////////////////////////////////
-    // Encode source data
-    ////////////////////////////////////////////////////////////
-    //Since the plaintext modulus (536903681) is a 30-bit number.
-    // So the multiplication result can go upto 30-bits
-    // For safety(TODO) we are keeping each number in 14-bit range.
-    int min = 0x2FFF;
-    int max = 0x3FFF;
-    int range = max - min + 1;
-    int vector_sz = 16384; // Size of the vector to be generated. TODO: Maximum usable is: 16384
-
-    std::vector<int64_t> vectorOfInts1;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
-        int num = rand() % range + min;
-        vectorOfInts1.push_back(num);
-    }
-
-    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext(vectorOfInts1);
-
-    std::vector<int64_t> vectorOfInts2;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
-        int num = rand() % range + min;
-        vectorOfInts2.push_back(num);
-    }
-    Plaintext plaintext2               = cryptoContext->MakePackedPlaintext(vectorOfInts2);
-
-    std::cout << "\nOriginal Plaintext #1: \n";
-    std::cout << plaintext1 << std::endl;
-
-    std::cout << "\nOriginal Plaintext #2: \n";
-    std::cout << plaintext2 << std::endl;
-
-    ////////////////////////////////////////////////////////////
-    // Encryption
-    ////////////////////////////////////////////////////////////
-
-    std::cout << "\nRunning encryption of all plaintexts... ";
-
-    std::vector<Ciphertext<DCRTPoly>> ciphertexts;
-
-    TIC(t);
-
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext1));
-    ciphertexts.push_back(cryptoContext->Encrypt(keyPair.publicKey, plaintext2));
-
-    processingTime = TOC(t);
-
-    std::cout << "Completed\n";
-
-    std::cout << "\nAverage encryption time: " << processingTime / 2 << "ms" << std::endl;
-
-
-    ////////////////////////////////////////////////////////////
-    // Homomorphic multiplication of two ciphertexts w/o any relinearization
-    ////////////////////////////////////////////////////////////
-
-    std::cout << "\nRunning a multiplication of two ciphertexts w/o relinearization...";
-    
-    TIC(t);
-
-    auto ciphertextMult12 = cryptoContext->EvalMultNoRelin(ciphertexts[0], ciphertexts[1]);
-    cryptoContext->ModReduceInPlace(ciphertextMult12);
-
-    processingTime = TOC(t);
-    std::cout << "Time for multiplying two ciphertexts w/o relinearization: " << processingTime << "ms" << std::endl;
-
-    std::cout << "Completed\n";  
-
-    Plaintext plaintextDecMult12;
-    cryptoContext->Decrypt(keyPair.secretKey, ciphertextMult12, &plaintextDecMult12);
-
-    plaintextDecMult12->SetLength(plaintext1->GetLength());
-
-    std::cout << "\nResult of homomorphic multiplication of ciphertexts #1 and #2: \n";
-    //TODO: I found evan multiplying 16384-14bit numbers, are done in 5ms..!!
-
-    //std::cout << plaintextDecMult12 << std::endl;
-
-    for (int i = 0; i < vector_sz; ++i) {
-        if (plaintextDecMult12->GetPackedValue()[i] !=
-            (vectorOfInts1[i] * vectorOfInts2[i])) {
-            std::cout << "Error in multiplication of ciphertexts #1 and #2 at index " << i << std::endl;
-            std::cout << "Expected: " << (vectorOfInts1[i] * vectorOfInts2[i]) << ", got: "
-                      << plaintextDecMult12->GetPackedValue()[i] << std::endl;
-            return 1;
-        }
-    }    
-
-    return 0;
-}
-
 int main()
 {
 
-    //PIR_Experiment(N-1);
-    OpenFHEBGVrns_example();
+    PIR_Experiment(20);
 
     return 0;
 }
