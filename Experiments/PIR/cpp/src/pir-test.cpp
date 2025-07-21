@@ -30,11 +30,13 @@ int PIR_Experiment(int I)
     ServerKeyEq k0;
     ServerKeyEq k1;
 
+    //TODO: Our scheme has the benefit that the entire FSS lookup can be achieved without any disk access
+    //Since the entire stash may reside in the RAM
     // Initialize the database
     for(size_t i=0; i<N; i++) {
         mpz_class entry_val;
-        mpz_ui_pow_ui(entry_val.get_mpz_t(), 2, 496);
-        DB[i] = mpz_class(i)*(entry_val); // Each location stores a multiple of 10 of its index
+        mpz_ui_pow_ui(entry_val.get_mpz_t(), 2, 496);//A 496-bit multiplier 
+        DB[i] = mpz_class(i)*(entry_val - 1); // And the value stored at DB[i] is i*(2^496) is a 512 bit sized value
     }  
 
     auto t_begin = std::chrono::high_resolution_clock::now();
@@ -141,8 +143,8 @@ int PIR_Experiment(int I)
 
 int main()
 {
-
-    PIR_Experiment(20);
+    PIR_Experiment(0); // Test with the first element in the database
+    PIR_Experiment(49999); // Test with the last element in the database
 
     return 0;
 }
