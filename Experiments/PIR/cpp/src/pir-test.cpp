@@ -9,6 +9,7 @@
 #include <vector>
 
 #define PROFILE
+#define NUM_CPU_CORES 16
 
 #include <fstream>
 #include <iostream>
@@ -55,14 +56,14 @@ int PIR_Experiment(int I)
     ans0 = 0;
     ans1 = 0;
 
-    std::vector<mpz_class> thread_sums(16);
-    for (size_t i = 0; i < N; i += 16)
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    for (size_t i = 0; i < N; i += NUM_CPU_CORES)
     {
-        for (int t = 0; t < 16; ++t)
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
             thread_sums[t] = 0;
 
 #pragma omp parallel for
-        for (int j = 0; j < 16; ++j)
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((i + j) < N)
             {
@@ -70,27 +71,27 @@ int PIR_Experiment(int I)
                 thread_sums[j] += x * mpz_class(DB[i + j]);
             }
         }
-        for (int t = 0; t < 16; ++t)
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
             ans0 += thread_sums[t];
     }
 
     auto t_evalServer0 = std::chrono::high_resolution_clock::now();
 
-    for (size_t i = 0; i < N; i += 16)
+    for (size_t i = 0; i < N; i += NUM_CPU_CORES)
     {
-        for (int t = 0; t < 16; ++t)
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
             thread_sums[t] = 0;
 
 #pragma omp parallel for
-        for (int j = 0; j < 16; ++j)
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((i + j) < N)
             {
-                auto x = evaluateEq(&fServer, &k0, i + j);
+                auto x = evaluateEq(&fServer, &k1, i + j);
                 thread_sums[j] += x * mpz_class(DB[i + j]);
             }
         }
-        for (int t = 0; t < 16; ++t)
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
             ans1 += thread_sums[t];
     }
 
