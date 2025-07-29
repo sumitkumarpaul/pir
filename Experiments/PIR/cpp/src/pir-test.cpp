@@ -8,6 +8,8 @@
 #include <omp.h>
 #include <vector>
 #include <gmp.h>
+#include <gmpxx.h>
+#include <random>
 
 #define PROFILE
 #define NUM_CPU_CORES 16
@@ -15,6 +17,89 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+
+class ElGamal {
+private:
+    
+public:
+    mpz_class p, q, g;  // p: large prime, q: subgroup order, g: generator
+    // Initialize with safe primes p, q where q|(p-1)
+    void setup(int p_bits = 3072, int q_bits = 256) {
+        // Generate q (256-bit prime)
+        gmp_randclass rng(gmp_randinit_default);
+        rng.seed(time(NULL));
+        
+        // First generate q
+        do {
+            // Generate a random prime q of q_bits size
+            q = rng.get_z_bits(q_bits);
+            // Get the next prime number
+            mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
+        } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits); // Ensure q is exactly q_bits long
+        
+        // Then generate p such that q|(p-1)
+        mpz_class temp;
+        do {
+            temp = rng.get_z_bits(p_bits - q_bits);
+            p = temp * q + 1;
+        } while (!mpz_probab_prime_p(p.get_mpz_t(), 25));// Repetition count of 25 for the primality test
+        
+        // Find generator g of order q
+        mpz_class h, exp;
+        exp = (p - 1) / q;
+        
+        // TODO: Verify the generator generation logic
+        do {
+            h = rng.get_z_range(p - 1) + 1;
+            mpz_powm(g.get_mpz_t(), h.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+        } while (g == 1);
+    }
+    
+    // Generate random element in subgroup of order q
+    mpz_class randomGroupElement() {
+        gmp_randclass rng(gmp_randinit_default);
+        mpz_class r = rng.get_z_range(q);
+        mpz_class result;
+        mpz_powm(result.get_mpz_t(), g.get_mpz_t(), r.get_mpz_t(), p.get_mpz_t());
+        return result;
+    }
+    
+    // ElGamal key generation
+    pair<mpz_class, mpz_class> keyGen() {
+        gmp_randclass rng(gmp_randinit_default);
+        mpz_class x = rng.get_z_range(q);  // private key
+        mpz_class y;
+        mpz_powm(y.get_mpz_t(), g.get_mpz_t(), x.get_mpz_t(), p.get_mpz_t());  // public key
+        return make_pair(x, y);
+    }
+    
+    // ElGamal encryption
+    pair<mpz_class, mpz_class> encrypt(const mpz_class& message, const mpz_class& publicKey) {
+        gmp_randclass rng(gmp_randinit_default);
+        mpz_class k = rng.get_z_range(q);  // random exponent
+        
+        mpz_class c1, c2;
+        mpz_powm(c1.get_mpz_t(), g.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
+        
+        mpz_class temp;
+        mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
+        c2 = (message * temp) % p;
+        
+        return make_pair(c1, c2);
+    }
+    
+    // ElGamal decryption
+    mpz_class decrypt(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
+        mpz_class c1 = ciphertext.first;
+        mpz_class c2 = ciphertext.second;
+        
+        mpz_class temp, inv_temp;
+        mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), p.get_mpz_t());
+        mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
+        
+        return (c2 * inv_temp) % p;
+    }
+};
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
@@ -141,10 +226,73 @@ int PIR_Experiment(int I)
     return 1;
 }
 
+void TestElGamal() {
+    using namespace std::chrono;
+    std::cout << "=== ElGamal Test ===" << std::endl;
+    ElGamal elgamal;
+    int p_bits = 3072, q_bits = 256;
+
+    auto t_start = high_resolution_clock::now();
+    elgamal.setup(p_bits, q_bits);
+    auto t_setup = high_resolution_clock::now();
+    std::cout << "Setup complete." << std::endl;
+
+    // Print parameters
+    std::cout << "p (prime, " << p_bits << " bits): " << elgamal.p.get_str() << std::endl;
+    std::cout << "q (subgroup order, " << q_bits << " bits): " << elgamal.q.get_str() << std::endl;
+    std::cout << "g (generator): " << elgamal.g.get_str() << std::endl;
+
+    auto t_params = high_resolution_clock::now();
+
+    // Key generation
+    auto [priv, pub] = elgamal.keyGen();
+    auto t_keygen = high_resolution_clock::now();
+    std::cout << "Private key x: " << priv.get_str() << std::endl;
+    std::cout << "Public key y: " << pub.get_str() << std::endl;
+
+    // Choose a valid random message which belongs to the subgroup G
+    gmp_randclass rng(gmp_randinit_default);
+    rng.seed(time(NULL));
+    mpz_class exp = rng.get_z_range(elgamal.q);
+    mpz_class message;
+    mpz_powm(message.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+    auto t_message = high_resolution_clock::now();
+    std::cout << "Message to encrypt: " << message.get_str() << std::endl;
+
+    // Encrypt
+    auto [c1, c2] = elgamal.encrypt(message, pub);
+    auto t_encrypt = high_resolution_clock::now();
+    std::cout << "Ciphertext c1: " << c1.get_str() << std::endl;
+    std::cout << "Ciphertext c2: " << c2.get_str() << std::endl;
+
+    // Decrypt
+    mpz_class decrypted = elgamal.decrypt({c1, c2}, priv);
+    auto t_decrypt = high_resolution_clock::now();
+    std::cout << "Decrypted message: " << decrypted.get_str() << std::endl;
+
+    // Check
+    if (decrypted == message)
+        std::cout << "ElGamal Test: Success! Decrypted message matches original." << std::endl;
+    else
+        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
+
+    // Print timing info
+    std::cout << "Time for setup: " << duration<double, std::milli>(t_setup - t_start).count() << " ms" << std::endl;
+    std::cout << "Time for printing parameters: " << duration<double, std::milli>(t_params - t_setup).count() << " ms" << std::endl;
+    std::cout << "Time for key generation: " << duration<double, std::milli>(t_keygen - t_params).count() << " ms" << std::endl;
+    std::cout << "Time for message generation: " << duration<double, std::milli>(t_message - t_keygen).count() << " ms" << std::endl;
+    std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count() << " ms" << std::endl;
+    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_encrypt).count() << " ms" << std::endl;
+    std::cout << "Total time: " << duration<double, std::milli>(t_decrypt - t_start).count() << " ms" << std::endl;
+
+    return;
+}
 int main()
 {
-    PIR_Experiment(0); // Test with the first element in the database
-    PIR_Experiment(49999); // Test with the last element in the database
+    //PIR_Experiment(0); // Test with the first element in the database
+    //PIR_Experiment(49999); // Test with the last element in the database
+
+    TestElGamal();
 
     return 0;
 }
