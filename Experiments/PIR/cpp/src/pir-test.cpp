@@ -104,8 +104,24 @@ public:
     pair<mpz_class, mpz_class> mult_ct(const pair<mpz_class, mpz_class>& ciphertext1, const pair<mpz_class, mpz_class>& ciphertext2) {
         mpz_class cm1 = (ciphertext1.first*ciphertext2.first) % p;
         mpz_class cm2 = (ciphertext1.second*ciphertext2.second) % p;
-        
+       
         return make_pair(cm1, cm2);
+    }
+
+    // ElGamal exponentiation of ciphertexts
+    pair<mpz_class, mpz_class> exp_ct(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
+        mpz_class c1, c2;
+
+        // Exponentiate both the components of the ciphertexts
+        mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());       
+        mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+
+        //TODO: Only for security purpose
+        // Generate a ciphertext of 1 with new randomness, which will make the scheme IND-CPA secure
+        auto [cI1, cI2] = encrypt(mpz_class(1), publicKey); // Encrypt 1 with public key
+
+        // Return the exponentiated ciphertext and the multiplcation of the ciphertext of 1
+        return mult_ct({c1, c2}, {cI1, cI2}); // Multiply the ciphertexts
     }
 };
 
@@ -259,16 +275,15 @@ void TestElGamal() {
     std::cout << "Public key y: " << pub.get_str() << std::endl;
 
     // Choose a valid random message which belongs to the subgroup G
+    mpz_class m1 = elgamal.randomGroupElement();
+    
+    // Generate another random message
+    mpz_class m2 = elgamal.randomGroupElement();
+
+    // Finally generate a random exponent to test the ciphertext exponentiation
     gmp_randclass rng(gmp_randinit_default);
     rng.seed(time(NULL));
-    mpz_class exp = rng.get_z_range(elgamal.q);
-    mpz_class m1;
-    mpz_powm(m1.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
-
-    // Generate another random message
-    exp = rng.get_z_range(elgamal.q);
-    mpz_class m2;
-    mpz_powm(m2.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+    mpz_class exp = rng.get_z_range(elgamal.q);//Exponent must be in the range of [0, q-1], after which the value will repeat
 
     auto t_message = high_resolution_clock::now();
     std::cout << "Message to encrypt: " << m1.get_str() << std::endl;
@@ -287,6 +302,10 @@ void TestElGamal() {
     //Multiply the ciphertexts
     auto [cm1, cm2] = elgamal.mult_ct({c11,c12}, {c21, c22});
     auto t_mul = high_resolution_clock::now();
+
+    //Exponentiation of the ciphertexts
+    auto [ce1, ce2] = elgamal.exp_ct({c11,c12}, exp, pub);
+    auto t_exp = high_resolution_clock::now();
 
     // Decrypt m1
     mpz_class decrypted = elgamal.decrypt({c11, c12}, priv);
@@ -310,12 +329,24 @@ void TestElGamal() {
 
     // Decrypt {cm1, cm2}
     decrypted = elgamal.decrypt({cm1, cm2}, priv);
-    auto t_decrypt = high_resolution_clock::now();
     std::cout << "Decrypted message from multiplied ciphertexts is: " << decrypted.get_str() << std::endl;
 
     // Check
     if (decrypted == ((m1*m2) % elgamal.p))
         std::cout << "ElGamal Test: Success! Decrypted message matches m1*m2." << std::endl;
+    else
+        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
+
+    // Decrypt {ce1, ce2}
+    decrypted = elgamal.decrypt({ce1, ce2}, priv);
+    auto t_decrypt = high_resolution_clock::now();
+    std::cout << "Decrypted message from exponentiation of ciphertext is: " << decrypted.get_str() << std::endl;
+
+    // Check
+    mpz_class m1_exp;
+    mpz_powm(m1_exp.get_mpz_t(), m1.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+    if (decrypted == m1_exp)
+        std::cout << "ElGamal Test: Success! Decrypted message matches (m1^exp)mod p." << std::endl;
     else
         std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
 
@@ -325,8 +356,9 @@ void TestElGamal() {
     std::cout << "Time for key generation: " << duration<double, std::milli>(t_keygen - t_params).count() << " ms" << std::endl;
     std::cout << "Time for message generation: " << duration<double, std::milli>(t_message - t_keygen).count() << " ms" << std::endl;
     std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count()/2 << " ms" << std::endl;
-    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_mul).count()/3 << " ms" << std::endl;
+    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_exp).count()/4 << " ms" << std::endl;
     std::cout << "Time for ciphertext multiplication: " << duration<double, std::milli>(t_mul - t_encrypt).count()/2 << " ms" << std::endl;
+    std::cout << "Time for exponentiation of ciphertext: " << duration<double, std::milli>(t_exp - t_mul).count()/2 << " ms" << std::endl;
     std::cout << "Total time: " << duration<double, std::milli>(t_decrypt - t_start).count() << " ms" << std::endl;
 
     return;
