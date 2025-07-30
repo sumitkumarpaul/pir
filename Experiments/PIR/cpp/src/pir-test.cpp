@@ -99,6 +99,14 @@ public:
         
         return (c2 * inv_temp) % p;
     }
+
+    // ElGamal multiplication of ciphertexts
+    pair<mpz_class, mpz_class> mult_ct(const pair<mpz_class, mpz_class>& ciphertext1, const pair<mpz_class, mpz_class>& ciphertext2) {
+        mpz_class cm1 = (ciphertext1.first*ciphertext2.first) % p;
+        mpz_class cm2 = (ciphertext1.second*ciphertext2.second) % p;
+        
+        return make_pair(cm1, cm2);
+    }
 };
 
 #define N 50000 // Size of the database, can be adjusted as needed
@@ -254,25 +262,60 @@ void TestElGamal() {
     gmp_randclass rng(gmp_randinit_default);
     rng.seed(time(NULL));
     mpz_class exp = rng.get_z_range(elgamal.q);
-    mpz_class message;
-    mpz_powm(message.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+    mpz_class m1;
+    mpz_powm(m1.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+
+    // Generate another random message
+    exp = rng.get_z_range(elgamal.q);
+    mpz_class m2;
+    mpz_powm(m2.get_mpz_t(), elgamal.g.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
+
     auto t_message = high_resolution_clock::now();
-    std::cout << "Message to encrypt: " << message.get_str() << std::endl;
+    std::cout << "Message to encrypt: " << m1.get_str() << std::endl;
 
-    // Encrypt
-    auto [c1, c2] = elgamal.encrypt(message, pub);
+    // Encrypt m1
+    auto [c11, c12] = elgamal.encrypt(m1, pub);
+    std::cout << "Ciphertext c1: " << c11.get_str() << std::endl;
+    std::cout << "Ciphertext c2: " << c12.get_str() << std::endl;
+
+    // Encrypt m1
+    auto [c21, c22] = elgamal.encrypt(m2, pub);
     auto t_encrypt = high_resolution_clock::now();
-    std::cout << "Ciphertext c1: " << c1.get_str() << std::endl;
-    std::cout << "Ciphertext c2: " << c2.get_str() << std::endl;
+    std::cout << "Ciphertext c1: " << c21.get_str() << std::endl;
+    std::cout << "Ciphertext c2: " << c22.get_str() << std::endl;
 
-    // Decrypt
-    mpz_class decrypted = elgamal.decrypt({c1, c2}, priv);
-    auto t_decrypt = high_resolution_clock::now();
-    std::cout << "Decrypted message: " << decrypted.get_str() << std::endl;
+    //Multiply the ciphertexts
+    auto [cm1, cm2] = elgamal.mult_ct({c11,c12}, {c21, c22});
+    auto t_mul = high_resolution_clock::now();
+
+    // Decrypt m1
+    mpz_class decrypted = elgamal.decrypt({c11, c12}, priv);
+    std::cout << "Decrypted message 1: " << decrypted.get_str() << std::endl;
 
     // Check
-    if (decrypted == message)
-        std::cout << "ElGamal Test: Success! Decrypted message matches original." << std::endl;
+    if (decrypted == m1)
+        std::cout << "ElGamal Test: Success! Decrypted message matches original message 1." << std::endl;
+    else
+        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
+
+    // Decrypt m2
+    decrypted = elgamal.decrypt({c21, c22}, priv);
+    std::cout << "Decrypted message 2: " << decrypted.get_str() << std::endl;
+
+    // Check
+    if (decrypted == m2)
+        std::cout << "ElGamal Test: Success! Decrypted message matches original message 2." << std::endl;
+    else
+        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
+
+    // Decrypt {cm1, cm2}
+    decrypted = elgamal.decrypt({cm1, cm2}, priv);
+    auto t_decrypt = high_resolution_clock::now();
+    std::cout << "Decrypted message from multiplied ciphertexts is: " << decrypted.get_str() << std::endl;
+
+    // Check
+    if (decrypted == ((m1*m2) % elgamal.p))
+        std::cout << "ElGamal Test: Success! Decrypted message matches m1*m2." << std::endl;
     else
         std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
 
@@ -281,12 +324,14 @@ void TestElGamal() {
     std::cout << "Time for printing parameters: " << duration<double, std::milli>(t_params - t_setup).count() << " ms" << std::endl;
     std::cout << "Time for key generation: " << duration<double, std::milli>(t_keygen - t_params).count() << " ms" << std::endl;
     std::cout << "Time for message generation: " << duration<double, std::milli>(t_message - t_keygen).count() << " ms" << std::endl;
-    std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count() << " ms" << std::endl;
-    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_encrypt).count() << " ms" << std::endl;
+    std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count()/2 << " ms" << std::endl;
+    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_mul).count()/3 << " ms" << std::endl;
+    std::cout << "Time for ciphertext multiplication: " << duration<double, std::milli>(t_mul - t_encrypt).count()/2 << " ms" << std::endl;
     std::cout << "Total time: " << duration<double, std::milli>(t_decrypt - t_start).count() << " ms" << std::endl;
 
     return;
 }
+
 int main()
 {
     //PIR_Experiment(0); // Test with the first element in the database
