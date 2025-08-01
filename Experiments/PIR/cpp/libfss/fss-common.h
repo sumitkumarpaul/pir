@@ -14,9 +14,15 @@
 #include <stdint.h>
 #include <string>
 
+#define SUMIT_MODIFICATION  1
+
 using namespace std;
 
+#if SUMIT_MODIFICATION
+const int initPRFLen = 3072;//TODO: Do not know the exact value yet. But a large value makes all the PIR evaluations of same time duration
+#else
 const int initPRFLen = 4;
+#endif
 
 struct Fss {
     // store keys in fixedBlocks

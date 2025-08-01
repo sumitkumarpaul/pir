@@ -19,13 +19,3 @@ sudo apt-get install m4
 ```
 sudo apt install libomp-dev
 ```
-
-# Install FLINT library (for number theory (modular operation, group, field etc.) operations)
-Check their Readme documentation [here](https://github.com/flintlib/flint)
-Enable avx512 support
-```
-./configure --enable-avx512
-```
-
-## As a dependency you may require to install latest MPFR library
-Check documentation from [here](https://www.mpfr.org/mpfr-current/mpfr.html#Installing-MPFR)
