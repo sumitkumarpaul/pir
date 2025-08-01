@@ -127,7 +127,7 @@ public:
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
-#define num_bits_in_N 16 // 16 bits can represent up to 65536, which is more than enough for N=50000
+#define num_bits_in_N 2048 // 16 bits can represent up to 65536, which is more than enough for N=50000
 // And number of bits determine the evalution time drastically
 static mpz_class DB[N];
 
@@ -366,10 +366,12 @@ void TestElGamal() {
 
 int main()
 {
-    //PIR_Experiment(0); // Test with the first element in the database
-    //PIR_Experiment(49999); // Test with the last element in the database
+    PIR_Experiment(0); // Test with the first element in the database
+    PIR_Experiment(49999); // Test with the last element in the database
+    PIR_Experiment(2555); // Test with the first element in the database
+    PIR_Experiment(3000); // Test with the first element in the database
 
-    TestElGamal();
+    //TestElGamal();
 
     return 0;
 }

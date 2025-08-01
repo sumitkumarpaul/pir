@@ -48,4 +48,3 @@ AES_KEY* prf(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* 
     }
     return temp_keys;
 }
-
