@@ -12,6 +12,7 @@ void initializeServer(Fss* fServer, Fss* fClient) {
 }
 
 #if SUMIT_MODIFICATION
+#define IN_SIZE 48 // Value of 48 or 96 gives the best result
 #include <immintrin.h>
 void xor_with_key_avx(unsigned char* out, const unsigned char* key, size_t in_size) {
     size_t i = 0;
@@ -36,56 +37,45 @@ void xor_with_key_avx(unsigned char* out, const unsigned char* key, size_t in_si
 AES_KEY* prf1(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes_keys, uint32_t numKeys) {
     return aes_keys; // This is a dummy implementation for testing purposes
 }
-AES_KEY* prf2(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes_keys, uint32_t numKeys) {
-#ifndef AESNI
-    // check if there is aes-ni instruction
-    uint32_t eax, ebx, ecx, edx;
-
-    eax = ebx = ecx = edx = 0;
-    __get_cpuid(1, &eax, &ebx, &ecx, &edx);
-#endif
-    
-    AES_KEY* temp_keys = aes_keys;
+void prf2(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes_keys, uint32_t numKeys) {//Do not require to return, since it is not used
+   
     // Do Matyas–Meyer–Oseas one-way compression function using different AES keys to get desired
     // output length
     uint32_t num_keys_required = in_size/16;
 
     for (int i = 0; i < num_keys_required; i++) {
-#ifndef AESNI
-        if ((ecx & bit_AES) > 0) {
-            aesni_encrypt(key, out + (i*16), &temp_keys[i]);
-        } else {
-            AES_encrypt(key, out + (i*16), &temp_keys[i]);
-        }
-#else
-        aesni_encrypt(key, out + (i*16), &temp_keys[i]);
-#endif
+        aesni_encrypt(key, out + (i*16), &aes_keys[i]);
     }
-#if 0
-    for (int i = 0; i < in_size; i++) {
-        out[i] = out[i] ^ key[i%16];
-    }
-#else
+
     xor_with_key_avx(out, key, in_size);
-#endif
-    return temp_keys;
+
+    return;
 }
 #endif
 // evaluate whether x satisifies value in function stored in key k
 
 mpz_class evaluateEq(Fss* f, ServerKeyEq *k, uint64_t x) {
     // get num bits to be compared
+#if SUMIT_MODIFICATION
     uint32_t n = f->numBits;
+#else
+    uint32_t n = f->numBits;
+#endif
 
     // start at the correct LSB
     int xi = getBit(x, (64-n+1));
-    unsigned char s[16];
+    unsigned char s[16] __attribute__((aligned(16)));
     memcpy(s, k->s[xi], 16);
     unsigned char t = k->t[xi];
     
     unsigned char sArray[32];
     unsigned char temp[2];
+    #if SUMIT_MODIFICATION
+    unsigned char out[IN_SIZE] __attribute__((aligned(16)));
+    #else
     unsigned char out[48];
+    #endif
+
     for (uint32_t i = 1; i < n+1; i++) {
         if(i!=n) {
             xi = getBit(x, (64-n+i+1));
@@ -93,7 +83,7 @@ mpz_class evaluateEq(Fss* f, ServerKeyEq *k, uint64_t x) {
             xi = 0;
         }
         #if SUMIT_MODIFICATION
-        prf2(out, s, 48, f->aes_keys, f->numKeys);//This function is taking too much time
+        prf2(out, s, IN_SIZE, f->aes_keys, f->numKeys);//This function is taking too much time
         #else
         prf(out, s, 48, f->aes_keys, f->numKeys);
         #endif
