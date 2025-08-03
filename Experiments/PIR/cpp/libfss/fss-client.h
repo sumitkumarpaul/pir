@@ -9,8 +9,12 @@
 // Initializes client. numBits is number of bits in input domain
 void initializeClient(Fss* f, uint32_t numBits, uint32_t numParties);
 
+#if SUMIT_MODIFICATION
+void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, mpz_class alpha, uint64_t beta);
+#else
 // Creates keys for a function that evaluates to b when input x = a.
 void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, uint64_t a_i, uint64_t b_i);
+#endif
 
 // Creates keys for a function that evaluates to b when input x < a.
 void generateTreeLt(Fss* f, ServerKeyLt* k0, ServerKeyLt* k1, uint64_t a_i, uint64_t b_i);

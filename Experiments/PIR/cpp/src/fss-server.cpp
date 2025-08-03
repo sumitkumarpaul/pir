@@ -63,7 +63,11 @@ mpz_class evaluateEq(Fss* f, ServerKeyEq *k, uint64_t x) {
 #endif
 
     // start at the correct LSB
+    #if SUMIT_MODIFICATION
+    int xi = mpz_tstbit(mpz_class(x).get_mpz_t(), (n-1));
+    #else
     int xi = getBit(x, (64-n+1));
+    #endif
     unsigned char s[16] __attribute__((aligned(16)));
     memcpy(s, k->s[xi], 16);
     unsigned char t = k->t[xi];
@@ -78,7 +82,11 @@ mpz_class evaluateEq(Fss* f, ServerKeyEq *k, uint64_t x) {
 
     for (uint32_t i = 1; i < n+1; i++) {
         if(i!=n) {
+            #if SUMIT_MODIFICATION
+            xi = mpz_tstbit(mpz_class(x).get_mpz_t(), (n-i-1));
+            #else
             xi = getBit(x, (64-n+i+1));
+            #endif
         } else {
             xi = 0;
         }

@@ -127,13 +127,14 @@ public:
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
-#define num_bits_in_N 2048 // 16 bits can represent up to 65536, which is more than enough for N=50000
+#define num_bits_in_N 256 // 16 bits can represent up to 65536, which is more than enough for N=50000
 // And number of bits determine the evalution time drastically
 static mpz_class DB[N];
 
 // Client asks for the element located at location i, where 0 <= i < N 
-int PIR_Experiment(int I)
-{
+int PIR_Experiment(mpz_class T_sh) {
+    int I = 1234; // Example index, TODO, can be adjusted
+
     // Set up variables
     Fss fClient, fServer;
     ServerKeyEq k0;
@@ -157,7 +158,7 @@ int PIR_Experiment(int I)
     auto t_initClient = std::chrono::high_resolution_clock::now();
 
     // Equality FSS test
-    generateTreeEq(&fClient, &k0, &k1, I, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+    generateTreeEq(&fClient, &k0, &k1, T_sh, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
 
     auto t_keyGen = std::chrono::high_resolution_clock::now();    
     
@@ -366,10 +367,12 @@ void TestElGamal() {
 
 int main()
 {
-    PIR_Experiment(0); // Test with the first element in the database
-    PIR_Experiment(49999); // Test with the last element in the database
-    PIR_Experiment(2555); // Test with the first element in the database
-    PIR_Experiment(3000); // Test with the first element in the database
+    mpz_class T_sh(1234); // From an int
+    //PIR_Experiment(0); // Test with the first element in the database
+    //PIR_Experiment(49999); // Test with the last element in the database
+    //PIR_Experiment(2555); // Test with the first element in the database
+    //PIR_Experiment(3000); // Test with the first element in the database
+    PIR_Experiment(T_sh); // Test with the first element in the database
 
     //TestElGamal();
 

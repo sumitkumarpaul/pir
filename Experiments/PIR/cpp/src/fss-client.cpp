@@ -33,15 +33,26 @@ void initializeClient(Fss* f, uint32_t numBits, uint32_t numParties) {
     f->numParties = numParties;
     // We need prime for the point funciton of FSS, but the new point function FSS does not need this
     mpz_class p;
+    #if SUMIT_MODIFICATION
+    mpz_ui_pow_ui(p.get_mpz_t(), 2, f->numBits);
+    #else
     mpz_ui_pow_ui(p.get_mpz_t(), 2, 32);
+    #endif
     mpz_nextprime(f->prime.get_mpz_t(), p.get_mpz_t());
     f->numKeys = initPRFLen;
 }
 
 // Generate keys for 2 party equality FSS
 
+#if SUMIT_MODIFICATION
+void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, mpz_class alpha, uint64_t beta){
+#else
 void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, uint64_t a_i, uint64_t b_i){
+#endif
     uint32_t n = f->numBits;
+#if SUMIT_MODIFICATION
+    uint64_t alpha1 = 1234;//TODO for testing purposes
+#endif
 
     // set bits in keys and allocate memory
     k0->cw[0] = (CWEq*) malloc(sizeof(CWEq) * (n-1));
@@ -51,7 +62,11 @@ void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, uint64_t a_i, uint
 
     // Figure out first relevant bit
     // n represents the number of LSB to compare
+#if SUMIT_MODIFICATION
+    int a = mpz_tstbit(alpha.get_mpz_t(), (n-1));
+#else
     int a = getBit(a_i, (64-n+1));
+#endif
     int na = a ^ 1;
 
     // create arrays size (AES_key_size*2 + 2)
@@ -134,7 +149,11 @@ void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, uint64_t a_i, uint
         }
 
         // Reset a and na bits
+#if SUMIT_MODIFICATION
+        a = mpz_tstbit(alpha.get_mpz_t(), (n-i-2));
+#else
         a = getBit(a_i, (64-n+i+2));
+#endif
         na = a ^ 1;
 
         // Redefine aStart and naStart based on new a's
@@ -237,7 +256,7 @@ void generateTreeEq(Fss* f, ServerKeyEq* k0, ServerKeyEq* k1, uint64_t a_i, uint
         mpz_class diff = sInt0 - sInt1;
         mpz_invert(diff.get_mpz_t(), diff.get_mpz_t(), f->prime.get_mpz_t());
         mpz_class temp_b;
-        mpz_import(temp_b.get_mpz_t(), 1, -1, sizeof (uint64_t), 0, 0, &b_i);
+        mpz_import(temp_b.get_mpz_t(), 1, -1, sizeof (uint64_t), 0, 0, &beta);
         k0->w = (diff * temp_b) % f->prime;
         k1->w = k0->w;
     } else {

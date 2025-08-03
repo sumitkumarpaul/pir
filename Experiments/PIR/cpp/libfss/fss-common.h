@@ -20,6 +20,7 @@ using namespace std;
 
 #if SUMIT_MODIFICATION
 const int initPRFLen = 3072;//TODO: Do not know the exact value yet. But a large value makes all the PIR evaluations of same time duration
+#define MAX_TAG_BITS 3072 // Maximum number of bits in the tag
 #else
 const int initPRFLen = 4;
 #endif
@@ -70,9 +71,13 @@ struct MPKey {
     uint32_t** cw;
 };
 
-// Assumes integers are 64 bits
+// Gets the value of pos-th MSB of n
 inline int getBit(uint64_t n, uint64_t pos) {
+    #if SUMIT_MODIFICATION
+    return (n & ( 1 << (MAX_TAG_BITS-pos))) >> (MAX_TAG_BITS-pos);
+    #else
     return (n & ( 1 << (64-pos))) >> (64-pos);
+    #endif
 }
 
 // Converts byte array into 64-bit integer
