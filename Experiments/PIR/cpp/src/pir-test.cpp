@@ -182,8 +182,8 @@ int PIR_Experiment(mpz_class T_sh) {
         {
             if ((i + j) < N)
             {
-                auto x = evaluateEq(&fServer, &k0, i + j);
-                thread_sums[j] += x * mpz_class(DB[i + j]);
+                auto y = evaluateEq(&fServer, &k0, mpz_class(i + j));
+                thread_sums[j] += y * DB[i + j];
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -202,8 +202,8 @@ int PIR_Experiment(mpz_class T_sh) {
         {
             if ((i + j) < N)
             {
-                auto x = evaluateEq(&fServer, &k1, i + j);
-                thread_sums[j] += x * mpz_class(DB[i + j]);
+                auto y = evaluateEq(&fServer, &k1, mpz_class(i + j));
+                thread_sums[j] += y * DB[i + j];
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)

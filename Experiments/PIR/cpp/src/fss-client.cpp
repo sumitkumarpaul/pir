@@ -34,7 +34,7 @@ void initializeClient(Fss* f, uint32_t numBits, uint32_t numParties) {
     // We need prime for the point funciton of FSS, but the new point function FSS does not need this
     mpz_class p;
     #if SUMIT_MODIFICATION
-    mpz_ui_pow_ui(p.get_mpz_t(), 2, f->numBits);
+    mpz_ui_pow_ui(p.get_mpz_t(), 2, f->numBits);//TODO: Verify why the value was set to 32 bits earlier? Even if they assumed 64 bit integer
     #else
     mpz_ui_pow_ui(p.get_mpz_t(), 2, 32);
     #endif
