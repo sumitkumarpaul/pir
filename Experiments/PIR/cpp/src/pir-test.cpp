@@ -127,13 +127,15 @@ public:
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
-#define num_bits_in_N 256 // 16 bits can represent up to 65536, which is more than enough for N=50000
+#define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
+#define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
-static mpz_class DB[N];
+static mpz_class DB[N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 
 // Client asks for the element located at location i, where 0 <= i < N 
-int PIR_Experiment(mpz_class T_sh) {
-    int I = 1234; // Example index, TODO, can be adjusted
+int PIR_Experiment(int I) {
+    //Actually I is only used to verify the correctness of the PIR scheme
+    //The tester knows that T_sh is the tag of the element at location I
 
     // Set up variables
     Fss fClient, fServer;
@@ -142,17 +144,25 @@ int PIR_Experiment(mpz_class T_sh) {
 
     //TODO: Our scheme has the benefit that the entire FSS lookup can be achieved without any disk access
     //Since the entire stash may reside in the RAM
+
     // Initialize the database
+    gmp_randclass r(gmp_randinit_default);
+    r.seed(time(NULL));
+    
     for(size_t i=0; i<N; i++) {
-        mpz_class entry_val;
-        mpz_ui_pow_ui(entry_val.get_mpz_t(), 2, 496);//A 496-bit multiplier 
-        DB[i] = mpz_class(i)*(entry_val - 1); // And the value stored at DB[i] is i*(2^496) is a 512 bit sized value
+        // Create random tag and block content
+        DB[i][0] = r.get_z_bits(NUM_TAG_BITS); // Create a random tag
+        DB[i][1] = r.get_z_bits(B); // Create a random block of B bits
     }  
+
+    //Cheat and set the search tag
+    mpz_class T_sh = DB[I][0]; // The tag of the element at location I 
+    cout << "Search tag is: " << T_sh << endl;
 
     auto t_begin = std::chrono::high_resolution_clock::now();
 
     // Initialize client, use 32 bits in domain as example
-    initializeClient(&fClient, num_bits_in_N, 2); // If bit length is not set properly, then incorrect answer will be returned
+    initializeClient(&fClient, NUM_TAG_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
     // bit length must be able to store ans0 and ans1
     
     auto t_initClient = std::chrono::high_resolution_clock::now();
@@ -182,8 +192,8 @@ int PIR_Experiment(mpz_class T_sh) {
         {
             if ((i + j) < N)
             {
-                auto y = evaluateEq(&fServer, &k0, mpz_class(i + j));
-                thread_sums[j] += y * DB[i + j];
+                auto y = evaluateEq(&fServer, &k0, DB[i + j][0]);// Evaluate the FSS for the tag
+                thread_sums[j] += y * DB[i + j][1]; // Multiply the result with the block content
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -202,8 +212,8 @@ int PIR_Experiment(mpz_class T_sh) {
         {
             if ((i + j) < N)
             {
-                auto y = evaluateEq(&fServer, &k1, mpz_class(i + j));
-                thread_sums[j] += y * DB[i + j];
+                auto y = evaluateEq(&fServer, &k1, DB[i + j][0]);// Evaluate the FSS for the tag
+                thread_sums[j] += y * DB[i + j][1]; // Multiply the result with the block content
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -213,11 +223,11 @@ int PIR_Experiment(mpz_class T_sh) {
     fin = ans0 - ans1;
     cout << "PIR Test: value of ans0: " << ans0 << ", value of ans1: " << ans1 << endl;
     cout << "PIR Test: (it should be the value stored at DB[I]): " << fin << endl;
-    cout << "The value stored at DB[I] is: " << DB[I] << endl;
+    cout << "The value stored at DB[I] is: " << DB[I][1] << endl;
 
     auto t_evalServer1 = std::chrono::high_resolution_clock::now();    
     
-    if (fin != mpz_class(DB[I])) {
+    if (fin != mpz_class(DB[I][1])) {
         cout << "!!!!!!!!!!!!!!!!!!! PIR Test: Error, the value returned does not match the expected value !!!!!!!!!!!!!" << endl;
     } else {
         cout << "PIR Test: Success, the value returned matches the expected value!" << endl;
@@ -367,12 +377,17 @@ void TestElGamal() {
 
 int main()
 {
-    mpz_class T_sh(1234); // From an int
+    int I;
+    // Lets test for location I = 1234
+    // First cheat and look for the tag of the element at location I
+    I = 1234;
+
+    PIR_Experiment(I); // Test with the first element in the database
+
     //PIR_Experiment(0); // Test with the first element in the database
     //PIR_Experiment(49999); // Test with the last element in the database
     //PIR_Experiment(2555); // Test with the first element in the database
     //PIR_Experiment(3000); // Test with the first element in the database
-    PIR_Experiment(T_sh); // Test with the first element in the database
 
     //TestElGamal();
 
