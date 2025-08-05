@@ -1,61 +1,140 @@
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.16)
+set(CMAKE_CXX_COMPILER "g++")
+project(pir_experiments LANGUAGES C CXX ASM)
 
-### To use gcc/g++ on a Macintosh, you must set the Compilers
-### here, not inside the project
-##if(APPLE)
-##       set(CMAKE_C_COMPILER "/usr/local/bin/gcc-7")
-##       set(CMAKE_CXX_COMPILER "/usr/local/bin/g++-7")
-##endif()
-### TODO: for now, we use CLang for Mac
-###
-### In order to create OpenFHE's static libraries you should enable
-### the BUILD_STATIC option. For that, you run "cmake .. -DBUILD_STATIC=ON".
-### After having your link completed you will find static libs
-### with the suffix "_static" in ./build/libs/.
-### Examples: OPENFHEpke_static.a, OPENFHEcore_static.a, etc.
-### After you run "make install" in your build directory, you can build your custom application.
-### If you need your application to be linked statically, then run "cmake .. -DBUILD_STATIC=ON"
-
-project(demo CXX)
 set(CMAKE_CXX_STANDARD 17)
-option(BUILD_STATIC "Set to ON to include static versions of the library" OFF)
 
-find_package(OpenFHE CONFIG REQUIRED)
+# Compiler flags from Makefile
+set(COMMON_FLAGS "-fomit-frame-pointer -fno-strict-aliasing -O3 -s -DNDEBUG -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS}")
+
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-msse4.2" COMPILER_SUPPORTS_MSSE)
+check_cxx_compiler_flag("-maes" COMPILER_SUPPORTS_AESNI)
+check_cxx_compiler_flag("-mavx" COMPILER_SUPPORTS_AVX)
+check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+check_cxx_compiler_flag("-mavx512f" COMPILER_SUPPORTS_AVX512F)
+
+# TODO: Check details about this particular flag
+if(COMPILER_SUPPORTS_MSSE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2")
+endif()
+
+if(COMPILER_SUPPORTS_AESNI)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAESNI")   
+endif()
+if(COMPILER_SUPPORTS_AVX)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
+endif()
+if(COMPILER_SUPPORTS_AVX2)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+endif()
+if(COMPILER_SUPPORTS_AVX512F)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f")
+endif()
+
+# Find OpenFHE (require at least version 1.3.0)
+find_package(OpenFHE 1.3.0 REQUIRED CONFIG)
 if(OpenFHE_FOUND)
-    message(STATUS "FOUND PACKAGE OpenFHE")
     message(STATUS "OpenFHE Version: ${BASE_OPENFHE_VERSION}")
-    message(STATUS "OpenFHE installed as shared libraries: ${OpenFHE_SHARED}")
-    message(STATUS "OpenFHE include files location: ${OpenFHE_INCLUDE}")
-    message(STATUS "OpenFHE lib files location: ${OpenFHE_LIBDIR}")
-    message(STATUS "OpenFHE Native Backend size: ${OpenFHE_NATIVE_SIZE}")
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-    set(CMAKE_INSTALL_RPATH "/usr/local/lib")    
 else()
     message(FATAL_ERROR "PACKAGE OpenFHE NOT FOUND")
 endif()
 
-set(CMAKE_CXX_FLAGS ${OpenFHE_CXX_FLAGS})
+# Manually search the GMP version
+# Find GMP include and libraries
+find_path(GMP_INCLUDE_DIR gmp.h)
+find_library(GMP_LIBRARY NAMES gmp)
+find_library(GMPXX_LIBRARY NAMES gmpxx)
 
-include_directories(${OPENMP_INCLUDES})
-include_directories(${OpenFHE_INCLUDE})
-include_directories(${OpenFHE_INCLUDE}/third-party/include)
-include_directories(${OpenFHE_INCLUDE}/core)
-include_directories(${OpenFHE_INCLUDE}/pke)
-include_directories(${OpenFHE_INCLUDE}/binfhe)
-### add directories for other OpenFHE modules as needed for your project
-
-link_directories(${OpenFHE_LIBDIR})
-link_directories(${OPENMP_LIBRARIES})
-if(BUILD_STATIC)
-    set(CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS} -static")
-    link_libraries(${OpenFHE_STATIC_LIBRARIES})
-else()
-    set(CMAKE_EXE_LINKER_FLAGS ${OpenFHE_EXE_LINKER_FLAGS})
-    link_libraries(${OpenFHE_SHARED_LIBRARIES})
+# Extract GMP version from gmp.h
+if(GMP_INCLUDE_DIR)
+    file(READ "${GMP_INCLUDE_DIR}/gmp.h" GMP_H_CONTENTS)
+    string(REGEX MATCH "#define[ \t]+__GNU_MP_VERSION[ \t]+([0-9]+)" _ ${GMP_H_CONTENTS})
+    set(GMP_MAJOR_VERSION ${CMAKE_MATCH_1})
+    string(REGEX MATCH "#define[ \t]+__GNU_MP_VERSION_MINOR[ \t]+([0-9]+)" _ ${GMP_H_CONTENTS})
+    set(GMP_MINOR_VERSION ${CMAKE_MATCH_1})
+    string(REGEX MATCH "#define[ \t]+__GNU_MP_VERSION_PATCHLEVEL[ \t]+([0-9]+)" _ ${GMP_H_CONTENTS})
+    set(GMP_PATCH_VERSION ${CMAKE_MATCH_1})
+    set(GMP_VERSION "${GMP_MAJOR_VERSION}.${GMP_MINOR_VERSION}.${GMP_PATCH_VERSION}")
 endif()
 
-### ADD YOUR EXECUTABLE(s) HERE
+# Print found version
+message(STATUS "Found GMP version: ${GMP_VERSION}")
+
+# Check version is greater than 6.3
+if(GMP_VERSION VERSION_LESS "6.3")
+    message(FATAL_ERROR "GMP version 6.3 or higher is required, but found ${GMP_VERSION}")
+endif()
+
+set(GMP_LIBRARIES ${GMP_LIBRARY})
+set(GMPXX_LIBRARIES ${GMPXX_LIBRARY})
+
+# Find OpenMP
+find_package(OpenMP REQUIRED)
+
+# Find Threads (for pthread)
+find_package(Threads REQUIRED)
+
+# Find OpenSSL (for ssl and crypto)
+find_package(OpenSSL 1.1 REQUIRED)
+
+# System libraries (dl is always present on Linux)
+list(APPEND EXTRA_LIBS dl)
+
+# Include directories
+include_directories(
+    ${OpenFHE_INCLUDE}
+    ${GMP_INCLUDE_DIR}
+    ../libfss
+    /usr/local/include/openfhe/core
+    /usr/local/include/openfhe/binfhe
+    /usr/local/include/openfhe
+    /usr/local/include/openfhe/pke
+)
+
+# Link directories
+link_directories(
+    ${OpenFHE_LIBDIR}
+    ../libfss
+    /usr/local/lib
+)
+
+# Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
-###
-### EXAMPLE:
-### add_executable(test demo-simple-example.cpp)
+add_executable(pir-test pir-test.cpp fss-client.cpp fss-server.cpp fss-common.cpp)
+
+# Link libraries for sumit-experiment
+target_link_libraries(sumit-experiment
+    ${GMPXX_LIBRARIES}
+    ${GMP_LIBRARIES}
+    OPENFHEpke
+    OPENFHEcore
+    OpenMP::OpenMP_CXX
+    Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    crypto
+    ${EXTRA_LIBS}
+)
+
+# Link libraries for pir-test
+target_link_libraries(pir-test
+    ${GMPXX_LIBRARIES}
+    ${GMP_LIBRARIES}
+    OpenMP::OpenMP_CXX
+    Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    crypto
+    ${EXTRA_LIBS}
+    fss
+)
+
+# Optionally, add more executables as needed:
+# add_executable(other-exe other-source.cpp)
+# target_link_libraries(other-exe ...)
+
+# Optionally, install targets
+# install(TARGETS sumit-experiment pir-test DESTINATION bin)

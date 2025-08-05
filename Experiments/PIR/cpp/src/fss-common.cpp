@@ -1,5 +1,15 @@
 #include "fss-common.h"
 
+#ifdef AESNI
+int aesni_set_encrypt_key(const unsigned char *userKey, int bits, AES_KEY *key) { // TODO: Dummy function, implement later 
+    return 0;
+}
+
+void aesni_encrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key) { // TODO: Dummy function, implement later 
+    return;
+}
+#endif
+
 AES_KEY* prf(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes_keys, uint32_t numKeys) {
 #ifndef AESNI
     // check if there is aes-ni instruction
