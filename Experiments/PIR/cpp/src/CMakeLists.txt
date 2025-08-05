@@ -87,7 +87,6 @@ list(APPEND EXTRA_LIBS dl)
 include_directories(
     ${OpenFHE_INCLUDE}
     ${GMP_INCLUDE_DIR}
-    ../libfss
     /usr/local/include/openfhe/core
     /usr/local/include/openfhe/binfhe
     /usr/local/include/openfhe
@@ -97,13 +96,12 @@ include_directories(
 # Link directories
 link_directories(
     ${OpenFHE_LIBDIR}
-    ../libfss
     /usr/local/lib
 )
 
 # Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
-add_executable(pir-test pir-test.cpp fss-client.cpp fss-server.cpp fss-common.cpp)
+add_executable(pir-test pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
 
 # Link libraries for sumit-experiment
 target_link_libraries(sumit-experiment
@@ -129,7 +127,6 @@ target_link_libraries(pir-test
     OpenSSL::Crypto
     crypto
     ${EXTRA_LIBS}
-    fss
 )
 
 # Optionally, add more executables as needed:

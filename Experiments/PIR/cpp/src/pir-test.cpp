@@ -1,9 +1,9 @@
 #include <chrono>
 #include <assert.h>
 #include <stdio.h>
-#include "fss-common.h"
-#include "fss-server.h"
-#include "fss-client.h"
+#include "fss/fss-common.h"
+#include "fss/fss-server.h"
+#include "fss/fss-client.h"
 #include <immintrin.h>  // Include AVX header
 #include <omp.h>
 #include <vector>
