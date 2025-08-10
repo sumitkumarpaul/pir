@@ -3,6 +3,7 @@ set(CMAKE_CXX_COMPILER "g++")
 project(pir_experiments LANGUAGES C CXX ASM)
 
 set(CMAKE_CXX_STANDARD 17)
+enable_language(ASM OPTIONAL)
 
 # Compiler flags from Makefile
 set(COMMON_FLAGS "-fomit-frame-pointer -fno-strict-aliasing -O3 -s -DNDEBUG -fopenmp")
@@ -101,6 +102,7 @@ link_directories(
 
 # Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
+#add_executable(pir-test pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp aesni-x86_64.S)
 add_executable(pir-test pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
 
 # Link libraries for sumit-experiment

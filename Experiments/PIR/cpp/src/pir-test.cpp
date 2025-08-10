@@ -155,32 +155,39 @@ int PIR_Experiment(int I) {
         DB[i][1] = r.get_z_bits(B); // Create a random block of B bits
     }  
     
-    auto t_exp_start = std::chrono::high_resolution_clock::now();
-
     //Check the possible time requirement for updating the tags of the stash
     mpz_class p = r.get_z_bits(NUM_TAG_BITS); // Create a random tag
     mpz_nextprime(p.get_mpz_t(), p.get_mpz_t());
+    mpz_class del_abc = r.get_z_bits(NUM_TAG_BITS); // Create a random multiplier for the tags
+
+    auto t_exp_start = std::chrono::high_resolution_clock::now();
     
-    #if 1// Modular exponentiation test
+    #if 1// Modular multiplication test
+
+    for (size_t i = 0; i < N; i += NUM_CPU_CORES)//TODO: Check the implementation of parallel execution
+    {
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((i + j) < N)
+            {
+                mpz_class a = DB[i+j][0]; // Get the tag of the element at location i
+                mpz_mul(a.get_mpz_t(), a.get_mpz_t(), del_abc.get_mpz_t()); // Perform multiplication operation
+                mpz_mod(DB[i][0].get_mpz_t(), a.get_mpz_t(), p.get_mpz_t()); // Perform modular operation
+            }
+        }
+    }
+
+    #if 0//Non parallel version
     for(size_t i=0; i<N; i++) {
-        mpz_class t = r.get_z_bits(NUM_TAG_BITS); // Create a random tag
-        mpz_class exp = r.get_z_bits(256); // Create a random exponent
-        mpz_powm(t.get_mpz_t(), t.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());//Perform exponentiation operation
+        mpz_class a = DB[i][0]; // Get the tag of the element at location i
+        mpz_mul(a.get_mpz_t(), a.get_mpz_t(), del_abc.get_mpz_t()); // Perform multiplication operation
+        mpz_mod(DB[i][0].get_mpz_t(), a.get_mpz_t(), p.get_mpz_t()); // Perform modular operation
     }
     #endif
-
-    #if 0// Modular multiplication test
-    mpz_class q = r.get_z_bits(256); // Create a random tag
-    mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
-    for(size_t i=0; i<N; i++) {
-        mpz_class a = r.get_z_bits(256); // Create first random number
-        mpz_class b = r.get_z_bits(256); // Create a second random exponent
-        mpz_mul(a.get_mpz_t(), a.get_mpz_t(), b.get_mpz_t()); // Perform multiplication operation
-        mpz_mod(a.get_mpz_t(), a.get_mpz_t(), q.get_mpz_t()); // Perform modular operation
-    }
     #endif
     auto t_exp_end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time for stash tag update operation: " <<
+    std::cout << "Time for shelter tag update operation: " <<
      std::chrono::duration<double, std::milli>(t_exp_end - t_exp_start).count()
      << " ms" << endl;
 

@@ -1,11 +1,17 @@
 #include "fss-common.h"
 
 #ifdef AESNI
-int aesni_set_encrypt_key(const unsigned char *userKey, int bits, AES_KEY *key) { // TODO: Dummy function, implement later 
-    return 0;
+int aesni_set_encrypt_key(const unsigned char *userKey, int bits, AES_KEY *key) { // TODO: Dummy function, implement later
+    #if 1 //Currently this is calling the standard AES_set_encrypt_key, but it should be replaced with an optimized version of aesni_set_encrypt_key
+    return AES_set_encrypt_key(userKey, bits, key);
+    #else
+    #endif 
 }
-
 void aesni_encrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key) { // TODO: Dummy function, implement later 
+    #if 1 //Currently this is calling the standard AES_encrypt, but it should be replaced with an optimized version of aesni_encrypt
+    AES_encrypt(in, out, key);
+    #else
+    #endif
     return;
 }
 #endif
