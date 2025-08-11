@@ -102,8 +102,10 @@ inline uint32_t byteArr2Int32(unsigned char* arr)
 AES_KEY* prf(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes_keys, uint32_t numKeys);
 
 #ifdef AESNI
-int aesni_set_encrypt_key(const unsigned char *userKey, int bits, AES_KEY *key);
-void aesni_encrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key);
+extern "C" {
+    int aesni_set_encrypt_key_wrapper(const unsigned char *userKey, int bits, AES_KEY *key);
+    void aesni_encrypt_wrapper(const unsigned char *in, unsigned char *out, const AES_KEY *key);
+}
 #endif
 
 #endif

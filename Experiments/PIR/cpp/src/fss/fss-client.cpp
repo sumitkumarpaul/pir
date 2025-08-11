@@ -1,5 +1,6 @@
 // This is the client side code that does the key generation
 #include "fss-client.h"
+#include "fss-common.h"
 
 void initializeClient(Fss* f, uint32_t numBits, uint32_t numParties) {
 #ifndef AESNI
@@ -21,12 +22,12 @@ void initializeClient(Fss* f, uint32_t numBits, uint32_t numParties) {
         }
 #ifndef AESNI
         if ((ecx & bit_AES) > 0) {
-            aesni_set_encrypt_key(rand_bytes, 128, &(f->aes_keys[i]));
+            aesni_set_encrypt_key_wrapper(rand_bytes, 128, &(f->aes_keys[i]));
         } else {
             AES_set_encrypt_key(rand_bytes, 128, &(f->aes_keys[i]));
         }
 #else
-        aesni_set_encrypt_key(rand_bytes, 128, &(f->aes_keys[i]));
+        aesni_set_encrypt_key_wrapper(rand_bytes, 128, &(f->aes_keys[i]));
 #endif
     }
 

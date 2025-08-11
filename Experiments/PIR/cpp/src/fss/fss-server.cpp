@@ -44,7 +44,7 @@ void prf2(unsigned char* out, unsigned char* key, uint64_t in_size, AES_KEY* aes
     uint32_t num_keys_required = in_size/16;
 
     for (int i = 0; i < num_keys_required; i++) {
-        aesni_encrypt(key, out + (i*16), &aes_keys[i]);
+        aesni_encrypt_wrapper(key, out + (i*16), &aes_keys[i]);
     }
 
     xor_with_key_avx(out, key, in_size);
