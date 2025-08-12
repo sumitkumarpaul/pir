@@ -1,3 +1,8 @@
+# Install OpenSSL library
+```
+sudo apt-get install libssl-dev
+```
+
 # Build and install OpenFHE library (for FHE encryption) in the default path
 
 Details can be found [here] (https://openfhe-development.readthedocs.io/en/latest/sphinx_rsts/intro/installation/installation.html).
@@ -11,7 +16,7 @@ https://github.com/openfheorg/openfhe-development/blob/main/docs/static_docs/Bes
 
 Follow this [link](https://gmplib.org/manual/Installing-GMP) but use the following commandline arguments.
 ```
-./configure CFLAGS="-mavx512f -O3" CXXFLAGS="-mavx512f -O3"
+./configure CFLAGS="-mavx512f -O3" CXXFLAGS="-mavx512f -O3"  --enable-cxx
 sudo apt-get install m4
 ```
 
