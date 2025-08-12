@@ -102,7 +102,8 @@ link_directories(
 
 # Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
-add_executable(pir-test aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
+add_executable(pir-test fss/aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
+add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
 
 # Link libraries for sumit-experiment
 target_link_libraries(sumit-experiment
@@ -130,6 +131,17 @@ target_link_libraries(pir-test
     ${EXTRA_LIBS}
 )
 
+# Link libraries for server_alpha
+target_link_libraries(server_alpha
+    ${GMPXX_LIBRARIES}
+    ${GMP_LIBRARIES}
+    OpenMP::OpenMP_CXX
+    Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    crypto
+    ${EXTRA_LIBS}
+)
 # Optionally, add more executables as needed:
 # add_executable(other-exe other-source.cpp)
 # target_link_libraries(other-exe ...)
