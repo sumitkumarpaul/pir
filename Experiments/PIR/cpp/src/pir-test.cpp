@@ -7,8 +7,7 @@
 #include <immintrin.h>  // Include AVX header
 #include <omp.h>
 #include <vector>
-#include <gmp.h>
-#include <gmpxx.h>
+#include "pir_common.h"
 #include <random>
 
 #define PROFILE
@@ -24,112 +23,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-class ElGamal {
-private:
-    
-public:
-    mpz_class p, q, g;  // p: large prime, q: subgroup order, g: generator
-    // Initialize with safe primes p, q where q|(p-1)
-    void setup(int p_bits = 3072, int q_bits = 256) {
-        // Generate q (256-bit prime)
-        gmp_randclass rng(gmp_randinit_default);
-        rng.seed(time(NULL));
-        
-        // First generate q
-        do {
-            // Generate a random prime q of q_bits size
-            q = rng.get_z_bits(q_bits);
-            // Get the next prime number
-            mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
-        } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits); // Ensure q is exactly q_bits long
-        
-        // Then generate p such that q|(p-1)
-        mpz_class temp;
-        do {
-            temp = rng.get_z_bits(p_bits - q_bits);
-            p = temp * q + 1;
-        } while (!mpz_probab_prime_p(p.get_mpz_t(), 25));// Repetition count of 25 for the primality test
-        
-        // Find generator g of order q
-        mpz_class h, exp;
-        exp = (p - 1) / q;
-        
-        // TODO: Verify the generator generation logic
-        do {
-            h = rng.get_z_range(p - 1) + 1;
-            mpz_powm(g.get_mpz_t(), h.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
-        } while (g == 1);
-    }
-    
-    // Generate random element in subgroup of order q
-    mpz_class randomGroupElement() {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class r = rng.get_z_range(q);
-        mpz_class result;
-        mpz_powm(result.get_mpz_t(), g.get_mpz_t(), r.get_mpz_t(), p.get_mpz_t());
-        return result;
-    }
-    
-    // ElGamal key generation
-    pair<mpz_class, mpz_class> keyGen() {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class x = rng.get_z_range(q);  // private key
-        mpz_class y;
-        mpz_powm(y.get_mpz_t(), g.get_mpz_t(), x.get_mpz_t(), p.get_mpz_t());  // public key
-        return make_pair(x, y);
-    }
-    
-    // ElGamal encryption
-    pair<mpz_class, mpz_class> encrypt(const mpz_class& message, const mpz_class& publicKey) {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class k = rng.get_z_range(q);  // random exponent
-        
-        mpz_class c1, c2;
-        mpz_powm(c1.get_mpz_t(), g.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
-        
-        mpz_class temp;
-        mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
-        c2 = (message * temp) % p;
-        
-        return make_pair(c1, c2);
-    }
-    
-    // ElGamal decryption
-    mpz_class decrypt(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
-        mpz_class c1 = ciphertext.first;
-        mpz_class c2 = ciphertext.second;
-        
-        mpz_class temp, inv_temp;
-        mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), p.get_mpz_t());
-        mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
-        
-        return (c2 * inv_temp) % p;
-    }
 
-    // ElGamal multiplication of ciphertexts
-    pair<mpz_class, mpz_class> mult_ct(const pair<mpz_class, mpz_class>& ciphertext1, const pair<mpz_class, mpz_class>& ciphertext2) {
-        mpz_class cm1 = (ciphertext1.first*ciphertext2.first) % p;
-        mpz_class cm2 = (ciphertext1.second*ciphertext2.second) % p;
-       
-        return make_pair(cm1, cm2);
-    }
-
-    // ElGamal exponentiation of ciphertexts
-    pair<mpz_class, mpz_class> exp_ct(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
-        mpz_class c1, c2;
-
-        // Exponentiate both the components of the ciphertexts
-        mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());       
-        mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
-
-        //TODO: Only for security purpose
-        // Generate a ciphertext of 1 with new randomness, which will make the scheme IND-CPA secure
-        auto [cI1, cI2] = encrypt(mpz_class(1), publicKey); // Encrypt 1 with public key
-
-        // Return the exponentiated ciphertext and the multiplcation of the ciphertext of 1
-        return mult_ct({c1, c2}, {cI1, cI2}); // Multiply the ciphertexts
-    }
-};
+// ...existing code...
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
@@ -305,51 +200,9 @@ int PIR_Experiment(int I) {
 
 
 
-// Encryptor: acts as server, receives public key, sends ciphertext and message
-void ElGamalEncryptorSocket(int port) {
-    int server_fd, new_socket;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-    char buffer[65536] = {0};
 
-    // Create socket file descriptor
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
-    listen(server_fd, 1);
-    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-
-    // Receive public key and params
-    int valread = read(new_socket, buffer, sizeof(buffer));
-    std::string received(buffer, valread);
-    // Expect: p\nq\ng\npub\n
-    size_t pos = 0;
-    std::vector<std::string> params;
-    while ((pos = received.find("\n")) != std::string::npos) {
-        params.push_back(received.substr(0, pos));
-        received.erase(0, pos + 1);
-    }
-    if (params.size() < 4) {
-        std::cerr << "Server: Invalid public key message" << std::endl;
-        close(new_socket); close(server_fd); return;
-    }
-    std::string p_str = params[0], q_str = params[1], g_str = params[2], pub_str = params[3];
-    ElGamal elgamal;
-    elgamal.p = mpz_class(p_str);
-    elgamal.q = mpz_class(q_str);
-    elgamal.g = mpz_class(g_str);
-    mpz_class pub(pub_str);
-    // Generate random message
-    mpz_class message = elgamal.randomGroupElement();
-    auto [c1, c2] = elgamal.encrypt(message, pub);
-    std::string msg = c1.get_str() + "\n" + c2.get_str() + "\n" + message.get_str() + "\n";
-    send(new_socket, msg.c_str(), msg.size(), 0);
-    close(new_socket); close(server_fd);
-}
+// Declaration for external use
+void ElGamalEncryptorSocket(int port);
 
 
 // Decryptor: acts as client, sends public key, receives ciphertext and message
@@ -432,15 +285,7 @@ void ElGamalDecryptorSocket(const std::string& server_ip, int port) {
 
 // Top-level function to run both threads
 void RunElGamalSocketDemo(const std::string& server_ip, int port) {
-    std::thread server_thread([port]() {
-        ElGamalEncryptorSocket(port);
-    });
-    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Ensure server starts first
-    std::thread client_thread([server_ip, port]() {
-        ElGamalDecryptorSocket(server_ip, port);
-    });
-    client_thread.join();
-    server_thread.join();
+    ElGamalDecryptorSocket(server_ip, port);
 }
 
 int main()

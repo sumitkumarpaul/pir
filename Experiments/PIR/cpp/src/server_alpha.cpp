@@ -17,113 +17,156 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <thread>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include "pir_common.h"
 
-class ElGamal {
-private:
-    
-public:
-    mpz_class p, q, g;  // p: large prime, q: subgroup order, g: generator
-    // Initialize with safe primes p, q where q|(p-1)
-    void setup(int p_bits = 3072, int q_bits = 256) {
-        // Generate q (256-bit prime)
-        gmp_randclass rng(gmp_randinit_default);
-        rng.seed(time(NULL));
-        
-        // First generate q
-        do {
-            // Generate a random prime q of q_bits size
-            q = rng.get_z_bits(q_bits);
-            // Get the next prime number
-            mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
-        } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits); // Ensure q is exactly q_bits long
-        
-        // Then generate p such that q|(p-1)
-        mpz_class temp;
-        do {
-            temp = rng.get_z_bits(p_bits - q_bits);
-            p = temp * q + 1;
-        } while (!mpz_probab_prime_p(p.get_mpz_t(), 25));// Repetition count of 25 for the primality test
-        
-        // Find generator g of order q
-        mpz_class h, exp;
-        exp = (p - 1) / q;
-        
-        // TODO: Verify the generator generation logic
-        do {
-            h = rng.get_z_range(p - 1) + 1;
-            mpz_powm(g.get_mpz_t(), h.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
-        } while (g == 1);
-    }
-    
-    // Generate random element in subgroup of order q
-    mpz_class randomGroupElement() {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class r = rng.get_z_range(q);
-        mpz_class result;
-        mpz_powm(result.get_mpz_t(), g.get_mpz_t(), r.get_mpz_t(), p.get_mpz_t());
-        return result;
-    }
-    
-    // ElGamal key generation
-    pair<mpz_class, mpz_class> keyGen() {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class x = rng.get_z_range(q);  // private key
-        mpz_class y;
-        mpz_powm(y.get_mpz_t(), g.get_mpz_t(), x.get_mpz_t(), p.get_mpz_t());  // public key
-        return make_pair(x, y);
-    }
-    
-    // ElGamal encryption
-    pair<mpz_class, mpz_class> encrypt(const mpz_class& message, const mpz_class& publicKey) {
-        gmp_randclass rng(gmp_randinit_default);
-        mpz_class k = rng.get_z_range(q);  // random exponent
-        
-        mpz_class c1, c2;
-        mpz_powm(c1.get_mpz_t(), g.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
-        
-        mpz_class temp;
-        mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
-        c2 = (message * temp) % p;
-        
-        return make_pair(c1, c2);
-    }
-    
-    // ElGamal decryption
-    mpz_class decrypt(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
-        mpz_class c1 = ciphertext.first;
-        mpz_class c2 = ciphertext.second;
-        
-        mpz_class temp, inv_temp;
-        mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), p.get_mpz_t());
-        mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
-        
-        return (c2 * inv_temp) % p;
-    }
 
-    // ElGamal multiplication of ciphertexts
-    pair<mpz_class, mpz_class> mult_ct(const pair<mpz_class, mpz_class>& ciphertext1, const pair<mpz_class, mpz_class>& ciphertext2) {
-        mpz_class cm1 = (ciphertext1.first*ciphertext2.first) % p;
-        mpz_class cm2 = (ciphertext1.second*ciphertext2.second) % p;
-       
-        return make_pair(cm1, cm2);
+// 1. Handles network communication, listens on port, receives message, returns data or error
+std::string ElGamalNetReceive(int port, bool& success) {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    char buffer[65536] = {0};
+    success = false;
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        std::cerr << "Server: Socket creation failed" << std::endl;
+        return "";
     }
-
-    // ElGamal exponentiation of ciphertexts
-    pair<mpz_class, mpz_class> exp_ct(const pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
-        mpz_class c1, c2;
-
-        // Exponentiate both the components of the ciphertexts
-        mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());       
-        mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
-
-        //TODO: Only for security purpose
-        // Generate a ciphertext of 1 with new randomness, which will make the scheme IND-CPA secure
-        auto [cI1, cI2] = encrypt(mpz_class(1), publicKey); // Encrypt 1 with public key
-
-        // Return the exponentiated ciphertext and the multiplcation of the ciphertext of 1
-        return mult_ct({c1, c2}, {cI1, cI2}); // Multiply the ciphertexts
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Server: setsockopt failed" << std::endl;
+        close(server_fd);
+        return "";
     }
-};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        std::cerr << "Server: Bind failed" << std::endl;
+        close(server_fd);
+        return "";
+    }
+    if (listen(server_fd, 1) < 0) {
+        std::cerr << "Server: Listen failed" << std::endl;
+        close(server_fd);
+        return "";
+    }
+    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+    if (new_socket < 0) {
+        std::cerr << "Server: Accept failed" << std::endl;
+        close(server_fd);
+        return "";
+    }
+    int valread = read(new_socket, buffer, sizeof(buffer));
+    if (valread <= 0) {
+        std::cerr << "Server: Read failed" << std::endl;
+        close(new_socket); close(server_fd);
+        return "";
+    }
+    std::string received(buffer, valread);
+    close(new_socket); close(server_fd);
+    success = true;
+    return received;
+}
+
+// 2. Deserializes and validates input, returns true if valid and fills params
+bool ElGamalDeserializeAndValidate(const std::string& data, std::vector<std::string>& params) {
+    params.clear();
+    std::string temp = data;
+    size_t pos = 0;
+    while ((pos = temp.find("\n")) != std::string::npos) {
+        params.push_back(temp.substr(0, pos));
+        temp.erase(0, pos + 1);
+    }
+    if (params.size() < 4) {
+        std::cerr << "Server: Invalid public key message (deserialization)" << std::endl;
+        return false;
+    }
+    // Optionally, check if params are valid numbers
+    for (int i = 0; i < 4; ++i) {
+        if (params[i].empty()) {
+            std::cerr << "Server: Empty parameter at index " << i << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+// 3. Performs ElGamal operations and sends result on the same socket
+void ElGamalPerformAndSend(const std::vector<std::string>& params, int client_socket) {
+    std::string p_str = params[0], q_str = params[1], g_str = params[2], pub_str = params[3];
+    ElGamal elgamal;
+    elgamal.p = mpz_class(p_str);
+    elgamal.q = mpz_class(q_str);
+    elgamal.g = mpz_class(g_str);
+    mpz_class pub(pub_str);
+    mpz_class message = elgamal.randomGroupElement();
+    auto [c1, c2] = elgamal.encrypt(message, pub);
+    std::string msg = c1.get_str() + "\n" + c2.get_str() + "\n" + message.get_str() + "\n";
+    send(client_socket, msg.c_str(), msg.size(), 0);
+}
+
+// Wrapper function to run the full encryptor logic
+void ElGamalEncryptorSocket(int port) {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    char buffer[65536] = {0};
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        std::cerr << "Server: Socket creation failed" << std::endl;
+        return;
+    }
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Server: setsockopt failed" << std::endl;
+        close(server_fd);
+        return;
+    }
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        std::cerr << "Server: Bind failed" << std::endl;
+        close(server_fd);
+        return;
+    }
+    if (listen(server_fd, 1) < 0) {
+        std::cerr << "Server: Listen failed" << std::endl;
+        close(server_fd);
+        return;
+    }
+    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+    if (new_socket < 0) {
+        std::cerr << "Server: Accept failed" << std::endl;
+        close(server_fd);
+        return;
+    }
+    int valread = read(new_socket, buffer, sizeof(buffer));
+    if (valread <= 0) {
+        std::cerr << "Server: Read failed" << std::endl;
+        close(new_socket); close(server_fd);
+        return;
+    }
+    std::string data(buffer, valread);
+    std::vector<std::string> params;
+    if (!ElGamalDeserializeAndValidate(data, params)) {
+        std::cerr << "Server: Deserialization error, aborting." << std::endl;
+        close(new_socket); close(server_fd);
+        return;
+    }
+    ElGamalPerformAndSend(params, new_socket);
+    close(new_socket); close(server_fd);
+}
+
 
 #define N 50000 // Size of the database, can be adjusted as needed
 // The value of N will determine the bitlength during the client initialization
@@ -297,128 +340,14 @@ int PIR_Experiment(int I) {
     return 1;
 }
 
-void TestElGamal() {
-    using namespace std::chrono;
-    std::cout << "=== ElGamal Test ===" << std::endl;
-    ElGamal elgamal;
-    int p_bits = 3072, q_bits = 256;
-
-    auto t_start = high_resolution_clock::now();
-    elgamal.setup(p_bits, q_bits);
-    auto t_setup = high_resolution_clock::now();
-    std::cout << "Setup complete." << std::endl;
-
-    // Print parameters
-    std::cout << "p (prime, " << p_bits << " bits): " << elgamal.p.get_str() << std::endl;
-    std::cout << "q (subgroup order, " << q_bits << " bits): " << elgamal.q.get_str() << std::endl;
-    std::cout << "g (generator): " << elgamal.g.get_str() << std::endl;
-
-    auto t_params = high_resolution_clock::now();
-
-    // Key generation
-    auto [priv, pub] = elgamal.keyGen();
-    auto t_keygen = high_resolution_clock::now();
-    std::cout << "Private key x: " << priv.get_str() << std::endl;
-    std::cout << "Public key y: " << pub.get_str() << std::endl;
-
-    // Choose a valid random message which belongs to the subgroup G
-    mpz_class m1 = elgamal.randomGroupElement();
-    
-    // Generate another random message
-    mpz_class m2 = elgamal.randomGroupElement();
-
-    // Finally generate a random exponent to test the ciphertext exponentiation
-    gmp_randclass rng(gmp_randinit_default);
-    rng.seed(time(NULL));
-    mpz_class exp = rng.get_z_range(elgamal.q);//Exponent must be in the range of [0, q-1], after which the value will repeat
-
-    auto t_message = high_resolution_clock::now();
-    std::cout << "Message to encrypt: " << m1.get_str() << std::endl;
-
-    // Encrypt m1
-    auto [c11, c12] = elgamal.encrypt(m1, pub);
-    std::cout << "Ciphertext c1: " << c11.get_str() << std::endl;
-    std::cout << "Ciphertext c2: " << c12.get_str() << std::endl;
-
-    // Encrypt m1
-    auto [c21, c22] = elgamal.encrypt(m2, pub);
-    auto t_encrypt = high_resolution_clock::now();
-    std::cout << "Ciphertext c1: " << c21.get_str() << std::endl;
-    std::cout << "Ciphertext c2: " << c22.get_str() << std::endl;
-
-    //Multiply the ciphertexts
-    auto [cm1, cm2] = elgamal.mult_ct({c11,c12}, {c21, c22});
-    auto t_mul = high_resolution_clock::now();
-
-    //Exponentiation of the ciphertexts
-    auto [ce1, ce2] = elgamal.exp_ct({c11,c12}, exp, pub);
-    auto t_exp = high_resolution_clock::now();
-
-    // Decrypt m1
-    mpz_class decrypted = elgamal.decrypt({c11, c12}, priv);
-    std::cout << "Decrypted message 1: " << decrypted.get_str() << std::endl;
-
-    // Check
-    if (decrypted == m1)
-        std::cout << "ElGamal Test: Success! Decrypted message matches original message 1." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Decrypt m2
-    decrypted = elgamal.decrypt({c21, c22}, priv);
-    std::cout << "Decrypted message 2: " << decrypted.get_str() << std::endl;
-
-    // Check
-    if (decrypted == m2)
-        std::cout << "ElGamal Test: Success! Decrypted message matches original message 2." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Decrypt {cm1, cm2}
-    decrypted = elgamal.decrypt({cm1, cm2}, priv);
-    std::cout << "Decrypted message from multiplied ciphertexts is: " << decrypted.get_str() << std::endl;
-
-    // Check
-    if (decrypted == ((m1*m2) % elgamal.p))
-        std::cout << "ElGamal Test: Success! Decrypted message matches m1*m2." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Decrypt {ce1, ce2}
-    decrypted = elgamal.decrypt({ce1, ce2}, priv);
-    auto t_decrypt = high_resolution_clock::now();
-    std::cout << "Decrypted message from exponentiation of ciphertext is: " << decrypted.get_str() << std::endl;
-
-    // Check
-    mpz_class m1_exp;
-    mpz_powm(m1_exp.get_mpz_t(), m1.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
-    if (decrypted == m1_exp)
-        std::cout << "ElGamal Test: Success! Decrypted message matches (m1^exp)mod p." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Print timing info
-    std::cout << "Time for setup: " << duration<double, std::milli>(t_setup - t_start).count() << " ms" << std::endl;
-    std::cout << "Time for printing parameters: " << duration<double, std::milli>(t_params - t_setup).count() << " ms" << std::endl;
-    std::cout << "Time for key generation: " << duration<double, std::milli>(t_keygen - t_params).count() << " ms" << std::endl;
-    std::cout << "Time for message generation: " << duration<double, std::milli>(t_message - t_keygen).count() << " ms" << std::endl;
-    std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count()/2 << " ms" << std::endl;
-    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_exp).count()/4 << " ms" << std::endl;
-    std::cout << "Time for ciphertext multiplication: " << duration<double, std::milli>(t_mul - t_encrypt).count()/2 << " ms" << std::endl;
-    std::cout << "Time for exponentiation of ciphertext: " << duration<double, std::milli>(t_exp - t_mul).count()/2 << " ms" << std::endl;
-    std::cout << "Total time: " << duration<double, std::milli>(t_decrypt - t_start).count() << " ms" << std::endl;
-
-    return;
-}
-
 int main()
 {
-    int I;
+    //int I;
     // Lets test for location I = 1234
     // First cheat and look for the tag of the element at location I
-    I = 1234;
+    //I = 1234;
 
-    PIR_Experiment(I); // Test with the first element in the database
+    //PIR_Experiment(I); // Test with the first element in the database
 
     //PIR_Experiment(0); // Test with the first element in the database
     //PIR_Experiment(49999); // Test with the last element in the database
@@ -426,6 +355,8 @@ int main()
     //PIR_Experiment(3000); // Test with the first element in the database
 
     //TestElGamal();
+
+    ElGamalEncryptorSocket(8080);
 
     return 0;
 }
