@@ -17,6 +17,12 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <thread>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 class ElGamal {
 private:
@@ -297,9 +303,59 @@ int PIR_Experiment(int I) {
     return 1;
 }
 
-void TestElGamal() {
+
+
+// Encryptor: acts as server, receives public key, sends ciphertext and message
+void ElGamalEncryptorSocket(int port) {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    char buffer[65536] = {0};
+
+    // Create socket file descriptor
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
+    listen(server_fd, 1);
+    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+
+    // Receive public key and params
+    int valread = read(new_socket, buffer, sizeof(buffer));
+    std::string received(buffer, valread);
+    // Expect: p\nq\ng\npub\n
+    size_t pos = 0;
+    std::vector<std::string> params;
+    while ((pos = received.find("\n")) != std::string::npos) {
+        params.push_back(received.substr(0, pos));
+        received.erase(0, pos + 1);
+    }
+    if (params.size() < 4) {
+        std::cerr << "Server: Invalid public key message" << std::endl;
+        close(new_socket); close(server_fd); return;
+    }
+    std::string p_str = params[0], q_str = params[1], g_str = params[2], pub_str = params[3];
+    ElGamal elgamal;
+    elgamal.p = mpz_class(p_str);
+    elgamal.q = mpz_class(q_str);
+    elgamal.g = mpz_class(g_str);
+    mpz_class pub(pub_str);
+    // Generate random message
+    mpz_class message = elgamal.randomGroupElement();
+    auto [c1, c2] = elgamal.encrypt(message, pub);
+    std::string msg = c1.get_str() + "\n" + c2.get_str() + "\n" + message.get_str() + "\n";
+    send(new_socket, msg.c_str(), msg.size(), 0);
+    close(new_socket); close(server_fd);
+}
+
+
+// Decryptor: acts as client, sends public key, receives ciphertext and message
+void ElGamalDecryptorSocket(const std::string& server_ip, int port) {
     using namespace std::chrono;
-    std::cout << "=== ElGamal Test ===" << std::endl;
+    std::cout << "=== ElGamal Test (Socket) ===" << std::endl;
     ElGamal elgamal;
     int p_bits = 3072, q_bits = 256;
 
@@ -307,12 +363,9 @@ void TestElGamal() {
     elgamal.setup(p_bits, q_bits);
     auto t_setup = high_resolution_clock::now();
     std::cout << "Setup complete." << std::endl;
-
-    // Print parameters
     std::cout << "p (prime, " << p_bits << " bits): " << elgamal.p.get_str() << std::endl;
     std::cout << "q (subgroup order, " << q_bits << " bits): " << elgamal.q.get_str() << std::endl;
     std::cout << "g (generator): " << elgamal.g.get_str() << std::endl;
-
     auto t_params = high_resolution_clock::now();
 
     // Key generation
@@ -321,94 +374,73 @@ void TestElGamal() {
     std::cout << "Private key x: " << priv.get_str() << std::endl;
     std::cout << "Public key y: " << pub.get_str() << std::endl;
 
-    // Choose a valid random message which belongs to the subgroup G
-    mpz_class m1 = elgamal.randomGroupElement();
-    
-    // Generate another random message
-    mpz_class m2 = elgamal.randomGroupElement();
+    // Serialize parameters
+    std::string p_str = elgamal.p.get_str();
+    std::string q_str = elgamal.q.get_str();
+    std::string g_str = elgamal.g.get_str();
+    std::string pub_str = pub.get_str();
 
-    // Finally generate a random exponent to test the ciphertext exponentiation
-    gmp_randclass rng(gmp_randinit_default);
-    rng.seed(time(NULL));
-    mpz_class exp = rng.get_z_range(elgamal.q);//Exponent must be in the range of [0, q-1], after which the value will repeat
+    // Connect to server
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    char buffer[65536] = {0};
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+    inet_pton(AF_INET, server_ip.c_str(), &serv_addr.sin_addr);
+    while (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait for server
+    }
+    // Send public key and params
+    std::string msg = p_str + "\n" + q_str + "\n" + g_str + "\n" + pub_str + "\n";
+    send(sock, msg.c_str(), msg.size(), 0);
+    // Receive ciphertext and message
+    int valread = read(sock, buffer, sizeof(buffer));
+    std::string received(buffer, valread);
+    // Expect: c1\nc2\nmessage\n
+    size_t pos = 0;
+    std::vector<std::string> params;
+    while ((pos = received.find("\n")) != std::string::npos) {
+        params.push_back(received.substr(0, pos));
+        received.erase(0, pos + 1);
+    }
+    if (params.size() < 3) {
+        std::cerr << "Client: Invalid ciphertext message" << std::endl;
+        close(sock); return;
+    }
+    std::string ciphertext1_str = params[0], ciphertext2_str = params[1], message_str = params[2];
+    close(sock);
 
-    auto t_message = high_resolution_clock::now();
-    std::cout << "Message to encrypt: " << m1.get_str() << std::endl;
+    // Deserialize ciphertext and message
+    mpz_class c1(ciphertext1_str), c2(ciphertext2_str), message(message_str);
 
-    // Encrypt m1
-    auto [c11, c12] = elgamal.encrypt(m1, pub);
-    std::cout << "Ciphertext c1: " << c11.get_str() << std::endl;
-    std::cout << "Ciphertext c2: " << c12.get_str() << std::endl;
+    // Decrypt
+    mpz_class decrypted = elgamal.decrypt({c1, c2}, priv);
+    std::cout << "Decrypted message: " << decrypted.get_str() << std::endl;
+    std::cout << "Original message: " << message.get_str() << std::endl;
 
-    // Encrypt m1
-    auto [c21, c22] = elgamal.encrypt(m2, pub);
-    auto t_encrypt = high_resolution_clock::now();
-    std::cout << "Ciphertext c1: " << c21.get_str() << std::endl;
-    std::cout << "Ciphertext c2: " << c22.get_str() << std::endl;
-
-    //Multiply the ciphertexts
-    auto [cm1, cm2] = elgamal.mult_ct({c11,c12}, {c21, c22});
-    auto t_mul = high_resolution_clock::now();
-
-    //Exponentiation of the ciphertexts
-    auto [ce1, ce2] = elgamal.exp_ct({c11,c12}, exp, pub);
-    auto t_exp = high_resolution_clock::now();
-
-    // Decrypt m1
-    mpz_class decrypted = elgamal.decrypt({c11, c12}, priv);
-    std::cout << "Decrypted message 1: " << decrypted.get_str() << std::endl;
-
-    // Check
-    if (decrypted == m1)
-        std::cout << "ElGamal Test: Success! Decrypted message matches original message 1." << std::endl;
+    // Verify
+    if (decrypted == message)
+        std::cout << "ElGamal Test: Success! Decrypted message matches original message." << std::endl;
     else
         std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
 
-    // Decrypt m2
-    decrypted = elgamal.decrypt({c21, c22}, priv);
-    std::cout << "Decrypted message 2: " << decrypted.get_str() << std::endl;
+    auto t_end = high_resolution_clock::now();
+    std::cout << "Total time: " << duration<double, std::milli>(t_end - t_start).count() << " ms" << std::endl;
+}
 
-    // Check
-    if (decrypted == m2)
-        std::cout << "ElGamal Test: Success! Decrypted message matches original message 2." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
 
-    // Decrypt {cm1, cm2}
-    decrypted = elgamal.decrypt({cm1, cm2}, priv);
-    std::cout << "Decrypted message from multiplied ciphertexts is: " << decrypted.get_str() << std::endl;
-
-    // Check
-    if (decrypted == ((m1*m2) % elgamal.p))
-        std::cout << "ElGamal Test: Success! Decrypted message matches m1*m2." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Decrypt {ce1, ce2}
-    decrypted = elgamal.decrypt({ce1, ce2}, priv);
-    auto t_decrypt = high_resolution_clock::now();
-    std::cout << "Decrypted message from exponentiation of ciphertext is: " << decrypted.get_str() << std::endl;
-
-    // Check
-    mpz_class m1_exp;
-    mpz_powm(m1_exp.get_mpz_t(), m1.get_mpz_t(), exp.get_mpz_t(), elgamal.p.get_mpz_t());
-    if (decrypted == m1_exp)
-        std::cout << "ElGamal Test: Success! Decrypted message matches (m1^exp)mod p." << std::endl;
-    else
-        std::cout << "ElGamal Test: Failure! Decrypted message does not match." << std::endl;
-
-    // Print timing info
-    std::cout << "Time for setup: " << duration<double, std::milli>(t_setup - t_start).count() << " ms" << std::endl;
-    std::cout << "Time for printing parameters: " << duration<double, std::milli>(t_params - t_setup).count() << " ms" << std::endl;
-    std::cout << "Time for key generation: " << duration<double, std::milli>(t_keygen - t_params).count() << " ms" << std::endl;
-    std::cout << "Time for message generation: " << duration<double, std::milli>(t_message - t_keygen).count() << " ms" << std::endl;
-    std::cout << "Time for encryption: " << duration<double, std::milli>(t_encrypt - t_message).count()/2 << " ms" << std::endl;
-    std::cout << "Time for decryption: " << duration<double, std::milli>(t_decrypt - t_exp).count()/4 << " ms" << std::endl;
-    std::cout << "Time for ciphertext multiplication: " << duration<double, std::milli>(t_mul - t_encrypt).count()/2 << " ms" << std::endl;
-    std::cout << "Time for exponentiation of ciphertext: " << duration<double, std::milli>(t_exp - t_mul).count()/2 << " ms" << std::endl;
-    std::cout << "Total time: " << duration<double, std::milli>(t_decrypt - t_start).count() << " ms" << std::endl;
-
-    return;
+// Top-level function to run both threads
+void RunElGamalSocketDemo(const std::string& server_ip, int port) {
+    std::thread server_thread([port]() {
+        ElGamalEncryptorSocket(port);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Ensure server starts first
+    std::thread client_thread([server_ip, port]() {
+        ElGamalDecryptorSocket(server_ip, port);
+    });
+    client_thread.join();
+    server_thread.join();
 }
 
 int main()
@@ -416,16 +448,19 @@ int main()
     int I;
     // Lets test for location I = 1234
     // First cheat and look for the tag of the element at location I
-    I = 1234;
+    //I = 1234;
 
-    PIR_Experiment(I); // Test with the first element in the database
+    //PIR_Experiment(I); // Test with the first element in the database
 
     //PIR_Experiment(0); // Test with the first element in the database
     //PIR_Experiment(49999); // Test with the last element in the database
     //PIR_Experiment(2555); // Test with the first element in the database
     //PIR_Experiment(3000); // Test with the first element in the database
 
-    //TestElGamal();
+    //ElGamalDecryptor();
 
+    std::string server_ip = "127.0.0.1";
+    int port = 8080;
+    RunElGamalSocketDemo(server_ip, port);
     return 0;
 }
