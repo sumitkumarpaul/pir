@@ -233,17 +233,9 @@ void ElGamalDecryptorSocket(const std::string& server_ip, int port) {
     std::string g_str = elgamal.g.get_str();
     std::string pub_str = pub.get_str();
 
-    // Connect to server
-    int sock = 0;
-    struct sockaddr_in serv_addr;
+    int sock;
     char buffer[65536] = {0};
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-    inet_pton(AF_INET, server_ip.c_str(), &serv_addr.sin_addr);
-    while (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait for server
-    }
+    InitConnectingSocket(server_ip, port, &sock);
     // Send public key and params
     std::string msg = p_str + "\n" + q_str + "\n" + g_str + "\n" + pub_str + "\n";
     send(sock, msg.c_str(), msg.size(), 0);

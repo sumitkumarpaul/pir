@@ -3,6 +3,17 @@
 #include <gmpxx.h>
 #include <string>
 #include <utility>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
+#include <cassert>
+#include <iostream>
+#include <string>
+#include <chrono>
+#include <thread>
+
 
 class ElGamal {
 public:
@@ -80,3 +91,8 @@ inline std::pair<mpz_class, mpz_class> ElGamal::exp_ct(const std::pair<mpz_class
     auto [cI1, cI2] = encrypt(mpz_class(1), publicKey);
     return mult_ct({c1, c2}, {cI1, cI2});
 }
+
+// Networking related functions
+void FinishAcceptingSocket(int server_fd, int new_socket);
+int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
+void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()

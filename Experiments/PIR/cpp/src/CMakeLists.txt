@@ -102,8 +102,8 @@ link_directories(
 
 # Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
-add_executable(pir-test fss/aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
-add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp)
+add_executable(pir-test fss/aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
+add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 
 # Link libraries for sumit-experiment
 target_link_libraries(sumit-experiment

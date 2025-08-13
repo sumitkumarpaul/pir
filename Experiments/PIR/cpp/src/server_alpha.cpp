@@ -1,4 +1,3 @@
-#include <chrono>
 #include <assert.h>
 #include <stdio.h>
 #include "fss/fss-common.h"
@@ -14,67 +13,11 @@
 #define PROFILE
 #define NUM_CPU_CORES 16
 
-#include <fstream>
-#include <iostream>
 #include <iterator>
-#include <thread>
 #include <cstring>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <unistd.h>
 #include "pir_common.h"
 
-
-// 1. Handles network communication, listens on port, receives message, returns data or error
-std::string ElGamalNetReceive(int port, bool& success) {
-    int server_fd, new_socket;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-    char buffer[65536] = {0};
-    success = false;
-
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        std::cerr << "Server: Socket creation failed" << std::endl;
-        return "";
-    }
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
-        std::cerr << "Server: setsockopt failed" << std::endl;
-        close(server_fd);
-        return "";
-    }
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        std::cerr << "Server: Bind failed" << std::endl;
-        close(server_fd);
-        return "";
-    }
-    if (listen(server_fd, 1) < 0) {
-        std::cerr << "Server: Listen failed" << std::endl;
-        close(server_fd);
-        return "";
-    }
-    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (new_socket < 0) {
-        std::cerr << "Server: Accept failed" << std::endl;
-        close(server_fd);
-        return "";
-    }
-    int valread = read(new_socket, buffer, sizeof(buffer));
-    if (valread <= 0) {
-        std::cerr << "Server: Read failed" << std::endl;
-        close(new_socket); close(server_fd);
-        return "";
-    }
-    std::string received(buffer, valread);
-    close(new_socket); close(server_fd);
-    success = true;
-    return received;
-}
 
 // 2. Deserializes and validates input, returns true if valid and fills params
 bool ElGamalDeserializeAndValidate(const std::string& data, std::vector<std::string>& params) {
@@ -113,49 +56,25 @@ void ElGamalPerformAndSend(const std::vector<std::string>& params, int client_so
     send(client_socket, msg.c_str(), msg.size(), 0);
 }
 
-// Wrapper function to run the full encryptor logic
-void ElGamalEncryptorSocket(int port) {
+void ElGamalEncryptor(int port) {
+    int ret = -1;
     int server_fd, new_socket;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
     char buffer[65536] = {0};
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        std::cerr << "Server: Socket creation failed" << std::endl;
+    ret = InitAcceptingSocket(port, &server_fd, &new_socket);
+
+    if (ret != 0) {
+        std::cerr << "Server: Failed to initialize accepting socket" << std::endl;
         return;
     }
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
-        std::cerr << "Server: setsockopt failed" << std::endl;
-        close(server_fd);
-        return;
-    }
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        std::cerr << "Server: Bind failed" << std::endl;
-        close(server_fd);
-        return;
-    }
-    if (listen(server_fd, 1) < 0) {
-        std::cerr << "Server: Listen failed" << std::endl;
-        close(server_fd);
-        return;
-    }
-    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (new_socket < 0) {
-        std::cerr << "Server: Accept failed" << std::endl;
-        close(server_fd);
-        return;
-    }
-    int valread = read(new_socket, buffer, sizeof(buffer));
+
+    int valread = recv(new_socket, buffer, sizeof(buffer), 0);
     if (valread <= 0) {
         std::cerr << "Server: Read failed" << std::endl;
         close(new_socket); close(server_fd);
         return;
     }
+
     std::string data(buffer, valread);
     std::vector<std::string> params;
     if (!ElGamalDeserializeAndValidate(data, params)) {
@@ -164,7 +83,8 @@ void ElGamalEncryptorSocket(int port) {
         return;
     }
     ElGamalPerformAndSend(params, new_socket);
-    close(new_socket); close(server_fd);
+
+    FinishAcceptingSocket(server_fd, new_socket);
 }
 
 
@@ -356,7 +276,7 @@ int main()
 
     //TestElGamal();
 
-    ElGamalEncryptorSocket(8080);
+    ElGamalEncryptor(8080);
 
     return 0;
 }
