@@ -102,8 +102,9 @@ link_directories(
 
 # Add all your executables here
 add_executable(sumit-experiment sumit-experiment.cpp)
-add_executable(pir-test fss/aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
+#add_executable(pir-test fss/aesni-x86_64.S fss/aesni_wrapper.c pir-test.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
+add_executable(server_beta fss/aesni-x86_64.S fss/aesni_wrapper.c server_beta.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 
 # Link libraries for sumit-experiment
 target_link_libraries(sumit-experiment
@@ -120,7 +121,19 @@ target_link_libraries(sumit-experiment
 )
 
 # Link libraries for pir-test
-target_link_libraries(pir-test
+#target_link_libraries(pir-test
+#    ${GMPXX_LIBRARIES}
+#    ${GMP_LIBRARIES}
+#    OpenMP::OpenMP_CXX
+#    Threads::Threads
+#    OpenSSL::SSL
+#    OpenSSL::Crypto
+#    crypto
+#    ${EXTRA_LIBS}
+#)
+
+# Link libraries for server_alpha
+target_link_libraries(server_alpha
     ${GMPXX_LIBRARIES}
     ${GMP_LIBRARIES}
     OpenMP::OpenMP_CXX
@@ -131,8 +144,8 @@ target_link_libraries(pir-test
     ${EXTRA_LIBS}
 )
 
-# Link libraries for server_alpha
-target_link_libraries(server_alpha
+# Link libraries for server_beta
+target_link_libraries(server_beta
     ${GMPXX_LIBRARIES}
     ${GMP_LIBRARIES}
     OpenMP::OpenMP_CXX

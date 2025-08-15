@@ -1,3 +1,59 @@
+#include <gmp.h>
+#include <gmpxx.h>
+#include <ctime>
+
+// Global ElGamal parameters
+mpz_class p, q, r, g;
+
+mpz_class ElGamal_randomGroupElement() {
+    gmp_randclass rng(gmp_randinit_default);
+    mpz_class r = rng.get_z_range(q);
+    mpz_class result;
+    mpz_powm(result.get_mpz_t(), g.get_mpz_t(), r.get_mpz_t(), p.get_mpz_t());
+    return result;
+}
+
+std::pair<mpz_class, mpz_class> ElGamal_keyGen() {
+    gmp_randclass rng(gmp_randinit_default);
+    mpz_class x = rng.get_z_range(q);
+    mpz_class y;
+    mpz_powm(y.get_mpz_t(), g.get_mpz_t(), x.get_mpz_t(), p.get_mpz_t());
+    return std::make_pair(x, y);
+}
+
+std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const mpz_class& publicKey) {
+    gmp_randclass rng(gmp_randinit_default);
+    mpz_class k = rng.get_z_range(q);
+    mpz_class c1, c2;
+    mpz_powm(c1.get_mpz_t(), g.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
+    mpz_class temp;
+    mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), p.get_mpz_t());
+    c2 = (message * temp) % p;
+    return std::make_pair(c1, c2);
+}
+
+mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
+    mpz_class c1 = ciphertext.first;
+    mpz_class c2 = ciphertext.second;
+    mpz_class temp, inv_temp;
+    mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), p.get_mpz_t());
+    mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
+    return (c2 * inv_temp) % p;
+}
+
+std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2) {
+    mpz_class cm1 = (ciphertext1.first * ciphertext2.first) % p;
+    mpz_class cm2 = (ciphertext1.second * ciphertext2.second) % p;
+    return std::make_pair(cm1, cm2);
+}
+
+std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
+    mpz_class c1, c2;
+    mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+    mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+    auto [cI1, cI2] = ElGamal_encrypt(mpz_class(1), publicKey);
+    return ElGamal_mult_ct({c1, c2}, {cI1, cI2});
+}
 #include "pir_common.h"
 
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {

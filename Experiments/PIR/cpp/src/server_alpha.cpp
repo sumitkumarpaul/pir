@@ -44,14 +44,13 @@ bool ElGamalDeserializeAndValidate(const std::string& data, std::vector<std::str
 
 // 3. Performs ElGamal operations and sends result on the same socket
 void ElGamalPerformAndSend(const std::vector<std::string>& params, int client_socket) {
-    std::string p_str = params[0], q_str = params[1], g_str = params[2], pub_str = params[3];
-    ElGamal elgamal;
-    elgamal.p = mpz_class(p_str);
-    elgamal.q = mpz_class(q_str);
-    elgamal.g = mpz_class(g_str);
-    mpz_class pub(pub_str);
-    mpz_class message = elgamal.randomGroupElement();
-    auto [c1, c2] = elgamal.encrypt(message, pub);
+    // Set global parameters from received values
+    p = mpz_class(params[0]);
+    q = mpz_class(params[1]);
+    g = mpz_class(params[2]);
+    mpz_class pub(params[3]);
+    mpz_class message = ElGamal_randomGroupElement();
+    auto [c1, c2] = ElGamal_encrypt(message, pub);
     std::string msg = c1.get_str() + "\n" + c2.get_str() + "\n" + message.get_str() + "\n";
     send(client_socket, msg.c_str(), msg.size(), 0);
 }
