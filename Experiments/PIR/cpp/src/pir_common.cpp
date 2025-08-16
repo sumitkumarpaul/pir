@@ -5,6 +5,11 @@
 // Global ElGamal parameters
 mpz_class p, q, r, g;
 
+// El-Gamal encryption keys
+mpz_class pk_E;
+mpz_class sk_E;
+
+
 mpz_class ElGamal_randomGroupElement() {
     gmp_randclass rng(gmp_randinit_default);
     mpz_class r = rng.get_z_range(q);
@@ -13,7 +18,7 @@ mpz_class ElGamal_randomGroupElement() {
     return result;
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_keyGen() {
+std::pair<mpz_class, mpz_class> ElGamal_keyGen(const mpz_class& p, const mpz_class& q, const mpz_class& g) {
     gmp_randclass rng(gmp_randinit_default);
     mpz_class x = rng.get_z_range(q);
     mpz_class y;
@@ -60,7 +65,6 @@ int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
-    char buffer[65536] = {0};
     *p_new_socket = -1;
     *p_server_fd = -1;
     int ret = -1;

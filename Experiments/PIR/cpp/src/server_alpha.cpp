@@ -19,6 +19,8 @@
 #include "pir_common.h"
 
 
+int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
+
 // 2. Deserializes and validates input, returns true if valid and fills params
 bool ElGamalDeserializeAndValidate(const std::string& data, std::vector<std::string>& params) {
     params.clear();
@@ -259,6 +261,66 @@ int PIR_Experiment(int I) {
     return 1;
 }
 
+int InitializeServerAlpha(){
+    int ret = -1;
+    char buffer[65536] = {0};
+    
+    // Server_alpha only connects to other servers, it does not listen
+    InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
+
+    #if 0
+    InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
+    #endif
+
+    int valread = recv(sock_alpha_to_beta, buffer, sizeof(buffer), 0);
+    if (valread <= 0) {
+        std::cerr << "Server: Read failed, closing connection with Server Beta" << std::endl;
+        close(sock_alpha_to_beta);
+        return -1;
+    }
+
+    std::string data(buffer, valread);
+    std::vector<std::string> params;
+    size_t pos = 0;
+    while ((pos = data.find("\n")) != std::string::npos) {
+        params.push_back(data.substr(0, pos));
+        data.erase(0, pos + 1);
+    }
+    // If last param is not empty, add it
+    if (!data.empty()) params.push_back(data);
+
+    // Expecting at least 5 parameters: p, q, g, r, pk_E
+    if (params.size() < 5) {
+        std::cerr << "Server Alpha: Received insufficient parameters (" << params.size() << ")" << std::endl;
+        close(sock_alpha_to_beta);
+        return -1;
+    }
+
+    // Extract and convert
+    mpz_class p_local, q_local, g_local, r_local, pk_E_local;
+    try {
+        p_local = mpz_class(params[0]);
+        q_local = mpz_class(params[1]);
+        g_local = mpz_class(params[2]);
+        r_local = mpz_class(params[3]);
+        pk_E_local = mpz_class(params[4]);
+    } catch (...) {
+        std::cerr << "Server Alpha: Error converting parameters to mpz_class" << std::endl;
+        close(sock_alpha_to_beta);
+        return -1;
+    }
+
+    // Optionally print for debug
+    std::cout << "Server Alpha: Received parameters:" << std::endl;
+    std::cout << "p: " << p_local.get_str() << std::endl;
+    std::cout << "q: " << q_local.get_str() << std::endl;
+    std::cout << "g: " << g_local.get_str() << std::endl;
+    std::cout << "r: " << r_local.get_str() << std::endl;
+    std::cout << "pk_E: " << pk_E_local.get_str() << std::endl;
+
+    return 0;
+}
+
 int main()
 {
     //int I;
@@ -275,7 +337,9 @@ int main()
 
     //TestElGamal();
 
-    ElGamalEncryptor(8080);
+    //ElGamalEncryptor(8080);
+
+    InitializeServerAlpha();
 
     return 0;
 }

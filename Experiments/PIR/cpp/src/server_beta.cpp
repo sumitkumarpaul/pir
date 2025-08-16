@@ -5,6 +5,10 @@
 #include <algorithm> // std::swap
 #include "pir_common.h"
 
+static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
+static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
+
+
 // Function, which initializes p, q, g, GG(cyclic group) and r
 void Init_p_q_GG_r(int p_bits = 3072, int q_bits = 256, int r_bits = 64);
 
@@ -43,16 +47,68 @@ void Init_p_q_GG_r(int p_bits, int q_bits, int r_bits) {
     } while (mpz_sizeinbase(r.get_mpz_t(), 2) != r_bits);
 }
 
+int SendInitializedParamsToAllServers(){
+    int ret = 0;
+
+    //Try to send p, q, g, r, pk_E, TODO: pk_F
+    // Optionally print for debug
+    std::cout << "Server Beta: Sending parameters:" << std::endl;
+    std::cout << "p: " << p.get_str() << std::endl;
+    std::cout << "q: " << q.get_str() << std::endl;
+    std::cout << "g: " << g.get_str() << std::endl;
+    std::cout << "r: " << r.get_str() << std::endl;
+    std::cout << "pk_E: " << pk_E.get_str() << std::endl;
+
+    std::string msg = p.get_str() + "\n" + q.get_str() + "\n" + g.get_str() + "\n" + r.get_str() + "\n" + pk_E.get_str() + "\n" +  "\n";
+    ret = send(sock_beta_alpha_con, msg.c_str(), msg.size(), 0);
+
+    if (ret != msg.size()) {
+        std::cerr << "Server Beta: Failed to send all parameters to Server Alpha" << std::endl;
+        return -1;
+    }
+
+    #if 0//Now the gamma server does not exist
+    ret = send(sock_beta_to_gamma, msg.c_str(), msg.size(), 0);
+    if (ret != msg.size()) {
+        std::cerr << "Server Beta: Failed to send all parameters to Server Gamma" << std::endl;
+        return -1;
+    }
+    #endif
+
+    return ret;
+}
+
 int OneTimeInitialization(){
     int ret = 0;
 
-    Init_p_q_GG_r();
+    ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
 
-    //TODO Initialize El-Gamal key-pair
+    if (ret != 0) {
+        std::cerr << "Server Beta: Failed to initialize accepting socket for Server Alpha" << std::endl;
+        return -1;
+    }
+
+    #if 0
+    ret = InitAcceptingSocket(BETA_LISTENING_TO_GAMMA_PORT, &sock_beta_gamma_srv, &sock_beta_gamma_con);
+
+    if (ret != 0) {
+        std::cerr << "Server Beta: Failed to initialize accepting socket for Server Alpha" << std::endl;
+        return -1;
+    }
+    #endif
+
+    //Initialize p, q, g, GG(cyclic group) and r
+    Init_p_q_GG_r(P_BITS, Q_BITS, R_BITS);
+
+    //Initialize El-Gamal key-pair
+    std::tie(pk_E, sk_E) = ElGamal_keyGen(p, q, g);
 
     //TODO Initialize FHE key-pair
 
     //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
+    ret = SendInitializedParamsToAllServers();
+
+
     //Other parties must store them in their own pir_common.cpp file
 
     // Optionally print initialized values for debug
@@ -63,6 +119,21 @@ int OneTimeInitialization(){
     return ret;
 }
 
+int finalize_server_beta(){
+    int ret = 0;
+
+    // Close the sockets
+    if (sock_beta_alpha_srv != -1) {
+        close(sock_beta_alpha_srv);
+        sock_beta_alpha_srv = -1;
+    }
+    if (sock_beta_alpha_con != -1) {
+        close(sock_beta_alpha_con);
+        sock_beta_alpha_con = -1;
+    }
+
+    return ret;
+}
 
 int shuffle() {
     int ret = 0;
@@ -101,6 +172,6 @@ int shuffle() {
 }
 
 int main() {
-    shuffle(); // example
+    OneTimeInitialization(); // example
     return 0;
 }
