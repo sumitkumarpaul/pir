@@ -13,7 +13,17 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <random>
 
+#define LOG_LEVEL_SPECIAL   0
+#define LOG_LEVEL_ERROR     1
+#define LOG_LEVEL_INFO      2
+#define LOG_LEVEL_DEBUG     3
+#define LOG_LEVEL_TRACE     4
+
+#define SET_LOG_LEVEL LOG_LEVEL_TRACE
+
+#define NET_BUF_SZ  65536 //Size of the buffer used during transferring data over network
 
 #define SERVER_ALPHA_IP "192.168.16.246" // IP address of the server_alpha
 #define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
@@ -26,15 +36,19 @@
 #define N 16 // Number of elements in the plaintext database
 
 
-#define P_BITS  5 // Size of p in bits
-#define Q_BITS  3 // Size of q in bits
-#define R_BITS  2 // Size of r in bits
+#define P_BITS  3072//5 // Size of p in bits
+#define Q_BITS  256//3 // Size of q in bits
+#define R_BITS  64//2 // Size of r in bits
 
 
 // Global ElGamal parameters
 extern mpz_class p, q, r, g;
 
 extern mpz_class pk_E, sk_E;
+
+//Function prototypes
+//Logging related
+void PrintLog(int log_level, const char* file, int line, const std::string& message);
 
 // ElGamal cryptographic functions using global parameters
 mpz_class ElGamal_randomGroupElement();

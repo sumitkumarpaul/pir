@@ -5,17 +5,24 @@
 #include <algorithm> // std::swap
 #include "pir_common.h"
 
+//Global variables
+static char net_buf[NET_BUF_SZ] = {0};
+
 static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
 
 
-// Function, which initializes p, q, g, GG(cyclic group) and r
-void Init_p_q_GG_r(int p_bits = 3072, int q_bits = 256, int r_bits = 64);
+// Function declarations
+static void Init_p_q_g_r(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
+static int shuffle();
+static void TestSrv_beta();
+static int shuffle();
+static int FinSrv_beta();
+static int InitSrv_beta();
+static int OneTimeInitialization();
+static int SendInitializedParamsToAllServers();
 
-
-int shuffle();
-
-void Init_p_q_GG_r(int p_bits, int q_bits, int r_bits) {
+static void Init_p_q_g_r(int p_bits, int q_bits, int r_bits) {
     gmp_randclass rng(gmp_randinit_default);
     rng.seed(time(NULL));
     
@@ -25,7 +32,7 @@ void Init_p_q_GG_r(int p_bits, int q_bits, int r_bits) {
         mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
     } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits);
 
-    //Accordingly choose q
+    //Accordingly choose p
     mpz_class temp;
     do {
         temp = rng.get_z_bits(p_bits - q_bits);
@@ -45,46 +52,55 @@ void Init_p_q_GG_r(int p_bits, int q_bits, int r_bits) {
         r = rng.get_z_bits(r_bits);
         mpz_nextprime(r.get_mpz_t(), r.get_mpz_t());
     } while (mpz_sizeinbase(r.get_mpz_t(), 2) != r_bits);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Initialized p,q,g and r");
+
+    return;
 }
 
-int SendInitializedParamsToAllServers(){
+static int SendInitializedParamsToAllServers(){
     int ret = 0;
-
-    //Try to send p, q, g, r, pk_E, TODO: pk_F
-    // Optionally print for debug
-    std::cout << "Server Beta: Sending parameters:" << std::endl;
-    std::cout << "p: " << p.get_str() << std::endl;
-    std::cout << "q: " << q.get_str() << std::endl;
-    std::cout << "g: " << g.get_str() << std::endl;
-    std::cout << "r: " << r.get_str() << std::endl;
-    std::cout << "pk_E: " << pk_E.get_str() << std::endl;
 
     std::string msg = p.get_str() + "\n" + q.get_str() + "\n" + g.get_str() + "\n" + r.get_str() + "\n" + pk_E.get_str() + "\n" +  "\n";
     ret = send(sock_beta_alpha_con, msg.c_str(), msg.size(), 0);
 
     if (ret != msg.size()) {
-        std::cerr << "Server Beta: Failed to send all parameters to Server Alpha" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send all parameters to Server Alpha");
         return -1;
+    } else {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully sent all parameters to Server Alpha");
     }
 
     #if 0//Now the gamma server does not exist
     ret = send(sock_beta_to_gamma, msg.c_str(), msg.size(), 0);
     if (ret != msg.size()) {
-        std::cerr << "Server Beta: Failed to send all parameters to Server Gamma" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send all parameters to Server Gamma");
         return -1;
+    } else {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully sent all parameters to Server Gamma");
     }
     #endif
 
     return ret;
 }
 
-int OneTimeInitialization(){
+static int OneTimeInitialization(){
     int ret = 0;
 
+    //Initialize p, q, g, GG(cyclic group) and r
+    Init_p_q_g_r(P_BITS, Q_BITS, R_BITS);
+
+    //Initialize El-Gamal key-pair
+    std::tie(pk_E, sk_E) = ElGamal_keyGen(p, q, g);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair");
+
+    //TODO Initialize FHE key-pair
+
+    //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
 
     if (ret != 0) {
-        std::cerr << "Server Beta: Failed to initialize accepting socket for Server Alpha" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Alpha!!");
         return -1;
     }
 
@@ -97,29 +113,24 @@ int OneTimeInitialization(){
     }
     #endif
 
-    //Initialize p, q, g, GG(cyclic group) and r
-    Init_p_q_GG_r(P_BITS, Q_BITS, R_BITS);
-
-    //Initialize El-Gamal key-pair
-    std::tie(pk_E, sk_E) = ElGamal_keyGen(p, q, g);
-
-    //TODO Initialize FHE key-pair
-
     //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
     ret = SendInitializedParamsToAllServers();
 
-
     //Other parties must store them in their own pir_common.cpp file
 
-    // Optionally print initialized values for debug
-    std::cout << "Initialized ElGamal params:" << std::endl;
-    std::cout << "p: " << p.get_str() << std::endl;
-    std::cout << "q: " << q.get_str() << std::endl;
-    std::cout << "g: " << g.get_str() << std::endl;
     return ret;
 }
 
-int finalize_server_beta(){
+static int InitSrv_beta(){
+    int ret = 0;
+
+    // Initialize server beta
+    ret = OneTimeInitialization();
+
+    return ret;
+}
+
+static int FinSrv_beta(){
     int ret = 0;
 
     // Close the sockets
@@ -135,7 +146,7 @@ int finalize_server_beta(){
     return ret;
 }
 
-int shuffle() {
+static int shuffle() {
     int ret = 0;
     // compute size M = N + ceil(sqrt(N))
     unsigned int sqrt_N = static_cast<unsigned int>(std::ceil(std::sqrt(static_cast<double>(N))));
@@ -171,7 +182,92 @@ int shuffle() {
     return 0;
 }
 
+static void TestSrv_beta() {
+    int valread = recv(sock_beta_alpha_con, net_buf, sizeof(net_buf), 0);
+    if (valread <= 0) {
+        std::cerr << "Server Beta: Read failed, closing connection with Server Alpha. Received: " << valread << " from server beta" << std::endl;
+        close(sock_beta_alpha_con);
+        return;
+    }
+
+    std::string data(net_buf, valread);
+    std::vector<std::string> params;
+    size_t pos = 0;
+    while ((pos = data.find("\n")) != std::string::npos) {
+        params.push_back(data.substr(0, pos));
+        data.erase(0, pos + 1);
+    }
+    // If last param is not empty, add it
+    if (!data.empty()) params.push_back(data);
+
+    // Expecting at least 12 parameters: m1, m2, m3, m4, c11, c12, c21, c22, c31, c32, c41, c42
+    if (params.size() < 12) {
+        std::cerr << "Server Beta: Received insufficient parameters (" << params.size() << ")" << std::endl;
+        close(sock_beta_alpha_con);
+        return;
+    }
+
+    // Extract and convert
+
+    mpz_class m1_local, m2_local, m3_local, m4_local, c11_local, c12_local, c21_local, c22_local, c31_local, c32_local, c41_local, c42_local;
+    try {
+        m1_local = mpz_class(params[0]);
+        m2_local = mpz_class(params[1]);
+        m3_local = mpz_class(params[2]);
+        m4_local = mpz_class(params[3]);
+        c11_local = mpz_class(params[4]);
+        c12_local = mpz_class(params[5]);
+        c21_local = mpz_class(params[6]);
+        c22_local = mpz_class(params[7]);
+        c31_local = mpz_class(params[8]);
+        c32_local = mpz_class(params[9]);
+        c41_local = mpz_class(params[10]);
+        c42_local = mpz_class(params[11]);
+    } catch (...) {
+        std::cerr << "Server Beta: Error converting parameters to mpz_class" << std::endl;
+        close(sock_beta_alpha_con);
+        return;
+    }
+
+    mpz_class decrypted_m1 = ElGamal_decrypt({c11_local, c12_local}, sk_E);
+    mpz_class decrypted_m2 = ElGamal_decrypt({c21_local, c22_local}, sk_E);
+    mpz_class decrypted_m3 = ElGamal_decrypt({c31_local, c32_local}, sk_E);
+    mpz_class decrypted_m4 = ElGamal_decrypt({c41_local, c42_local}, sk_E);
+
+    if (decrypted_m1 != m1_local) {
+        std::cerr << "Server Beta: Decrypted m1: " << decrypted_m1.get_str() << " does not match with expected value: " << m1_local.get_str() << " !!" << std::endl;
+    } else {
+        std::cout << "Server Beta: Decrypted m1 matches with expected value" << std::endl;
+    }
+
+    if (decrypted_m2 != m2_local) {
+        std::cerr << "Server Beta: Decrypted m2: " << decrypted_m2.get_str() << " does not match with expected value: " << m2_local.get_str() << " !!" << std::endl;
+    } else {
+        std::cout << "Server Beta: Decrypted m2 matches with expected value" << std::endl;
+    }
+
+    if (decrypted_m3 != m3_local) {
+        std::cerr << "Server Beta: Decrypted m3: " << decrypted_m3.get_str() << " does not match with expected value: " << m3_local.get_str() << " !!" << std::endl;
+    } else {
+        std::cout << "Server Beta: Decrypted m3 matches with expected value" << std::endl;
+    }
+
+    if (decrypted_m4 != m4_local) {
+        std::cerr << "Server Beta: Decrypted m4: " << decrypted_m4.get_str() << " does not match with expected value: " << m4_local.get_str() << " !!" << std::endl;
+    } else {
+        std::cout << "Server Beta: Decrypted m4 matches with expected value" << std::endl;
+    }
+
+    return;
+}
+
 int main() {
-    OneTimeInitialization(); // example
+
+    InitSrv_beta();
+
+    TestSrv_beta();
+
+    FinSrv_beta();
+
     return 0;
 }
