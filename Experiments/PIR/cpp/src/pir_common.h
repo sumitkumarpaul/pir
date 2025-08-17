@@ -14,6 +14,18 @@
 #include <chrono>
 #include <thread>
 #include <random>
+#include <ctime>
+#include <iomanip>
+#include <fstream>
+#include <iterator>
+#include <openfhe.h>
+
+#include "ciphertext-ser.h"
+#include "cryptocontext-ser.h"
+#include "key/key-ser.h"
+#include "scheme/bgvrns/bgvrns-ser.h"
+
+using namespace lbcrypto;
 
 #define LOG_LEVEL_SPECIAL   0
 #define LOG_LEVEL_ERROR     1
@@ -46,6 +58,10 @@ extern mpz_class p, q, r, g;
 
 extern mpz_class pk_E, sk_E;
 
+extern PublicKey<DCRTPoly> pk_F;
+extern PrivateKey<DCRTPoly> sk_F;
+extern CryptoContext<DCRTPoly> FHEcryptoContext;
+
 //Function prototypes
 //Logging related
 void PrintLog(int log_level, const char* file, int line, const std::string& message);
@@ -62,3 +78,8 @@ std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_cl
 void FinishAcceptingSocket(int server_fd, int new_socket);
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
 void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()
+
+// FHE related functions
+int FHE_keyGen();
+Ciphertext<DCRTPoly> FHE_encSingleMsg(const Plaintext& pt);
+int FHE_sel(int select_bit);

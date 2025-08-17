@@ -79,7 +79,8 @@ static int RecvInitParamsFromBeta() {
     // If last param is not empty, add it
     if (!data.empty()) params.push_back(data);
 
-    // Expecting at least 5 parameters: p, q, g, r, pk_E
+    // Expecting at least 7 parameters: p, q, g, r, pk_E, FHEcryptoContext, pk_F
+    //if (params.size() < 7) {
     if (params.size() < 5) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Received insufficient parameters (" + std::to_string(params.size()) + ")");
         close(sock_alpha_to_beta);
@@ -93,8 +94,10 @@ static int RecvInitParamsFromBeta() {
         g = mpz_class(params[2]);
         r = mpz_class(params[3]);
         pk_E = mpz_class(params[4]);
+        //Serial::DeserializeFromString(FHEcryptoContext, params[5]);
+        //Serial::DeserializeFromString(pk_F, params[6]);
     } catch (...) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Error converting parameters to mpz_class");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Error converting received message to expected format");
         close(sock_alpha_to_beta);
         return -1;
     }
@@ -138,7 +141,18 @@ static void TestSrv_alpha(){
     auto [c31, c32] = ElGamal_mult_ct({c11, c12}, {c21, c22});
     auto [c41, c42] = ElGamal_exp_ct({c11, c12}, exp, pk_E);
 
+    #if 0
+    std::vector<int64_t> vectorOfInts1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    Plaintext plaintext1               = FHEcryptoContext->MakePackedPlaintext(vectorOfInts1);
+
+    // The encoded vectors are encrypted
+    //auto FHE_c1 = FHEcryptoContext->Encrypt(pk_F, plaintext1);
+    auto FHE_c1 = FHE_encSingleMsg(plaintext1);
+
+    std::string msg = m1.get_str() + "\n" + m2.get_str() + "\n" + m3.get_str() + "\n" + m4.get_str() + "\n" + c11.get_str() + "\n" + c12.get_str() + "\n" + c21.get_str() + "\n" + c22.get_str() + "\n" + c31.get_str() + "\n" + c32.get_str() + "\n" + c41.get_str() + "\n" + c42.get_str() + "\n" + Serial::SerializeToString(FHE_c1) + "\n";
+    #else
     std::string msg = m1.get_str() + "\n" + m2.get_str() + "\n" + m3.get_str() + "\n" + m4.get_str() + "\n" + c11.get_str() + "\n" + c12.get_str() + "\n" + c21.get_str() + "\n" + c22.get_str() + "\n" + c31.get_str() + "\n" + c32.get_str() + "\n" + c41.get_str() + "\n" + c42.get_str() + "\n";
+    #endif
     ret = send(sock_alpha_to_beta, msg.c_str(), msg.size(), 0);
 
     if (ret != msg.size()) {

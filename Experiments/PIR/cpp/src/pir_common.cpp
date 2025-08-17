@@ -1,8 +1,8 @@
-#include <gmp.h>
-#include <gmpxx.h>
-#include <ctime>
-#include <iomanip>
 #include "pir_common.h"
+
+
+#define TIC1(t)    t = std::chrono::high_resolution_clock::now()
+#define TOC1(t)    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t).count()
 
 
 // Global ElGamal parameters
@@ -11,6 +11,12 @@ mpz_class p, q, r, g;
 // El-Gamal encryption keys
 mpz_class pk_E;
 mpz_class sk_E;
+
+// FHE encryption keys
+PublicKey<DCRTPoly> pk_F;
+PrivateKey<DCRTPoly> sk_F;
+CryptoContext<DCRTPoly> FHEcryptoContext;
+
 
 void PrintLog(int log_level, const char* file, int line, const std::string& message) {
 
@@ -45,6 +51,7 @@ void PrintLog(int log_level, const char* file, int line, const std::string& mess
     }
 }
 
+// El-Gamal related functions
 mpz_class ElGamal_randomGroupElement() {
     gmp_randclass rng(gmp_randinit_default);
     // good-ish seed source: std::random_device (combine two samples)
@@ -115,6 +122,7 @@ std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_cl
 #endif
 }
 
+// Networking related functions
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
     struct sockaddr_in address;
     int opt = 1;
@@ -188,3 +196,201 @@ void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock) {
     return;
 }
 
+// FHE related functions
+int FHE_keyGen(){
+    ////////////////////////////////////////////////////////////
+    // Set-up of parameters
+    ////////////////////////////////////////////////////////////
+    KeyPair<DCRTPoly> keyPair;
+
+    // Crypto Parameters
+    // # of evalMults = 3 (first 3) is used to support the multiplication of 7
+    // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
+    // generate homomorphic evaluation multiplication keys for s^2 and s^3
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
+    //At this moment, using the value mentioned in the original example.
+    parameters.SetMaxRelinSkDeg(1);//What does this value mean?
+    parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result
+
+    FHEcryptoContext = GenCryptoContext(parameters);
+    // enable features that you wish to use
+    FHEcryptoContext->Enable(PKE);
+    //FHEcryptoContext->Enable(KEYSWITCH);
+    FHEcryptoContext->Enable(LEVELEDSHE);
+    //FHEcryptoContext->Enable(ADVANCEDSHE);
+
+    // Initialize Public Key Containers
+    keyPair = FHEcryptoContext->KeyGen();
+
+    if (!keyPair.good()) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "FHE Key generation failed!");
+        return -1;
+    } else {
+        pk_F = keyPair.publicKey;
+        sk_F = keyPair.secretKey;
+    }
+
+    return 0;
+}
+
+Ciphertext<DCRTPoly> FHE_encSingleMsg(const Plaintext& pt) {
+    return FHEcryptoContext->Encrypt(pk_F, pt);
+}
+
+
+int FHE_sel(int select_bit){
+    ////////////////////////////////////////////////////////////
+    // Set-up of parameters
+    ////////////////////////////////////////////////////////////
+
+    // benchmarking variables
+    TimeVar t;
+    double processingTime(0.0);
+
+    // Crypto Parameters
+    // # of evalMults = 3 (first 3) is used to support the multiplication of 7
+    // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
+    // generate homomorphic evaluation multiplication keys for s^2 and s^3
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
+    //At this moment, using the value mentioned in the original example.
+    parameters.SetMaxRelinSkDeg(1);//What does this value mean?
+    parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result
+
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+    // enable features that you wish to use
+    cryptoContext->Enable(PKE);
+    //cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+    //cryptoContext->Enable(ADVANCEDSHE);
+
+    // Initialize Public Key Containers
+    KeyPair<DCRTPoly> keyPair;
+
+    // Perform Key Generation Operation
+    TIC1(t);
+
+    keyPair = cryptoContext->KeyGen();
+
+    processingTime = TOC1(t);
+    std::cout << "Key generation time: " << processingTime << "us" << std::endl;
+
+    if (!keyPair.good()) {
+        std::cout << "Key generation failed!" << std::endl;
+        exit(1);
+    }
+
+    ////////////////////////////////////////////////////////////
+    // Encode source data
+    ////////////////////////////////////////////////////////////
+    int vector_sz = 314; // Size of the vector to be generated. TODO: Maximum usable is: 16384
+
+    std::vector<int64_t> vectorOfPt1;
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < vector_sz; ++i) {
+        //int num = rand() % range + min;
+        int num = 1;
+        vectorOfPt1.push_back(num);
+    }
+
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext(vectorOfPt1);
+
+    std::vector<int64_t> vectorOfPt2;
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < vector_sz; ++i) {
+        //int num = rand() % range + min;
+        int num = 255;//Previous was 32767
+        vectorOfPt2.push_back(num);
+    }
+    Plaintext plaintext2 = cryptoContext->MakePackedPlaintext(vectorOfPt2);
+
+    std::vector<int64_t> vectorOfSelect;
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < vector_sz; ++i) {
+        vectorOfSelect.push_back(select_bit);
+    }
+    Plaintext plaintextSelect = cryptoContext->MakePackedPlaintext(vectorOfSelect);
+    std::vector<int64_t> vectorOfOnes;
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < vector_sz; ++i) {
+        vectorOfOnes.push_back(1);
+    }
+    Plaintext plaintextOnes = cryptoContext->MakePackedPlaintext(vectorOfOnes);
+
+    ////////////////////////////////////////////////////////////
+    // Encryption
+    ////////////////////////////////////////////////////////////
+
+    std::vector<Ciphertext<DCRTPoly>> ciphertexts;
+
+    TIC1(t);
+
+    auto ct1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto ct2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext2);
+    auto ctSel = cryptoContext->Encrypt(keyPair.publicKey, plaintextSelect);
+    auto ctOnes = cryptoContext->Encrypt(keyPair.publicKey, plaintextOnes);
+
+    processingTime = TOC1(t);
+
+    ////////////////////////////////////////////////////////////
+    // Homomorphic selection between two ciphertexts w/o any relinearization
+    // Select(a,b, select_bit) = select_bit ? a : b
+    //                         = ((1 - select_bit) * a) + (select_bit * b)
+    ////////////////////////////////////////////////////////////
+    
+    TIC1(t);
+    
+    auto ciphertextSelNot = cryptoContext->EvalSub(ctOnes, ctSel);
+    cryptoContext->ModReduceInPlace(ciphertextSelNot);
+
+    processingTime = TOC1(t);
+    std::cout << "Time for first sub between two ciphertexts: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
+
+    auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ct1);
+    cryptoContext->ModReduceInPlace(ciphertextSelNota);
+
+    processingTime = TOC1(t);
+    std::cout << "Time for first mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
+
+    auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ctSel, ct2);
+    cryptoContext->ModReduceInPlace(ciphertextSelb);
+
+    processingTime = TOC1(t);
+    std::cout << "Time for sencond mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+
+    TIC1(t);
+
+    auto ciphertextSel = cryptoContext->EvalAdd(ciphertextSelNota, ciphertextSelb);
+    cryptoContext->ModReduceInPlace(ciphertextSel);
+
+    processingTime = TOC1(t);
+    std::cout << "Time for addition: " << processingTime << "us" << std::endl;
+
+    Plaintext plaintextDecSel;
+
+    TOC1(t);
+    cryptoContext->Decrypt(keyPair.secretKey, ciphertextSel, &plaintextDecSel);
+    processingTime = TOC1(t);
+    std::cout << "Decryption time: " << processingTime << "us" << std::endl;
+
+    plaintextDecSel->SetLength(plaintext1->GetLength());//TODO: What to set?
+
+    for (int i = 0; i < vector_sz; ++i) {
+        if (plaintextDecSel->GetPackedValue()[i] !=
+            ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i])) {
+            std::cout << "Error in selection of ciphertexts #1 and #2 at index " << i << std::endl;
+            std::cout << "Expected: " << ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i]) << ", got: "
+                      << plaintextDecSel->GetPackedValue()[i] << std::endl;
+            return 1;
+        }
+    }    
+
+    return 0;
+}

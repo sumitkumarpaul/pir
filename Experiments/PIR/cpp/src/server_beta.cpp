@@ -5,6 +5,8 @@
 #include <algorithm> // std::swap
 #include "pir_common.h"
 
+#define TEST_LOCAL_FHE_ONLY
+
 //Global variables
 static char net_buf[NET_BUF_SZ] = {0};
 
@@ -61,11 +63,12 @@ static void Init_p_q_g_r(int p_bits, int q_bits, int r_bits) {
 static int SendInitializedParamsToAllServers(){
     int ret = 0;
 
-    std::string msg = p.get_str() + "\n" + q.get_str() + "\n" + g.get_str() + "\n" + r.get_str() + "\n" + pk_E.get_str() + "\n" +  "\n";
+    //std::string msg = p.get_str() + "\n" + q.get_str() + "\n" + g.get_str() + "\n" + r.get_str() + "\n" + pk_E.get_str() + "\n" + Serial::SerializeToString(FHEcryptoContext) + "\n" + Serial::SerializeToString(pk_F) + "\n";
+    std::string msg = p.get_str() + "\n" + q.get_str() + "\n" + g.get_str() + "\n" + r.get_str() + "\n" + pk_E.get_str() + "\n" + Serial::SerializeToString(FHEcryptoContext) + "\n" + "\n";
     ret = send(sock_beta_alpha_con, msg.c_str(), msg.size(), 0);
 
     if (ret != msg.size()) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send all parameters to Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send all parameters to Server Alpha. send() returned:"+std::to_string(ret));
         return -1;
     } else {
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully sent all parameters to Server Alpha");
@@ -94,7 +97,15 @@ static int OneTimeInitialization(){
     std::tie(pk_E, sk_E) = ElGamal_keyGen(p, q, g);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair");
 
-    //TODO Initialize FHE key-pair
+    //Initialize FHE key-pair
+    ret = FHE_keyGen();//TODO: Check allocation, call by reference etc.
+    
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to generate FHE key-pair");
+        return -1;
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated FHE key-pair");
+    }
 
     //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
@@ -191,7 +202,52 @@ static int shuffle() {
     return 0;
 }
 
+#ifdef TEST_LOCAL_FHE_ONLY
+std::string msg;
+static void tmpTestSrv_alpha(){
+    int ret;
+    gmp_randclass rng(gmp_randinit_default);
+
+    //Choose random message and random exponent
+    mpz_class m1 = ElGamal_randomGroupElement();
+    mpz_class m2 = ElGamal_randomGroupElement();
+    mpz_class exp = rng.get_z_range(q);
+
+    mpz_class m3 = (m1*m2)%p;
+    mpz_class m4;
+    mpz_powm(m4.get_mpz_t(), m1.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+
+    auto [c11, c12] = ElGamal_encrypt(m1, pk_E);
+    auto [c21, c22] = ElGamal_encrypt(m2, pk_E);
+    auto [c31, c32] = ElGamal_mult_ct({c11, c12}, {c21, c22});
+    auto [c41, c42] = ElGamal_exp_ct({c11, c12}, exp, pk_E);
+
+    std::vector<int64_t> vectorOfInts1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    Plaintext plaintext1               = FHEcryptoContext->MakePackedPlaintext(vectorOfInts1);
+
+    // The encoded vectors are encrypted
+    //auto FHE_c1 = FHEcryptoContext->Encrypt(pk_F, plaintext1);
+    auto FHE_c1 = FHE_encSingleMsg(plaintext1);
+
+    //msg = m1.get_str() + "\n" + m2.get_str() + "\n" + m3.get_str() + "\n" + m4.get_str() + "\n" + c11.get_str() + "\n" + c12.get_str() + "\n" + c21.get_str() + "\n" + c22.get_str() + "\n" + c31.get_str() + "\n" + c32.get_str() + "\n" + c41.get_str() + "\n" + c42.get_str() + "\n" + Serial::SerializeToString(FHE_c1) + "\n";
+    msg = Serial::SerializeToString(FHE_c1);
+    #if 0
+    ret = send(sock_alpha_to_beta, msg.c_str(), msg.size(), 0);
+
+    if (ret != msg.size()) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send the El-Gamal ciphertexts to Server Beta");
+        return;
+    }
+    #endif
+
+    return;
+}
+#endif
+
 static void TestSrv_beta() {
+    int ret = -1;
+
+    #ifndef TEST_LOCAL_FHE_ONLY
     int valread = recv(sock_beta_alpha_con, net_buf, sizeof(net_buf), 0);
     if (valread <= 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Read failed, closing connection with Server Alpha. recv() returned: " + std::to_string(valread));
@@ -266,6 +322,29 @@ static void TestSrv_beta() {
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m4 matches with expected value");
     }
+    #else
+    Ciphertext<DCRTPoly> FHE_c1_local;
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Size of serialized msg: " + std::to_string(msg.size()));
+    try {
+        Serial::DeserializeFromString(FHE_c1_local, msg);
+    } catch (...) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Error converting parameters to mpz_class");
+        close(sock_beta_alpha_con);
+        return;
+    }
+
+    Plaintext decrypted_FHE_message;
+    FHEcryptoContext->Decrypt(sk_F, FHE_c1_local, &decrypted_FHE_message);
+
+    //std::vector<int64_t> decodedAddResult = plaintextAddResult->GetPackedValue<int64_t>();
+
+    decrypted_FHE_message->SetLength(12);//TODO: What to set?
+
+    for (int i = 0; i < 12; ++i) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted decrypted_FHE_message[" + std::to_string(i) + "]: " + std::to_string(decrypted_FHE_message->GetPackedValue()[i]));
+    }
+#endif
 
     return;
 }
@@ -273,6 +352,10 @@ static void TestSrv_beta() {
 int main() {
 
     InitSrv_beta();
+
+#ifdef TEST_LOCAL_FHE_ONLY
+    tmpTestSrv_alpha();
+#endif
 
     TestSrv_beta();
 

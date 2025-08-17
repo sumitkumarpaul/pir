@@ -136,6 +136,8 @@ target_link_libraries(sumit-experiment
 target_link_libraries(server_alpha
     ${GMPXX_LIBRARIES}
     ${GMP_LIBRARIES}
+    OPENFHEpke
+    OPENFHEcore
     OpenMP::OpenMP_CXX
     Threads::Threads
     OpenSSL::SSL
@@ -146,6 +148,8 @@ target_link_libraries(server_alpha
 
 # Link libraries for server_beta
 target_link_libraries(server_beta
+    OPENFHEpke
+    OPENFHEcore
     ${GMPXX_LIBRARIES}
     ${GMP_LIBRARIES}
     OpenMP::OpenMP_CXX
