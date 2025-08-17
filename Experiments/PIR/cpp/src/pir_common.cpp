@@ -106,8 +106,13 @@ std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_cl
     mpz_class c1, c2;
     mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
     mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+
+#if 0 /* For the time being donot multiply with ciphertext of 1, since anyway our protocol will multiply with E(h_C) */
     auto [cI1, cI2] = ElGamal_encrypt(mpz_class(1), publicKey);
     return ElGamal_mult_ct({c1, c2}, {cI1, cI2});
+#else
+    return std::make_pair(c1, c2);
+#endif
 }
 
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {

@@ -27,23 +27,43 @@ static mpz_class sh[N][2]; // Database to store values, each entry is a pair, {T
 
 // Function declarations
 static int InitSrv_alpha();
+static int RecvInitParamsFromBeta();
 static int FinSrv_alpha();
 static void TestSrv_alpha();
 
+// Function definitions
 static int InitSrv_alpha(){
     int ret = -1;
     
     // Server_alpha only connects to other servers, it does not listen
     InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Initialized connection to Server Beta");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
     #if 0
     InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
     #endif
 
+    ret = RecvInitParamsFromBeta();
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Failed to receive initialization parameters from Server Beta");
+        close(sock_alpha_to_beta);
+        return -1;
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Successfully received initialization parameters from Server Beta");
+    }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
+
+    return 0;
+}
+
+static int RecvInitParamsFromBeta() {
     int valread = recv(sock_alpha_to_beta, net_buf, sizeof(net_buf), 0);
+
     if (valread <= 0) {
-        std::cerr << "Server: Read failed, closing connection with Server Beta" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Read failed, closing connection with Server Beta. recv() returned: " + std::to_string(valread));
         close(sock_alpha_to_beta);
         return -1;
     }
@@ -61,13 +81,12 @@ static int InitSrv_alpha(){
 
     // Expecting at least 5 parameters: p, q, g, r, pk_E
     if (params.size() < 5) {
-        std::cerr << "Server Alpha: Received insufficient parameters (" << params.size() << ")" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Received insufficient parameters (" + std::to_string(params.size()) + ")");
         close(sock_alpha_to_beta);
         return -1;
     }
 
     // Extract and convert
-    mpz_class p_local, q_local, g_local, r_local, pk_E_local;
     try {
         p = mpz_class(params[0]);
         q = mpz_class(params[1]);
@@ -75,7 +94,7 @@ static int InitSrv_alpha(){
         r = mpz_class(params[3]);
         pk_E = mpz_class(params[4]);
     } catch (...) {
-        std::cerr << "Server Alpha: Error converting parameters to mpz_class" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Error converting parameters to mpz_class");
         close(sock_alpha_to_beta);
         return -1;
     }
@@ -95,6 +114,8 @@ static int FinSrv_alpha(){
         close(sock_alpha_to_gamma);
         sock_alpha_to_gamma = -1;
     }
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Alpha");
 
     return ret;
 }

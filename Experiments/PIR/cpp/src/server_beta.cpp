@@ -81,7 +81,7 @@ static int SendInitializedParamsToAllServers(){
     }
     #endif
 
-    return ret;
+    return 0;
 }
 
 static int OneTimeInitialization(){
@@ -108,7 +108,7 @@ static int OneTimeInitialization(){
     ret = InitAcceptingSocket(BETA_LISTENING_TO_GAMMA_PORT, &sock_beta_gamma_srv, &sock_beta_gamma_con);
 
     if (ret != 0) {
-        std::cerr << "Server Beta: Failed to initialize accepting socket for Server Alpha" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Gamma!!");
         return -1;
     }
     #endif
@@ -127,6 +127,13 @@ static int InitSrv_beta(){
     // Initialize server beta
     ret = OneTimeInitialization();
 
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to initialize Server Beta");
+        return -1;
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
+    }
+
     return ret;
 }
 
@@ -142,6 +149,8 @@ static int FinSrv_beta(){
         close(sock_beta_alpha_con);
         sock_beta_alpha_con = -1;
     }
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Beta");
 
     return ret;
 }
@@ -185,7 +194,7 @@ static int shuffle() {
 static void TestSrv_beta() {
     int valread = recv(sock_beta_alpha_con, net_buf, sizeof(net_buf), 0);
     if (valread <= 0) {
-        std::cerr << "Server Beta: Read failed, closing connection with Server Alpha. Received: " << valread << " from server beta" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Read failed, closing connection with Server Alpha. recv() returned: " + std::to_string(valread));
         close(sock_beta_alpha_con);
         return;
     }
@@ -202,7 +211,7 @@ static void TestSrv_beta() {
 
     // Expecting at least 12 parameters: m1, m2, m3, m4, c11, c12, c21, c22, c31, c32, c41, c42
     if (params.size() < 12) {
-        std::cerr << "Server Beta: Received insufficient parameters (" << params.size() << ")" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Received insufficient parameters (" + std::to_string(params.size()) + ")");
         close(sock_beta_alpha_con);
         return;
     }
@@ -224,7 +233,7 @@ static void TestSrv_beta() {
         c41_local = mpz_class(params[10]);
         c42_local = mpz_class(params[11]);
     } catch (...) {
-        std::cerr << "Server Beta: Error converting parameters to mpz_class" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Error converting parameters to mpz_class");
         close(sock_beta_alpha_con);
         return;
     }
@@ -235,27 +244,27 @@ static void TestSrv_beta() {
     mpz_class decrypted_m4 = ElGamal_decrypt({c41_local, c42_local}, sk_E);
 
     if (decrypted_m1 != m1_local) {
-        std::cerr << "Server Beta: Decrypted m1: " << decrypted_m1.get_str() << " does not match with expected value: " << m1_local.get_str() << " !!" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m1: " + decrypted_m1.get_str() + " does not match with expected value: " + m1_local.get_str() + " !!");
     } else {
-        std::cout << "Server Beta: Decrypted m1 matches with expected value" << std::endl;
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m1 matches with expected value");
     }
 
     if (decrypted_m2 != m2_local) {
-        std::cerr << "Server Beta: Decrypted m2: " << decrypted_m2.get_str() << " does not match with expected value: " << m2_local.get_str() << " !!" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m2: " + decrypted_m2.get_str() + " does not match with expected value: " + m2_local.get_str() + " !!");
     } else {
-        std::cout << "Server Beta: Decrypted m2 matches with expected value" << std::endl;
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m2 matches with expected value");
     }
 
     if (decrypted_m3 != m3_local) {
-        std::cerr << "Server Beta: Decrypted m3: " << decrypted_m3.get_str() << " does not match with expected value: " << m3_local.get_str() << " !!" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m3: " + decrypted_m3.get_str() + " does not match with expected value: " + m3_local.get_str() + " !!");
     } else {
-        std::cout << "Server Beta: Decrypted m3 matches with expected value" << std::endl;
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m3 matches with expected value");
     }
 
     if (decrypted_m4 != m4_local) {
-        std::cerr << "Server Beta: Decrypted m4: " << decrypted_m4.get_str() << " does not match with expected value: " << m4_local.get_str() << " !!" << std::endl;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m4: " + decrypted_m4.get_str() + " does not match with expected value: " + m4_local.get_str() + " !!");
     } else {
-        std::cout << "Server Beta: Decrypted m4 matches with expected value" << std::endl;
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m4 matches with expected value");
     }
 
     return;
