@@ -4,7 +4,6 @@
 #define TIC1(t)    t = std::chrono::high_resolution_clock::now()
 #define TOC1(t)    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t).count()
 
-
 // Global ElGamal parameters
 mpz_class p, q, r, g;
 
@@ -196,6 +195,80 @@ void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock) {
     return;
 }
 
+// Send all the data
+int sendAll(int sock, const char* data, size_t sz) {
+    size_t totalSent = 0;
+    char buf[20];// The size must not be larger than that
+
+    // First send the size to the receiving end
+    if (send(sock, std::to_string(sz).c_str(), std::to_string(sz).size(), 0) < std::to_string(sz).size()) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to sending data size");
+        return -1;
+    }
+
+    // The receiving end should echo back with the same message
+    ssize_t received = recv(sock, buf, sizeof(buf), 0);
+    if ((received <= 0) || (std::string(buf, received) != std::to_string(sz))) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive echo from the other end");
+        return -1;
+    }
+
+    // Now start sending the entire message
+    while (totalSent < sz) {
+        ssize_t sent = send(sock, data + totalSent, sz - totalSent, 0);
+        if (sent <= 0) {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "After sending " + std::to_string(totalSent) + " bytes, send() returned: " + std::to_string(sent));
+            return -1; // Error occurred
+        }
+        totalSent += sent;
+    }
+
+    return 0;
+}
+
+// Receive all the data
+int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz) {
+    char buf[20];// The size must not be larger than that
+    size_t totalReceived = 0;
+
+    // Step 1: Receive the size
+    ssize_t sz_len = recv(sock, buf, sizeof(buf), 0);
+    if (sz_len <= 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive data size");
+        return -1;
+    }
+
+    std::string sz_str(buf, sz_len);
+    size_t sz = std::stoull(sz_str);
+
+    if (sz > max_sz) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received size " + std::to_string(sz) + " exceeds maximum allowed size " + std::to_string(max_sz));
+        return -1; // Size exceeds maximum allowed
+    }
+
+    // Step 2: Echo the size back
+    if (send(sock, sz_str.c_str(), sz_str.size(), 0) < sz_str.size()) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to echo data size");
+        return -1;
+    }
+
+    // Step 3: Receive the full message
+    while (totalReceived < sz) {
+        ssize_t recvd = recv(sock, data + totalReceived, (sz - totalReceived), 0);
+        if (recvd <= 0) {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "After receiving " + std::to_string(totalReceived) + " bytes, recv() returned: " + std::to_string(recvd));
+            return -1;
+        }
+        totalReceived += recvd;
+    }
+
+    if (received_sz != NULL) {
+        *received_sz = totalReceived;
+    }
+
+    return 0;
+}
+
 // FHE related functions
 int FHE_keyGen(){
     ////////////////////////////////////////////////////////////
@@ -210,6 +283,14 @@ int FHE_keyGen(){
     CCParams<CryptoContextBGVRNS> parameters;
     parameters.SetMultiplicativeDepth(1);
     parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
+
+    /*****************************************************************
+     * Since, the plaintext modulus is 65537, hence upto 16-bit number
+     * can be represented in a single ciphertext. However, we may add
+     * two ciphertexts as well and the result must be within 16-bit.
+     * Hence, each individual plaintext must remain within 15-bit.
+     * ***************************************************************/
+
     //At this moment, using the value mentioned in the original example.
     parameters.SetMaxRelinSkDeg(1);//What does this value mean?
     parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result

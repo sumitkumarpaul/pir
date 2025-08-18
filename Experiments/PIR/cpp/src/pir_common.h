@@ -35,7 +35,7 @@ using namespace lbcrypto;
 
 #define SET_LOG_LEVEL LOG_LEVEL_TRACE
 
-#define NET_BUF_SZ  65536 //Size of the buffer used during transferring data over network
+#define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
 
 #define SERVER_ALPHA_IP "192.168.16.246" // IP address of the server_alpha
 #define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
@@ -47,6 +47,15 @@ using namespace lbcrypto;
 
 #define N 16 // Number of elements in the plaintext database
 
+/*****************************************************************
+* Since, the plaintext modulus is 65537, hence upto 16-bit number
+* can be represented in a single ciphertext. However, we may add
+* two ciphertexts as well and the result must be within 16-bit.
+* Hence, each individual plaintext must remain within 15-bit.
+* ***************************************************************/
+#define PLAINTEXT_PIR_BLOCK_SIZE 512 // Number of bits in a single PIR block
+#define PLAINTEXT_FHE_BLOCK_SIZE 15 // Single encryptable plaintext block size is these many bits
+#define NUM_FHE_BLOCKS_PER_PIR_BLOCK ((PLAINTEXT_PIR_BLOCK_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 
 #define P_BITS  3072//5 // Size of p in bits
 #define Q_BITS  256//3 // Size of q in bits
@@ -78,6 +87,8 @@ std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_cl
 void FinishAcceptingSocket(int server_fd, int new_socket);
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
 void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()
+int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz);
+int sendAll(int sock, const char* data, size_t sz);
 
 // FHE related functions
 int FHE_keyGen();

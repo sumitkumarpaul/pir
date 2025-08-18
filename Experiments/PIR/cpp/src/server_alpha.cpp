@@ -60,47 +60,71 @@ static int InitSrv_alpha(){
 }
 
 static int RecvInitParamsFromBeta() {
-    int valread = recv(sock_alpha_to_beta, net_buf, sizeof(net_buf), 0);
+    size_t received_sz = 0;
+    int ret_recv = 0;
 
-    if (valread <= 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Read failed, closing connection with Server Beta. recv() returned: " + std::to_string(valread));
-        close(sock_alpha_to_beta);
+    // Receive p
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive p from Server Beta");
         return -1;
     }
+    p = mpz_class(std::string(net_buf, received_sz));
 
-    std::string data(net_buf, valread);
-    std::vector<std::string> params;
-    size_t pos = 0;
-    while ((pos = data.find("\n")) != std::string::npos) {
-        params.push_back(data.substr(0, pos));
-        data.erase(0, pos + 1);
-    }
-
-    // If last param is not empty, add it
-    if (!data.empty()) params.push_back(data);
-
-    // Expecting at least 7 parameters: p, q, g, r, pk_E, FHEcryptoContext, pk_F
-    //if (params.size() < 7) {
-    if (params.size() < 5) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Received insufficient parameters (" + std::to_string(params.size()) + ")");
-        close(sock_alpha_to_beta);
+    // Receive q
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive q from Server Beta");
         return -1;
     }
+    q = mpz_class(std::string(net_buf, received_sz));
 
-    // Extract and convert
-    try {
-        p = mpz_class(params[0]);
-        q = mpz_class(params[1]);
-        g = mpz_class(params[2]);
-        r = mpz_class(params[3]);
-        pk_E = mpz_class(params[4]);
-        //Serial::DeserializeFromString(FHEcryptoContext, params[5]);
-        //Serial::DeserializeFromString(pk_F, params[6]);
-    } catch (...) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Error converting received message to expected format");
-        close(sock_alpha_to_beta);
+    // Receive g
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g from Server Beta");
         return -1;
     }
+    g = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive r
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive r from Server Beta");
+        return -1;
+    }
+    r = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive pk_E
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E from Server Beta");
+        return -1;
+    }
+    pk_E = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive FHEcryptoContext
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
+
+    // Receive pk_F
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
 
     return 0;
 }
@@ -141,24 +165,30 @@ static void TestSrv_alpha(){
     auto [c31, c32] = ElGamal_mult_ct({c11, c12}, {c21, c22});
     auto [c41, c42] = ElGamal_exp_ct({c11, c12}, exp, pk_E);
 
-    #if 0
-    std::vector<int64_t> vectorOfInts1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
-    Plaintext plaintext1               = FHEcryptoContext->MakePackedPlaintext(vectorOfInts1);
+    std::vector<int64_t> PIRBlockVector;
+    PIRBlockVector.reserve(NUM_FHE_BLOCKS_PER_PIR_BLOCK);
+    for (int64_t i = 1; i <= NUM_FHE_BLOCKS_PER_PIR_BLOCK; ++i) {
+        PIRBlockVector.push_back(i);
+    }
+    Plaintext PIRBlockPlaintext = FHEcryptoContext->MakePackedPlaintext(PIRBlockVector);
 
     // The encoded vectors are encrypted
     //auto FHE_c1 = FHEcryptoContext->Encrypt(pk_F, plaintext1);
-    auto FHE_c1 = FHE_encSingleMsg(plaintext1);
+    auto FHE_c1 = FHE_encSingleMsg(PIRBlockPlaintext);
 
-    std::string msg = m1.get_str() + "\n" + m2.get_str() + "\n" + m3.get_str() + "\n" + m4.get_str() + "\n" + c11.get_str() + "\n" + c12.get_str() + "\n" + c21.get_str() + "\n" + c22.get_str() + "\n" + c31.get_str() + "\n" + c32.get_str() + "\n" + c41.get_str() + "\n" + c42.get_str() + "\n" + Serial::SerializeToString(FHE_c1) + "\n";
-    #else
-    std::string msg = m1.get_str() + "\n" + m2.get_str() + "\n" + m3.get_str() + "\n" + m4.get_str() + "\n" + c11.get_str() + "\n" + c12.get_str() + "\n" + c21.get_str() + "\n" + c22.get_str() + "\n" + c31.get_str() + "\n" + c32.get_str() + "\n" + c41.get_str() + "\n" + c42.get_str() + "\n";
-    #endif
-    ret = send(sock_alpha_to_beta, msg.c_str(), msg.size(), 0);
-
-    if (ret != msg.size()) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send the El-Gamal ciphertexts to Server Beta");
-        return;
-    }
+    (void)sendAll(sock_alpha_to_beta, m1.get_str().c_str(), m1.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, m2.get_str().c_str(), m2.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, m3.get_str().c_str(), m3.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, m4.get_str().c_str(), m4.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c11.get_str().c_str(), c11.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c12.get_str().c_str(), c12.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c21.get_str().c_str(), c21.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c22.get_str().c_str(), c22.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c31.get_str().c_str(), c31.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c32.get_str().c_str(), c32.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c41.get_str().c_str(), c41.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, c42.get_str().c_str(), c42.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(FHE_c1).c_str(), Serial::SerializeToString(FHE_c1).size());
 
     return;
 }
