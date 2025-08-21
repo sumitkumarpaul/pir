@@ -487,12 +487,21 @@ static void TestBlindedExponentiation2() {
 
     mpz_class Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class h = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    mpz_class h_1;
+    mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), q.get_mpz_t());
+
+    mpz_class alpha = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    mpz_class alpha_1;
+    mpz_invert(alpha_1.get_mpz_t(), alpha.get_mpz_t(), q.get_mpz_t());
+
     mpz_class I = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are Rho: " + Rho.get_str() + " h: " + h.get_str() + " I: " + I.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are Rho: " + Rho.get_str() + " h: " + h.get_str()+ " h_1: " + h_1.get_str() + " I: " + I.get_str() + " alpha: " + alpha.get_str() + " alpha_1: " + alpha_1.get_str());
 
     mpz_class Rho_h = (Rho*h)%q;
     mpz_class Rho_pow_I;
     mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());
+    mpz_class g_pow_Rho_pow_I;
+    mpz_powm(g_pow_Rho_pow_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
     mpz_class Rho_pow_I__h = (Rho_pow_I*h)%q;//(Rho^I)*h
 
@@ -506,6 +515,24 @@ static void TestBlindedExponentiation2() {
     mpz_class decrypted_Rho_h = ElGamal_q_decrypt(E_Rho_h, sk_E_q);
     mpz_class decrypted_Rho_pow_I = ElGamal_q_decrypt(E_Rho_pow_I, sk_E_q);
     mpz_class decrypted_Rho_pow_I__h = ElGamal_q_decrypt(E_Rho_pow_I__h, sk_E_q);
+   
+    //Server beta decrypts and perform g^{decrypted_Rho_pow_I__h} mod p
+    mpz_class g_pow_Rho_pow_I__h;
+    mpz_powm(g_pow_Rho_pow_I__h.get_mpz_t(), g.get_mpz_t(), decrypted_Rho_pow_I__h.get_mpz_t(), p.get_mpz_t());
+    //Encrypts and sends that under ElGamal encryption in GG
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h = ElGamal_encrypt(g_pow_Rho_pow_I__h, pk_E);
+
+    //Server alpha semi-homomorphically raises that to alpha under ElGamal encryption in GG
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_alpha = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h, alpha, pk_E);
+
+    //Client semi-homomorphically raises that to h_1 under ElGamal encryption in GG
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_alpha_h_1 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h_alpha, h_1, pk_E);
+
+    //Server semi-homomorphically raises that to alpha_1 under ElGamal encryption in GG
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h_alpha_h_1, alpha_1, pk_E);
+
+    //Server beta decrypts that under ElGamal encryption in GG
+    mpz_class decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1 = ElGamal_decrypt(E_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1, sk_E);
 
     if (decrypted_Rho == Rho) {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal encryption works in ZZ*_q");
@@ -530,6 +557,13 @@ static void TestBlindedExponentiation2() {
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working in ZZ*_q. Expected: " + Rho_pow_I__h.get_str() + " but got: " + decrypted_Rho_pow_I__h.get_str());
     }
+
+    if (decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1 == g_pow_Rho_pow_I) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finding tag homomorphically works..!!..Ha ha..Thank you..:) :) :) :) :)");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Finding tag homomorphically is not working :( Expected: " + g_pow_Rho_pow_I.get_str() + " but got: " + decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1.get_str());
+    }
+
 
     #if 0
     mpz_class Rho = selectRho();
