@@ -34,6 +34,10 @@ static void TestSrv_alpha();
 // Function definitions
 static int InitSrv_alpha(){
     int ret = -1;
+    // Initialize random number generation
+    std::random_device rd;
+    unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd();
+    rng.seed(seed); // seed() seeds the gmp_randclass    
     
     // Server_alpha only connects to other servers, it does not listen
     InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
@@ -90,6 +94,15 @@ static int RecvInitParamsFromBeta() {
     }
     g = mpz_class(std::string(net_buf, received_sz));
 
+    // Receive g_q
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g_q from Server Beta");
+        return -1;
+    }
+    g_q = mpz_class(std::string(net_buf, received_sz));
+
     // Receive r
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
@@ -107,6 +120,15 @@ static int RecvInitParamsFromBeta() {
         return -1;
     }
     pk_E = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive pk_E_q
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_q from Server Beta");
+        return -1;
+    }
+    pk_E_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -149,7 +171,6 @@ static int FinSrv_alpha(){
 
 static void TestSrv_alpha(){
     int ret;
-    gmp_randclass rng(gmp_randinit_default);
 
     //Choose random message and random exponent
     mpz_class m1 = ElGamal_randomGroupElement();

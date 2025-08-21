@@ -45,7 +45,7 @@ using namespace lbcrypto;
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port to listen to gamma
 #define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port to listen to client
 
-#define N 16 // Number of elements in the plaintext database
+#define N 5 // Number of elements in the plaintext database
 
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number
@@ -61,11 +61,14 @@ using namespace lbcrypto;
 #define Q_BITS  256//3 // Size of q in bits
 #define R_BITS  64//2 // Size of r in bits
 
+// Randoms
+extern gmp_randclass rng;
+
 
 // Global ElGamal parameters
-extern mpz_class p, q, r, g;
+extern mpz_class p, q, r, g, g_q;
 
-extern mpz_class pk_E, sk_E;
+extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
 
 extern PublicKey<DCRTPoly> pk_F;
 extern PrivateKey<DCRTPoly> sk_F;
@@ -77,11 +80,17 @@ void PrintLog(int log_level, const char* file, int line, const std::string& mess
 
 // ElGamal cryptographic functions using global parameters
 mpz_class ElGamal_randomGroupElement();
-std::pair<mpz_class, mpz_class> ElGamal_keyGen(const mpz_class& p, const mpz_class& q, const mpz_class& g);
+std::pair<mpz_class, mpz_class> ElGamal_keyGen();
 std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const mpz_class& publicKey);
 mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
 std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
 std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
+
+std::pair<mpz_class, mpz_class> ElGamal_q_keyGen();
+std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey);
+mpz_class ElGamal_q_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
+std::pair<mpz_class, mpz_class> ElGamal_q_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
+std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
 
 // Networking related functions
 void FinishAcceptingSocket(int server_fd, int new_socket);
