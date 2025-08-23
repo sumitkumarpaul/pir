@@ -23,7 +23,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
-static mpz_class sh[N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
+static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 
 // Function declarations
 static int InitSrv_alpha();
@@ -186,16 +186,9 @@ static void TestSrv_alpha(){
     auto [c31, c32] = ElGamal_mult_ct({c11, c12}, {c21, c22});
     auto [c41, c42] = ElGamal_exp_ct({c11, c12}, exp, pk_E);
 
-    std::vector<int64_t> PIRBlockVector;
-    PIRBlockVector.reserve(NUM_FHE_BLOCKS_PER_PIR_BLOCK);
-    for (int64_t i = 1; i <= NUM_FHE_BLOCKS_PER_PIR_BLOCK; ++i) {
-        PIRBlockVector.push_back(i);
-    }
-    Plaintext PIRBlockPlaintext = FHEcryptoContext->MakePackedPlaintext(PIRBlockVector);
-
-    // The encoded vectors are encrypted
-    //auto FHE_c1 = FHEcryptoContext->Encrypt(pk_F, plaintext1);
-    auto FHE_c1 = FHE_encSingleMsg(PIRBlockPlaintext);
+    // Generate random tag of P_BITS bits
+    mpz_class tag = rng.get_z_bits(P_BITS);
+    Ciphertext<DCRTPoly> ct_tag = FHE_Enc_Tag(tag);
 
     (void)sendAll(sock_alpha_to_beta, m1.get_str().c_str(), m1.get_str().size());
     (void)sendAll(sock_alpha_to_beta, m2.get_str().c_str(), m2.get_str().size());
@@ -209,7 +202,8 @@ static void TestSrv_alpha(){
     (void)sendAll(sock_alpha_to_beta, c32.get_str().c_str(), c32.get_str().size());
     (void)sendAll(sock_alpha_to_beta, c41.get_str().c_str(), c41.get_str().size());
     (void)sendAll(sock_alpha_to_beta, c42.get_str().c_str(), c42.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(FHE_c1).c_str(), Serial::SerializeToString(FHE_c1).size());
+    (void)sendAll(sock_alpha_to_beta, tag.get_str().c_str(), tag.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
 
     return;
 }

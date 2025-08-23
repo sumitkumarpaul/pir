@@ -45,7 +45,14 @@ using namespace lbcrypto;
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port to listen to gamma
 #define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port to listen to client
 
-#define N 5 // Number of elements in the plaintext database
+/* We will be experimenting with 100GB database. Each block is of size 512-bits. */
+#define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define log_N   31    // ceil((log2(N)))
+#define sqrt_N  40960 // ceil((sqrt(N)))
+
+#define P_BITS  3072//5 // Size of p in bits
+#define Q_BITS  (256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
+#define R_BITS  64//2 // Size of r in bits
 
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number
@@ -53,17 +60,16 @@ using namespace lbcrypto;
 * two ciphertexts as well and the result must be within 16-bit.
 * Hence, each individual plaintext must remain within 15-bit.
 * ***************************************************************/
-#define PLAINTEXT_PIR_BLOCK_SIZE 512 // Number of bits in a single PIR block
-#define PLAINTEXT_FHE_BLOCK_SIZE 15 // Single encryptable plaintext block size is these many bits
-#define NUM_FHE_BLOCKS_PER_PIR_BLOCK ((PLAINTEXT_PIR_BLOCK_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
+#define PLAINTEXT_PIR_BLOCK_DATA_SIZE       512 // Number of bits in a single PIR block
+#define PLAINTEXT_FHE_BLOCK_SIZE            15 // Single encryptable plaintext block size is these many bits. Actually 16-bits, but 1 bit is kept reserved for carry forwarding during homomorphic selection processing
+#define NUM_FHE_BLOCKS_PER_PIR_BLOCK        ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
+#define NUM_FHE_BLOCKS_PER_PIR_INDEX        ((log_N + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE)
+#define TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT    (NUM_FHE_BLOCKS_PER_PIR_BLOCK + NUM_FHE_BLOCKS_PER_PIR_INDEX)
+#define NUM_FHE_BLOCKS_PER_TAG              ((P_BITS + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 
-#define P_BITS  3072//5 // Size of p in bits
-#define Q_BITS  (256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
-#define R_BITS  64//2 // Size of r in bits
 
 // Randoms
 extern gmp_randclass rng;
-
 
 // Global ElGamal parameters
 extern mpz_class p, q, r, g, g_q;
@@ -76,30 +82,33 @@ extern CryptoContext<DCRTPoly> FHEcryptoContext;
 
 //Function prototypes
 //Logging related
-void PrintLog(int log_level, const char* file, int line, const std::string& message);
+extern void PrintLog(int log_level, const char* file, int line, const std::string& message);
 
 // ElGamal cryptographic functions using global parameters
-mpz_class ElGamal_randomGroupElement();
-std::pair<mpz_class, mpz_class> ElGamal_keyGen();
-std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const mpz_class& publicKey);
-mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
-std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
-std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
+extern mpz_class ElGamal_randomGroupElement();
+extern std::pair<mpz_class, mpz_class> ElGamal_keyGen();
+extern std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const mpz_class& publicKey);
+extern mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
+extern std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
+extern std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
 
-std::pair<mpz_class, mpz_class> ElGamal_q_keyGen();
-std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey);
-mpz_class ElGamal_q_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
-std::pair<mpz_class, mpz_class> ElGamal_q_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
-std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
+extern std::pair<mpz_class, mpz_class> ElGamal_q_keyGen();
+extern std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey);
+extern mpz_class ElGamal_q_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
+extern std::pair<mpz_class, mpz_class> ElGamal_q_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
+extern std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
 
 // Networking related functions
-void FinishAcceptingSocket(int server_fd, int new_socket);
-int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
-void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()
-int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz);
-int sendAll(int sock, const char* data, size_t sz);
+extern void FinishAcceptingSocket(int server_fd, int new_socket);
+extern int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
+extern void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()
+extern int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz);
+extern int sendAll(int sock, const char* data, size_t sz);
 
 // FHE related functions
-int FHE_keyGen();
-Ciphertext<DCRTPoly> FHE_encSingleMsg(const Plaintext& pt);
-int FHE_sel(int select_bit);
+extern int FHE_keyGen();
+extern Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_class block_index);
+extern void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index);
+extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
+extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
+extern Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);

@@ -350,105 +350,101 @@ int FHE_keyGen(){
     return 0;
 }
 
-Ciphertext<DCRTPoly> FHE_encSingleMsg(const Plaintext& pt) {
-    return FHEcryptoContext->Encrypt(pk_F, pt);
+Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_class block_index) {
+    std::vector<int64_t> DBElementVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
+    
+    /* Add the block content */
+    mpz_class tmp = block_content;
+    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_PIR_BLOCK; ++i) {
+        mpz_class rem;
+        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
+        DBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
+        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
+    }
+
+    /* Append the index */
+    tmp = block_index;
+    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_PIR_INDEX; ++i) {
+        mpz_class rem;
+        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
+        DBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
+        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
+    }
+
+    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(DBElementVector);
+
+    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
 }
 
+// Decrypts a ciphertext, unpacks the packed vector, and reconstructs block_content and block_index as mpz_class
+void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index) {
+    Plaintext pt;
+    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
+    pt->SetLength(TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT);
+    const std::vector<int64_t>& packed = pt->GetPackedValue();
 
-int FHE_sel(int select_bit){
-    ////////////////////////////////////////////////////////////
-    // Set-up of parameters
-    ////////////////////////////////////////////////////////////
-
-    // benchmarking variables
-    TimeVar t;
-    double processingTime(0.0);
-
-    // Crypto Parameters
-    // # of evalMults = 3 (first 3) is used to support the multiplication of 7
-    // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
-    // generate homomorphic evaluation multiplication keys for s^2 and s^3
-    CCParams<CryptoContextBGVRNS> parameters;
-    parameters.SetMultiplicativeDepth(1);
-    parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
-    //At this moment, using the value mentioned in the original example.
-    parameters.SetMaxRelinSkDeg(1);//What does this value mean?
-    parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result
-
-    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
-    // enable features that you wish to use
-    cryptoContext->Enable(PKE);
-    //cryptoContext->Enable(KEYSWITCH);
-    cryptoContext->Enable(LEVELEDSHE);
-    //cryptoContext->Enable(ADVANCEDSHE);
-
-    // Initialize Public Key Containers
-    KeyPair<DCRTPoly> keyPair;
-
-    // Perform Key Generation Operation
-    TIC1(t);
-
-    keyPair = cryptoContext->KeyGen();
-
-    processingTime = TOC1(t);
-    std::cout << "Key generation time: " << processingTime << "us" << std::endl;
-
-    if (!keyPair.good()) {
-        std::cout << "Key generation failed!" << std::endl;
-        exit(1);
+    // Reconstruct block_content from first NUM_FHE_BLOCKS_PER_PIR_BLOCK elements
+    block_content = 0;
+    for (int i = NUM_FHE_BLOCKS_PER_PIR_BLOCK - 1; i >= 0; --i) {
+        block_content <<= PLAINTEXT_FHE_BLOCK_SIZE;
+        block_content += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
     }
 
-    ////////////////////////////////////////////////////////////
-    // Encode source data
-    ////////////////////////////////////////////////////////////
-    int vector_sz = 314; // Size of the vector to be generated. TODO: Maximum usable is: 16384
+    // Reconstruct block_index from next NUM_FHE_BLOCKS_PER_PIR_INDEX elements
+    block_index = 0;
+    for (int i = TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1; i >= NUM_FHE_BLOCKS_PER_PIR_BLOCK; --i) {
+        block_index <<= PLAINTEXT_FHE_BLOCK_SIZE;
+        block_index += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+    }
+}
 
-    std::vector<int64_t> vectorOfPt1;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
-        //int num = rand() % range + min;
-        int num = 1;
-        vectorOfPt1.push_back(num);
+// Encrypt the tag
+Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag) {
+    std::vector<int64_t> TagVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
+    
+    /* Add the block content */
+    mpz_class tmp = tag;
+    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
+        mpz_class rem;
+        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
+        TagVector.push_back(static_cast<int64_t>(rem.get_ui()));
+        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
     }
 
-    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext(vectorOfPt1);
+    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(TagVector);
 
-    std::vector<int64_t> vectorOfPt2;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
-        //int num = rand() % range + min;
-        int num = 255;//Previous was 32767
-        vectorOfPt2.push_back(num);
-    }
-    Plaintext plaintext2 = cryptoContext->MakePackedPlaintext(vectorOfPt2);
+    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
+}
 
-    std::vector<int64_t> vectorOfSelect;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
-        vectorOfSelect.push_back(select_bit);
+// Decrypt the tag
+void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag) {
+    Plaintext pt;
+    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
+    pt->SetLength(NUM_FHE_BLOCKS_PER_TAG);
+    const std::vector<int64_t>& packed = pt->GetPackedValue();
+
+    // Reconstruct block_content from first NUM_FHE_BLOCKS_PER_TAG elements
+    tag = 0;
+    for (int i = NUM_FHE_BLOCKS_PER_TAG - 1; i >= 0; --i) {
+        tag <<= PLAINTEXT_FHE_BLOCK_SIZE;
+        tag += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
     }
-    Plaintext plaintextSelect = cryptoContext->MakePackedPlaintext(vectorOfSelect);
+}
+
+//TODO: At this moment assuming fnd_ct encrypts NUM_FHE_BLOCKS_PER_TAG bits always. For content selection truncate it
+Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
     std::vector<int64_t> vectorOfOnes;
     // Use a for loop to add elements to the vector
-    for (int i = 0; i < vector_sz; ++i) {
+    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
         vectorOfOnes.push_back(1);
     }
-    Plaintext plaintextOnes = cryptoContext->MakePackedPlaintext(vectorOfOnes);
+    Plaintext plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
 
+    /* TODO: Servers can calculate this once and the reuse that */
     ////////////////////////////////////////////////////////////
     // Encryption
     ////////////////////////////////////////////////////////////
-
-    std::vector<Ciphertext<DCRTPoly>> ciphertexts;
-
-    TIC1(t);
-
-    auto ct1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto ct2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext2);
-    auto ctSel = cryptoContext->Encrypt(keyPair.publicKey, plaintextSelect);
-    auto ctOnes = cryptoContext->Encrypt(keyPair.publicKey, plaintextOnes);
-
-    processingTime = TOC1(t);
+    auto one_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
 
     ////////////////////////////////////////////////////////////
     // Homomorphic selection between two ciphertexts w/o any relinearization
@@ -456,56 +452,17 @@ int FHE_sel(int select_bit){
     //                         = ((1 - select_bit) * a) + (select_bit * b)
     ////////////////////////////////////////////////////////////
     
-    TIC1(t);
-    
-    auto ciphertextSelNot = cryptoContext->EvalSub(ctOnes, ctSel);
-    cryptoContext->ModReduceInPlace(ciphertextSelNot);
+    auto fnd_not_ct = FHEcryptoContext->EvalSub(one_ct, fnd_ct);
+    FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
 
-    processingTime = TOC1(t);
-    std::cout << "Time for first sub between two ciphertexts: " << processingTime << "us" << std::endl;
+    auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
+    FHEcryptoContext->ModReduceInPlace(A_not_ct);
 
-    TIC1(t);
+    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(fnd_ct, B_ct);
+    FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
 
-    auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ct1);
-    cryptoContext->ModReduceInPlace(ciphertextSelNota);
+    auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
+    FHEcryptoContext->ModReduceInPlace(C_ct);
 
-    processingTime = TOC1(t);
-    std::cout << "Time for first mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
-
-    TIC1(t);
-
-    auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ctSel, ct2);
-    cryptoContext->ModReduceInPlace(ciphertextSelb);
-
-    processingTime = TOC1(t);
-    std::cout << "Time for sencond mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
-
-    TIC1(t);
-
-    auto ciphertextSel = cryptoContext->EvalAdd(ciphertextSelNota, ciphertextSelb);
-    cryptoContext->ModReduceInPlace(ciphertextSel);
-
-    processingTime = TOC1(t);
-    std::cout << "Time for addition: " << processingTime << "us" << std::endl;
-
-    Plaintext plaintextDecSel;
-
-    TOC1(t);
-    cryptoContext->Decrypt(keyPair.secretKey, ciphertextSel, &plaintextDecSel);
-    processingTime = TOC1(t);
-    std::cout << "Decryption time: " << processingTime << "us" << std::endl;
-
-    plaintextDecSel->SetLength(plaintext1->GetLength());//TODO: What to set?
-
-    for (int i = 0; i < vector_sz; ++i) {
-        if (plaintextDecSel->GetPackedValue()[i] !=
-            ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i])) {
-            std::cout << "Error in selection of ciphertexts #1 and #2 at index " << i << std::endl;
-            std::cout << "Expected: " << ((select_bit == 1) ? vectorOfPt2[i]: vectorOfPt1[i]) << ", got: "
-                      << plaintextDecSel->GetPackedValue()[i] << std::endl;
-            return 1;
-        }
-    }    
-
-    return 0;
+    return C_ct;
 }

@@ -25,6 +25,7 @@ static mpz_class selectRho();
 static void TestBlindedExponentiation();
 static void TestBlindedExponentiation1();
 static void TestBlindedExponentiation2();
+static void Test_FHE_DBElement();
 
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
     mpz_class sg_prime;
@@ -118,12 +119,6 @@ static int OneTimeInitialization(){
     std::tie(pk_E_q, sk_E_q) = ElGamal_q_keyGen();
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair in ZZ*_q");
 
-    //TODO: Temporary, just for testing. Calling from here, so that server_alpha is not required to be executed now
-    //TestBlindedExponentiation();
-    //TestBlindedExponentiation1();
-    TestBlindedExponentiation2();
-    return 0;
-
     //Initialize FHE key-pair
     ret = FHE_keyGen();//TODO: Check allocation, call by reference etc.
     
@@ -133,6 +128,13 @@ static int OneTimeInitialization(){
     } else {
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated FHE key-pair");
     }
+
+    //TODO: Temporary, just for testing. Calling from here, so that server_alpha is not required to be executed now
+    //TestBlindedExponentiation();
+    //TestBlindedExponentiation1();
+    TestBlindedExponentiation2();
+    Test_FHE_DBElement();
+    return 0;
 
     //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
@@ -196,7 +198,6 @@ static int FinSrv_beta(){
 static int shuffle() {
     int ret = 0;
     // compute size M = N + ceil(sqrt(N))
-    unsigned int sqrt_N = static_cast<unsigned int>(std::ceil(std::sqrt(static_cast<double>(N))));
     unsigned int M = N + sqrt_N;
 
     // build SS = {1, 2, ..., (N + sqrt_N))}
@@ -571,76 +572,81 @@ static void TestBlindedExponentiation2() {
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Finding tag homomorphically is not working :( Expected: " + g_pow_Rho_pow_I.get_str() + " but got: " + decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1.get_str());
     }
-
-
-    #if 0
-    mpz_class Rho = selectRho();
-
-    mpz_class h = rng.get_z_range(q-1) + 1;//To ensure that the element belongs to ZZ_q*
-    mpz_class h_1;
-    mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), q.get_mpz_t());//Compute h^-1 in ZZ_q*
-
-    mpz_class alpha = rng.get_z_range(q-1) + 1;
-    mpz_class alpha_1;
-    mpz_invert(alpha_1.get_mpz_t(), alpha.get_mpz_t(), q.get_mpz_t());
-
-    //Confirm that the inverses really work
-    assert((h * h_1) % q == 1);
-    assert((alpha * alpha_1) % q == 1);
-
-    mpz_class I = rng.get_z_range(
-        N-1) + 1;//I will be in the range of [1, N]
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plain text messages are Rho: " + Rho.get_str() + " I: " + I.get_str() + " h: " + h.get_str() + " h_1: " + h_1.get_str()+ " alpha: " + alpha.get_str() + " alpha_1: " + alpha_1.get_str() );
-    mpz_class RhoExpI;
-    //mpz_powm(RhoExpI.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), p.get_mpz_t()); previous
-    //mpz_class RhoExpI_h = (RhoExpI * h) % p; previous
-    mpz_powm(RhoExpI.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());//Since this is an exponenet
-    //mpz_class RhoExpI_h = (RhoExpI * h) % q;
-
-    mpz_class gExp_RhoExpI;
-    mpz_powm(gExp_RhoExpI.get_mpz_t(), g.get_mpz_t(), RhoExpI.get_mpz_t(), p.get_mpz_t());
-
-    //Server beta broadcasts E_Rho
-    std::pair<mpz_class, mpz_class> E_Rho = ElGamal_encrypt(Rho, pk_E);//Compute E(\rho)
-
-    //Client computes E_RhoExpI
-    std::pair<mpz_class, mpz_class> E_RhoExpI = ElGamal_exp_ct(E_Rho, I, pk_E);//Compute E(\rho^I)
-    //Client computes E_RhoExpI_h and sends to server beta
-    std::pair<mpz_class, mpz_class> E_h = ElGamal_encrypt(h, pk_E);//Compute E(h)
-    std::pair<mpz_class, mpz_class> E_RhoExpI_h = ElGamal_mult_ct(E_RhoExpI, E_h);//Compute E(\rho^I.h)
-
-    //Server beta decrypts and reduces to mod q
-    mpz_class decrypted_RhoExpI_h = ElGamal_decrypt(E_RhoExpI_h, sk_E);
-    mpz_class decrypted_RhoExpI_h__modq = decrypted_RhoExpI_h % q;//Reduce to mod q
-    //Server beta raises to g
-    mpz_class gExp_RhoExpI_h__modq;
-    mpz_powm(gExp_RhoExpI_h__modq.get_mpz_t(), g.get_mpz_t(), decrypted_RhoExpI_h__modq.get_mpz_t(), p.get_mpz_t());
-    std::pair<mpz_class, mpz_class> E_gExp_RhoExpI_h__modq = ElGamal_encrypt(gExp_RhoExpI_h__modq, pk_E);//Sends corresponding ciphertext
-
-    //Server alpha removes h by raising it to h^{-1}
-    std::pair<mpz_class, mpz_class> E_gExp_RhoExpI_hh_1__modq = ElGamal_exp_ct(E_gExp_RhoExpI_h__modq, h_1, pk_E);
-
-    //If decrypted must match with gExp_RhoExpI
-    mpz_class decrypted_gExp_RhoExpI_hh_1__modq = ElGamal_decrypt(E_gExp_RhoExpI_hh_1__modq, sk_E);
-
-    assert(decrypted_gExp_RhoExpI_hh_1__modq == gExp_RhoExpI);
-
-    if (decrypted_gExp_RhoExpI_hh_1__modq == gExp_RhoExpI) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decryption successful and matches with gExp_RhoExpI");
-    } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decryption failed or does not match with gExp_RhoExpI. Expected :" + gExp_RhoExpI.get_str() + " but got: " + decrypted_gExp_RhoExpI_hh_1__modq.get_str());
-    }
-    #endif
 }
+
+// Test function for FHE_Enc_DBElement and FHE_Dec_DBElement
+static void Test_FHE_DBElement() {
+    // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits
+    mpz_class block_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+    // Generate random block_index of log_N bits
+    mpz_class block_index = rng.get_z_bits(log_N);
+    // Generate random tag of P_BITS bits
+    mpz_class tag_1 = rng.get_z_bits(P_BITS);
+    // Generate another random tag of P_BITS bits
+    mpz_class tag_2 = rng.get_z_bits(P_BITS);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block content: " + block_content.get_str() + "\nblock index: " + block_index.get_str() + "\ntag_1: " + tag_1.get_str()+ "\ntag_2: " + tag_2.get_str());
+
+    // Encrypt
+    Ciphertext<DCRTPoly> ct = FHE_Enc_DBElement(block_content, block_index);
+    Ciphertext<DCRTPoly> ct_tag_1 = FHE_Enc_Tag(tag_1);
+    Ciphertext<DCRTPoly> ct_tag_2 = FHE_Enc_Tag(tag_2);
+    Ciphertext<DCRTPoly> ct_fnd = FHE_Enc_Tag(mpz_class(0));
+
+    // Decrypt
+    mpz_class dec_block_content, dec_block_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag;
+    FHE_Dec_DBElement(ct, dec_block_content, dec_block_index);
+    FHE_Dec_Tag(ct_tag_1, dec_tag_1);
+    FHE_Dec_Tag(ct_tag_2, dec_tag_2);
+    FHE_Dec_Tag(ct_fnd, dec_fnd);
+    Ciphertext<DCRTPoly> ct_selected_tag = FHE_Select(ct_tag_1, ct_tag_2, ct_fnd);
+    FHE_Dec_Tag(ct_selected_tag, dec_selected_tag);
+
+    // Verify
+    if (block_content != dec_block_content) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_content mismatch!\nExpected: " + block_content.get_str() + "\nObtained: " + dec_block_content.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "block_content matches.");
+    }
+
+    if (block_index != dec_block_index) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_index mismatch!\nExpected: " + block_index.get_str() + "\nObtained: " + dec_block_index.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "block_index matches.");
+    }
+
+    if (tag_1 != dec_tag_1) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "tag_1 mismatch!\nExpected: " + tag_1.get_str() + "\nObtained: " + dec_tag_1.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "tag_1 matches.");
+    }
+
+    if (tag_2 != dec_tag_2) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "tag_2 mismatch!\nExpected: " + tag_2.get_str() + "\nObtained: " + dec_tag_2.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "tag_2 matches.");
+    }
+
+    if (dec_fnd != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "fnd mismatch!\nExpected: 0 but got: " + dec_fnd.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "fnd matches");
+    }
+
+    if (dec_selected_tag == tag_1) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works..!!..Ha ha..Thank you..:) :) :) :) :)");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working :( Expected: " + tag_1.get_str() + " but got: " + dec_selected_tag.get_str());
+    }
+}
+
 
 static void TestSrv_beta() {
     int ret = -1;
-
     size_t received_sz = 0;
     int ret_recv = 0;
-
-    mpz_class m1_local, m2_local, m3_local, m4_local, c11_local, c12_local, c21_local, c22_local, c31_local, c32_local, c41_local, c42_local;
-    Ciphertext<DCRTPoly> FHE_c1_local;
+    mpz_class m1_local, m2_local, m3_local, m4_local, c11_local, c12_local, c21_local, c22_local, c31_local, c32_local, c41_local, c42_local, tag_local;
+    Ciphertext<DCRTPoly> ct_tag_local;
 
     // Receive m1
     ret_recv = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
@@ -750,15 +756,24 @@ static void TestSrv_beta() {
     }
     c42_local = mpz_class(std::string(net_buf, received_sz));
 
-    // Receive FHE_c1
+    // Receive tag_local
     ret_recv = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE_c1 from Server Beta");
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive tag_local from Server Alpha");
         close(sock_beta_alpha_con);
         return;
     }
-    Serial::DeserializeFromString(FHE_c1_local, std::string(net_buf, received_sz));
+    tag_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive ct_tag_local
+    ret_recv = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive ct_tag_local from Server Beta");
+        close(sock_beta_alpha_con);
+        return;
+    }
+    Serial::DeserializeFromString(ct_tag_local, std::string(net_buf, received_sz));
 
     // Decrypt and check
     mpz_class decrypted_m1 = ElGamal_decrypt({c11_local, c12_local}, sk_E);
@@ -790,16 +805,13 @@ static void TestSrv_beta() {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m4 matches with expected value");
     }
 
-    //Decrypt FHE_c1_local
-    Plaintext decrypted_PIRBlock;
-    FHEcryptoContext->Decrypt(sk_F, FHE_c1_local, &decrypted_PIRBlock);
+    mpz_class decrypted_tag;
+    FHE_Dec_Tag(ct_tag_local, decrypted_tag);
 
-    //std::vector<int64_t> decodedAddResult = plaintextAddResult->GetPackedValue<int64_t>();
-
-    decrypted_PIRBlock->SetLength(NUM_FHE_BLOCKS_PER_PIR_BLOCK);//TODO: What to set?
-
-    for (int i = 0; i < NUM_FHE_BLOCKS_PER_PIR_BLOCK; ++i) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted decrypted_PIRBlock[" + std::to_string(i) + "]: " + std::to_string(decrypted_PIRBlock->GetPackedValue()[i]));
+    if (decrypted_tag != tag_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted tag: " + decrypted_tag.get_str() + " does not match with expected value: " + tag_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted tag matches with expected value");
     }
 
     return;
