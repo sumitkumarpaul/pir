@@ -27,13 +27,21 @@ static void TestBlindedExponentiation1();
 static void TestBlindedExponentiation2();
 
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
- 
-    //Randomly choose q
-    do {
-        q = rng.get_z_bits(q_bits);
-        mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
-    } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits);
+    mpz_class sg_prime;
 
+    //Choose a safe prime q
+    do{
+        // First randomly choose a (q_bits - 2)-bits long Sophie Germain primes
+        do
+        {
+            sg_prime = rng.get_z_bits(q_bits - 2);
+            mpz_nextprime(sg_prime.get_mpz_t(), sg_prime.get_mpz_t());
+        } while (mpz_sizeinbase(sg_prime.get_mpz_t(), 2) != (q_bits - 2));
+
+        //And check whether this generates a safe-prime or not
+        q = (2*sg_prime) + 1;
+    } while (!mpz_probab_prime_p(q.get_mpz_t(), 25));
+    
     //Accordingly choose p
     mpz_class temp;
     do {

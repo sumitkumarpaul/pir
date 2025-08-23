@@ -58,7 +58,7 @@ using namespace lbcrypto;
 #define NUM_FHE_BLOCKS_PER_PIR_BLOCK ((PLAINTEXT_PIR_BLOCK_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 
 #define P_BITS  3072//5 // Size of p in bits
-#define Q_BITS  256//3 // Size of q in bits
+#define Q_BITS  (256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
 #define R_BITS  64//2 // Size of r in bits
 
 // Randoms
