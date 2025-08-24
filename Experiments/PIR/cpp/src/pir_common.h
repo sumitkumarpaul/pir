@@ -79,6 +79,8 @@ extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
 extern PublicKey<DCRTPoly> pk_F;
 extern PrivateKey<DCRTPoly> sk_F;
 extern CryptoContext<DCRTPoly> FHEcryptoContext;
+extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
+extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 
 //Function prototypes
 //Logging related
@@ -111,4 +113,6 @@ extern Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, con
 extern void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index);
 extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
 extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
-extern Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
+extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
+extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
+extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct);

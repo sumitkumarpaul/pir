@@ -85,6 +85,8 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
 
     #if 0//Now the gamma server does not exist
     ret = send(sock_beta_to_gamma, msg.c_str(), msg.size(), 0);
@@ -128,6 +130,8 @@ static int OneTimeInitialization(){
     } else {
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated FHE key-pair");
     }
+
+    FHE_EncOfOnes(vectorOnesforElement_ct, vectorOnesforTag_ct);
 
     //TODO: Temporary, just for testing. Calling from here, so that server_alpha is not required to be executed now
     //TestBlindedExponentiation();
@@ -577,40 +581,51 @@ static void TestBlindedExponentiation2() {
 // Test function for FHE_Enc_DBElement and FHE_Dec_DBElement
 static void Test_FHE_DBElement() {
     // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits
-    mpz_class block_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+    mpz_class block_1_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
     // Generate random block_index of log_N bits
-    mpz_class block_index = rng.get_z_bits(log_N);
+    mpz_class block_1_index = rng.get_z_bits(log_N);
+    // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits
+    mpz_class block_2_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+    // Generate random block_index of log_N bits
+    mpz_class block_2_index = rng.get_z_bits(log_N);
     // Generate random tag of P_BITS bits
     mpz_class tag_1 = rng.get_z_bits(P_BITS);
     // Generate another random tag of P_BITS bits
     mpz_class tag_2 = rng.get_z_bits(P_BITS);
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block content: " + block_content.get_str() + "\nblock index: " + block_index.get_str() + "\ntag_1: " + tag_1.get_str()+ "\ntag_2: " + tag_2.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block 1 content: " + block_1_content.get_str() + "\nblock 1 index: " + block_1_index.get_str() + "\nblock 2 content: " + block_2_content.get_str() + "\nblock 2 index: " + block_2_index.get_str() + "\ntag 1: " + tag_1.get_str()+ "\ntag 2: " + tag_2.get_str());
 
     // Encrypt
-    Ciphertext<DCRTPoly> ct = FHE_Enc_DBElement(block_content, block_index);
+    Ciphertext<DCRTPoly> ct_element_1 = FHE_Enc_DBElement(block_1_content, block_1_index);
+    Ciphertext<DCRTPoly> ct_element_2 = FHE_Enc_DBElement(block_2_content, block_2_index);
     Ciphertext<DCRTPoly> ct_tag_1 = FHE_Enc_Tag(tag_1);
     Ciphertext<DCRTPoly> ct_tag_2 = FHE_Enc_Tag(tag_2);
-    Ciphertext<DCRTPoly> ct_fnd = FHE_Enc_Tag(mpz_class(0));
+    
+    // TODO, Also check with 1, which is 0b...000000000000001000000000000001
+    Ciphertext<DCRTPoly> selectElementBits_ct = FHE_Enc_DBElement(mpz_class(0), mpz_class(0));
+    Ciphertext<DCRTPoly> selectTagBits_ct = FHE_Enc_Tag(mpz_class(0));
 
     // Decrypt
-    mpz_class dec_block_content, dec_block_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag;
-    FHE_Dec_DBElement(ct, dec_block_content, dec_block_index);
+    mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_block_content, dec_selected_block_index;
+    FHE_Dec_DBElement(ct_element_1, dec_block_1_content, dec_block_1_index);
+    FHE_Dec_DBElement(ct_element_2, dec_block_2_content, dec_block_2_index);
     FHE_Dec_Tag(ct_tag_1, dec_tag_1);
     FHE_Dec_Tag(ct_tag_2, dec_tag_2);
-    FHE_Dec_Tag(ct_fnd, dec_fnd);
-    Ciphertext<DCRTPoly> ct_selected_tag = FHE_Select(ct_tag_1, ct_tag_2, ct_fnd);
+    FHE_Dec_Tag(selectTagBits_ct, dec_fnd);
+    Ciphertext<DCRTPoly> ct_selected_element = FHE_SelectElement(selectElementBits_ct, ct_element_1, ct_element_2);
+    Ciphertext<DCRTPoly> ct_selected_tag = FHE_SelectTag(selectTagBits_ct, ct_tag_1, ct_tag_2);
     FHE_Dec_Tag(ct_selected_tag, dec_selected_tag);
+    FHE_Dec_DBElement(ct_selected_element, dec_selected_block_content, dec_selected_block_index);
 
     // Verify
-    if (block_content != dec_block_content) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_content mismatch!\nExpected: " + block_content.get_str() + "\nObtained: " + dec_block_content.get_str());
+    if (block_1_content != dec_block_1_content) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_content mismatch!\nExpected: " + block_1_content.get_str() + "\nObtained: " + dec_block_1_content.get_str());
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "block_content matches.");
     }
 
-    if (block_index != dec_block_index) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_index mismatch!\nExpected: " + block_index.get_str() + "\nObtained: " + dec_block_index.get_str());
+    if (block_1_index != dec_block_1_index) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "block_index mismatch!\nExpected: " + block_1_index.get_str() + "\nObtained: " + dec_block_1_index.get_str());
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "block_index matches.");
     }
@@ -634,9 +649,21 @@ static void Test_FHE_DBElement() {
     }
 
     if (dec_selected_tag == tag_1) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works..!!..Ha ha..Thank you..:) :) :) :) :)");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the tags..!!..Ha ha..Thank you..:) :) :) :) :)");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working :( Expected: " + tag_1.get_str() + " but got: " + dec_selected_tag.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the tags:( Expected: " + tag_1.get_str() + " but got: " + dec_selected_tag.get_str());
+    }
+
+    if (dec_selected_block_content == block_1_content) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block content..!!..Ha ha..Thank you..:) :) :) :) :)");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block content :( Expected: " + block_1_content.get_str() + " but got: " + dec_selected_block_content.get_str());
+    }
+
+    if (dec_selected_block_index == block_1_index) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block index..!!..Ha ha..Thank you..:) :) :) :) :)");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block index :( Expected: " + block_1_index.get_str() + " but got: " + dec_selected_block_index.get_str());
     }
 }
 

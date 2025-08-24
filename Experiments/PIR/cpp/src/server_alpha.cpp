@@ -148,6 +148,24 @@ static int RecvInitParamsFromBeta() {
     }
     Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
 
+    // Receive vectorOnesforElement_ct
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforElement_ct from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(vectorOnesforElement_ct, std::string(net_buf, received_sz));
+
+    // Receive vectorOnesforTag_ct
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforTag_ct from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
+
     return 0;
 }
 

@@ -14,10 +14,12 @@ mpz_class p, q, r, g, g_q;
 mpz_class pk_E, pk_E_q;
 mpz_class sk_E, sk_E_q;
 
-// FHE encryption keys
+// FHE related
 PublicKey<DCRTPoly> pk_F;
 PrivateKey<DCRTPoly> sk_F;
 CryptoContext<DCRTPoly> FHEcryptoContext;
+Ciphertext<DCRTPoly> vectorOnesforElement_ct;
+Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 
 
 void PrintLog(int log_level, const char* file, int line, const std::string& message) {
@@ -402,7 +404,6 @@ void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content,
 Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag) {
     std::vector<int64_t> TagVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
     
-    /* Add the block content */
     mpz_class tmp = tag;
     for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
         mpz_class rem;
@@ -431,34 +432,21 @@ void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag) {
     }
 }
 
-//TODO: At this moment assuming fnd_ct encrypts NUM_FHE_BLOCKS_PER_TAG bits always. For content selection truncate it
-Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
-    std::vector<int64_t> vectorOfOnes;
-    // Use a for loop to add elements to the vector
-    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
-        vectorOfOnes.push_back(1);
-    }
-    Plaintext plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
-
-    /* TODO: Servers can calculate this once and the reuse that */
-    ////////////////////////////////////////////////////////////
-    // Encryption
-    ////////////////////////////////////////////////////////////
-    auto one_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
-
+// selElementBits_ct must be encryption of select bit but extended over TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT
+Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& selElementBits_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
     ////////////////////////////////////////////////////////////
     // Homomorphic selection between two ciphertexts w/o any relinearization
     // Select(a,b, select_bit) = select_bit ? a : b
     //                         = ((1 - select_bit) * a) + (select_bit * b)
     ////////////////////////////////////////////////////////////
     
-    auto fnd_not_ct = FHEcryptoContext->EvalSub(one_ct, fnd_ct);
+    auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforElement_ct, selElementBits_ct);
     FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
 
     auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
     FHEcryptoContext->ModReduceInPlace(A_not_ct);
 
-    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(fnd_ct, B_ct);
+    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selElementBits_ct, B_ct);
     FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
 
     auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
@@ -466,3 +454,50 @@ Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& fnd_ct, const Cipher
 
     return C_ct;
 }
+
+// selectTagBits_ct must be encryption of select bit but extended over NUM_FHE_BLOCKS_PER_TAG
+Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& selectTagBits_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
+    ////////////////////////////////////////////////////////////
+    // Homomorphic selection between two ciphertexts w/o any relinearization
+    // Select(a,b, select_bit) = select_bit ? a : b
+    //                         = ((1 - select_bit) * a) + (select_bit * b)
+    ////////////////////////////////////////////////////////////
+    
+    auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforTag_ct, selectTagBits_ct);
+    FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
+
+    auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
+    FHEcryptoContext->ModReduceInPlace(A_not_ct);
+
+    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selectTagBits_ct, B_ct);
+    FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
+
+    auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
+    FHEcryptoContext->ModReduceInPlace(C_ct);
+
+    return C_ct;
+}
+
+void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct){
+    std::vector<int64_t> vectorOfOnes;
+    Plaintext plaintextOnes;
+
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
+        vectorOfOnes.push_back(1);
+    }
+    plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
+    OnesforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+
+    vectorOfOnes.clear();
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
+        vectorOfOnes.push_back(1);
+    }
+    
+    plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
+    OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+
+    return;
+}
+
