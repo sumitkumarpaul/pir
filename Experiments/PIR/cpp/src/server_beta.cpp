@@ -601,9 +601,13 @@ static void Test_FHE_DBElement() {
     Ciphertext<DCRTPoly> ct_tag_1 = FHE_Enc_Tag(tag_1);
     Ciphertext<DCRTPoly> ct_tag_2 = FHE_Enc_Tag(tag_2);
     
-    // TODO, Also check with 1, which is 0b...000000000000001000000000000001
     Ciphertext<DCRTPoly> selectElementBits_ct = FHE_Enc_DBElement(mpz_class(0), mpz_class(0));
     Ciphertext<DCRTPoly> selectTagBits_ct = FHE_Enc_Tag(mpz_class(0));
+    // Also tested with 1, which is 0b...000000000000001000000000000001
+    //Ciphertext<DCRTPoly> selectElementBits_ct = vectorOnesforElement_ct;
+    //Ciphertext<DCRTPoly> selectTagBits_ct = vectorOnesforTag_ct;
+    //Ciphertext<DCRTPoly> selectTagBits_ct = vectorOnesforTag_ct;
+
 
     // Decrypt
     mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_block_content, dec_selected_block_index;

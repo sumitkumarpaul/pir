@@ -49,6 +49,8 @@ find_path(GMP_INCLUDE_DIR gmp.h)
 find_library(GMP_LIBRARY NAMES gmp)
 find_library(GMPXX_LIBRARY NAMES gmpxx)
 
+find_package(Kuku 2.1 REQUIRED)
+
 # Extract GMP version from gmp.h
 if(GMP_INCLUDE_DIR)
     file(READ "${GMP_INCLUDE_DIR}/gmp.h" GMP_H_CONTENTS)
@@ -143,6 +145,7 @@ target_link_libraries(server_alpha
     OpenSSL::SSL
     OpenSSL::Crypto
     crypto
+    Kuku::kuku
     ${EXTRA_LIBS}
 )
 

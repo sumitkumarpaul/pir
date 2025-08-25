@@ -24,3 +24,11 @@ sudo apt-get install m4
 ```
 sudo apt install libomp-dev
 ```
+
+# Install Kuku library (Required for Cuckoo hash functions)
+```
+cmake -S . -B build
+cmake --build build
+sudo cmake --install build
+```
+Details can be found [here](https://github.com/microsoft/Kuku.git).
