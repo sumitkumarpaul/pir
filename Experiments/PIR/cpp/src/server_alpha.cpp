@@ -35,7 +35,10 @@ static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pai
 static int InitSrv_alpha();
 static int RecvInitParamsFromBeta();
 static int FinSrv_alpha();
+static int SelShuffDBSearchTag_alpha(std::pair<mpz_class, mpz_class>& E_T_I);
 static void TestSrv_alpha();
+static void TestPKEOperations_alpha();
+static void TestSelShuffDBSearchTag_alpha();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -195,7 +198,55 @@ static int FinSrv_alpha(){
     return ret;
 }
 
-static void TestSrv_alpha(){
+
+static int SelShuffDBSearchTag_alpha(std::pair<mpz_class, mpz_class>& E_T_I){
+    int ret = 0;
+    size_t received_sz = 0;
+    mpz_class h_alpha1 = ElGamal_randomGroupElement();
+    mpz_class h_alpha1_1;
+    mpz_invert(h_alpha1_1.get_mpz_t(), h_alpha1.get_mpz_t(), p.get_mpz_t());
+
+    mpz_class h_alpha2 = ElGamal_randomGroupElement();
+    mpz_class h_alpha2_1;
+    mpz_invert(h_alpha2_1.get_mpz_t(), h_alpha2.get_mpz_t(), p.get_mpz_t());
+
+    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1 = ElGamal_mult_ct(E_T_I, ElGamal_encrypt(h_alpha1, pk_E));
+
+    /* Send E(T_I.h_{\alpha 1}) */
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.first.get_str().c_str(), E_T_I_h_alpha1.first.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.second.get_str().c_str(), E_T_I_h_alpha1.second.get_str().size());
+
+    /* Receive E(T_I.h_{\alpha 1}h_{\beta 0}) */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E(T_I.h_{\\alpha 1}h_{\\beta 0}) from Server Beta");
+        return ret;
+    }
+
+    /* Remove h_{\alpha 1} and deternube T_I_h_beta0 */
+    mpz_class T_I_h_alpha1_h_beta0 = mpz_class(std::string(net_buf, received_sz));
+    mpz_class T_I_h_beta0 = (T_I_h_alpha1_h_beta0 * h_alpha1_1) % p;
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Determined T_I.h_{\\beta 0}: " + T_I_h_beta0.get_str());
+
+    return ret;
+}
+
+static void TestSelShuffDBSearchTag_alpha(){
+    int ret = -1;
+    mpz_class test_T_I = ElGamal_randomGroupElement();
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TestSelShuffDBSearchTag_alpha: Testing with T_I: " + test_T_I.get_str());
+
+    std::pair<mpz_class, mpz_class> E_T_I = ElGamal_encrypt(test_T_I, pk_E);
+
+    ret = SelShuffDBSearchTag_alpha(E_T_I);
+
+    return;
+}
+
+static void TestPKEOperations_alpha(){
     int ret;
 
     //Choose random message and random exponent
@@ -232,6 +283,12 @@ static void TestSrv_alpha(){
     (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
 
     return;
+}
+
+static void TestSrv_alpha()
+{
+    //TestPKEOperations_alpha();
+    TestSelShuffDBSearchTag_alpha();
 }
 
 ostream &operator<<(ostream &stream, item_type item)

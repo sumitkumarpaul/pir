@@ -15,17 +15,23 @@ static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
 static int shuffle();
-static void TestSrv_beta();
 static int shuffle();
 static int FinSrv_beta();
 static int InitSrv_beta();
 static int OneTimeInitialization();
 static int SendInitializedParamsToAllServers();
 static mpz_class selectRho();
+static int SelShuffDBSearchTag_beta();
+
+
+static void TestSrv_beta();
+static void TestPKEOperations_beta();
 static void TestBlindedExponentiation();
 static void TestBlindedExponentiation1();
 static void TestBlindedExponentiation2();
 static void Test_FHE_DBElement();
+static void TestSelShuffDBSearchTag_beta();
+
 
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
     mpz_class sg_prime;
@@ -248,6 +254,52 @@ static mpz_class selectRho() {
 
     return rho;
 }
+
+static int SelShuffDBSearchTag_beta(){
+    int ret = -1;
+    size_t received_sz = 0;    
+    mpz_class h_beta0 = ElGamal_randomGroupElement();
+    mpz_class h_beta0_1;
+    mpz_invert(h_beta0_1.get_mpz_t(), h_beta0.get_mpz_t(), p.get_mpz_t());
+
+    // Receive first component of E(T_I.h_{\alpha 1})
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive first component of E(T_I.h_{\\alpha 1} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+    mpz_class E_T_I_h_alpha1_1 = mpz_class(std::string(net_buf, received_sz));
+
+    //Receive second component of E(T_I.h_{\alpha 1})
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive second component of E(T_I.h_{\\alpha 1} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+
+    mpz_class E_T_I_h_alpha1_2 = mpz_class(std::string(net_buf, received_sz));
+    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1_local = std::make_pair(E_T_I_h_alpha1_1, E_T_I_h_alpha1_2);
+    mpz_class T_I_h_alpha1_local = ElGamal_decrypt(E_T_I_h_alpha1_local, sk_E);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted T_I.h_{\\alpha 1}: " + T_I_h_alpha1_local.get_str());
+
+    /* Compute and send T_I.h_{\alpha 1}h_{\beta 0} */
+    mpz_class T_I_h_alpha1_h_beta0 = (T_I_h_alpha1_local*h_beta0) % p;
+    (void)sendAll(sock_beta_alpha_con, T_I_h_alpha1_h_beta0.get_str().c_str(), T_I_h_alpha1_h_beta0.get_str().size());
+
+    return ret;
+}
+
+static void TestSelShuffDBSearchTag_beta(){
+    int ret = -1;
+
+    ret = SelShuffDBSearchTag_beta();
+
+    return;
+}
+
 
 static void TestBlindedExponentiation() {
     int ret;
@@ -673,7 +725,7 @@ static void Test_FHE_DBElement() {
 }
 
 
-static void TestSrv_beta() {
+static void TestPKEOperations_beta() {
     int ret = -1;
     size_t received_sz = 0;
     int ret_recv = 0;
@@ -1017,6 +1069,12 @@ static void TestSrv_beta() {
     }
 
     return;
+}
+
+static void TestSrv_beta()
+{
+    //TestPKEOperations_beta();
+    TestSelShuffDBSearchTag_beta();
 }
 
 int main() {

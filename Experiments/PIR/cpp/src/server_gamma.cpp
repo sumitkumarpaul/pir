@@ -36,6 +36,7 @@ static int InitSrv_gamma();
 static int RecvInitParamsFromBeta();
 static int FinSrv_gamma();
 static void TestSrv_gamma();
+static void TestPKEOperations_gamma();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -204,7 +205,7 @@ static int FinSrv_gamma(){
     return ret;
 }
 
-static void TestSrv_gamma(){
+static void TestPKEOperations_gamma(){
     int ret;
 
     //Choose random message and random exponent
@@ -241,6 +242,10 @@ static void TestSrv_gamma(){
     (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
 
     return;
+}
+
+static void TestSrv_gamma(){
+    TestPKEOperations_gamma();
 }
 
 ostream &operator<<(ostream &stream, item_type item)
