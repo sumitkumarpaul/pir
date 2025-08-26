@@ -88,15 +88,18 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
 
-    #if 0//Now the gamma server does not exist
-    ret = send(sock_beta_to_gamma, msg.c_str(), msg.size(), 0);
-    if (ret != msg.size()) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to send all parameters to Server Gamma");
-        return -1;
-    } else {
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully sent all parameters to Server Gamma");
-    }
-    #endif
+    //Send parameters to Server Gamma
+    (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, q.get_str().c_str(), q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, g.get_str().c_str(), g.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, g_q.get_str().c_str(), g_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, r.get_str().c_str(), r.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, pk_E.get_str().c_str(), pk_E.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
 
     return 0;
 }
@@ -136,9 +139,9 @@ static int OneTimeInitialization(){
     //TODO: Temporary, just for testing. Calling from here, so that server_alpha is not required to be executed now
     //TestBlindedExponentiation();
     //TestBlindedExponentiation1();
-    TestBlindedExponentiation2();
-    Test_FHE_DBElement();
-    return 0;
+    //TestBlindedExponentiation2();
+    //Test_FHE_DBElement();
+    //return 0;
 
     //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
@@ -148,14 +151,12 @@ static int OneTimeInitialization(){
         return -1;
     }
 
-    #if 0
     ret = InitAcceptingSocket(BETA_LISTENING_TO_GAMMA_PORT, &sock_beta_gamma_srv, &sock_beta_gamma_con);
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Gamma!!");
         return -1;
     }
-    #endif
 
     //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
     ret = SendInitializedParamsToAllServers();
@@ -679,6 +680,8 @@ static void TestSrv_beta() {
     mpz_class m1_local, m2_local, m3_local, m4_local, c11_local, c12_local, c21_local, c22_local, c31_local, c32_local, c41_local, c42_local, tag_local;
     Ciphertext<DCRTPoly> ct_tag_local;
 
+    // Receive from server alpha
+
     // Receive m1
     ret_recv = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0) {
@@ -837,6 +840,174 @@ static void TestSrv_beta() {
     }
 
     mpz_class decrypted_tag;
+    FHE_Dec_Tag(ct_tag_local, decrypted_tag);
+
+    if (decrypted_tag != tag_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted tag: " + decrypted_tag.get_str() + " does not match with expected value: " + tag_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted tag matches with expected value");
+    }
+
+
+
+    // Receive from server gamma
+    // Receive m1
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive m1 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    m1_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive m2
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive m2 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    m2_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive m3
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive m3 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    m3_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive m4
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive m4 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    m4_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c11
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c11 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c11_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c12
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c12 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c12_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c21
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c21 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c21_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c22
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c22 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c22_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c31
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c31 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c31_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c32
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c32 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c32_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c41
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c41 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c41_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive c42
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive c42 from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    c42_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive tag_local
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive tag_local from Server gamma");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    tag_local = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive ct_tag_local
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive ct_tag_local from Server Beta");
+        close(sock_beta_gamma_con);
+        return;
+    }
+    Serial::DeserializeFromString(ct_tag_local, std::string(net_buf, received_sz));
+
+    // Decrypt and check
+    decrypted_m1 = ElGamal_decrypt({c11_local, c12_local}, sk_E);
+    decrypted_m2 = ElGamal_decrypt({c21_local, c22_local}, sk_E);
+    decrypted_m3 = ElGamal_decrypt({c31_local, c32_local}, sk_E);
+    decrypted_m4 = ElGamal_decrypt({c41_local, c42_local}, sk_E);
+
+    if (decrypted_m1 != m1_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m1: " + decrypted_m1.get_str() + " does not match with expected value: " + m1_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m1 matches with expected value");
+    }
+
+    if (decrypted_m2 != m2_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m2: " + decrypted_m2.get_str() + " does not match with expected value: " + m2_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m2 matches with expected value");
+    }
+
+    if (decrypted_m3 != m3_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m3: " + decrypted_m3.get_str() + " does not match with expected value: " + m3_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m3 matches with expected value");
+    }
+
+    if (decrypted_m4 != m4_local) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted m4: " + decrypted_m4.get_str() + " does not match with expected value: " + m4_local.get_str() + " !!");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m4 matches with expected value");
+    }
+
     FHE_Dec_Tag(ct_tag_local, decrypted_tag);
 
     if (decrypted_tag != tag_local) {

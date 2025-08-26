@@ -22,7 +22,7 @@
 #include "pir_common.h"
 
 
-static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
+static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
 // The value of N will determine the bitlength during the client initialization
@@ -32,41 +32,46 @@ static char net_buf[NET_BUF_SZ] = {0};
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 
 // Function declarations
-static int InitSrv_alpha();
+static int InitSrv_gamma();
 static int RecvInitParamsFromBeta();
-static int FinSrv_alpha();
-static void TestSrv_alpha();
+static int FinSrv_gamma();
+static void TestSrv_gamma();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
 
 // Function definitions
-static int InitSrv_alpha(){
+static int InitSrv_gamma(){
     int ret = -1;
     // Initialize random number generation
     std::random_device rd;
     unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd();
     rng.seed(seed); // seed() seeds the gmp_randclass    
     
-    // Server_alpha only connects to other servers, it does not listen
-    InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
+    InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_GAMMA_PORT, &sock_gamma_to_beta);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
     ret = RecvInitParamsFromBeta();
 
     if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Failed to receive initialization parameters from Server Beta");
-        close(sock_alpha_to_beta);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Ga: Failed to receive initialization parameters from Server Beta");
+        close(sock_gamma_to_beta);
         return -1;
     } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Successfully received initialization parameters from Server Beta");
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Successfully received initialization parameters from Server Beta");
     }
 
-    InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
+    //Initialize sockets for communication with server gamma
+    ret = InitAcceptingSocket(GAMMA_LISTENING_TO_ALPHA_PORT, &sock_gamma_to_alpha, &sock_gamma_to_alpha_con);
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Alpha!!");
+        return -1;
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Alpha");
+    }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
 
     return 0;
 }
@@ -76,7 +81,7 @@ static int RecvInitParamsFromBeta() {
     int ret_recv = 0;
 
     // Receive p
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive p from Server Beta");
@@ -85,7 +90,7 @@ static int RecvInitParamsFromBeta() {
     p = mpz_class(std::string(net_buf, received_sz));
 
     // Receive q
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive q from Server Beta");
@@ -94,7 +99,7 @@ static int RecvInitParamsFromBeta() {
     q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive g
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g from Server Beta");
@@ -103,7 +108,7 @@ static int RecvInitParamsFromBeta() {
     g = mpz_class(std::string(net_buf, received_sz));
 
     // Receive g_q
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g_q from Server Beta");
@@ -112,7 +117,7 @@ static int RecvInitParamsFromBeta() {
     g_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive r
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive r from Server Beta");
@@ -121,7 +126,7 @@ static int RecvInitParamsFromBeta() {
     r = mpz_class(std::string(net_buf, received_sz));
 
     // Receive pk_E
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E from Server Beta");
@@ -130,7 +135,7 @@ static int RecvInitParamsFromBeta() {
     pk_E = mpz_class(std::string(net_buf, received_sz));
 
     // Receive pk_E_q
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_q from Server Beta");
@@ -139,7 +144,7 @@ static int RecvInitParamsFromBeta() {
     pk_E_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
@@ -148,7 +153,7 @@ static int RecvInitParamsFromBeta() {
     Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
 
     // Receive pk_F
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
@@ -157,7 +162,7 @@ static int RecvInitParamsFromBeta() {
     Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
 
     // Receive vectorOnesforElement_ct
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforElement_ct from Server Beta");
@@ -166,7 +171,7 @@ static int RecvInitParamsFromBeta() {
     Serial::DeserializeFromString(vectorOnesforElement_ct, std::string(net_buf, received_sz));
 
     // Receive vectorOnesforTag_ct
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforTag_ct from Server Beta");
@@ -177,25 +182,29 @@ static int RecvInitParamsFromBeta() {
     return 0;
 }
 
-static int FinSrv_alpha(){
+static int FinSrv_gamma(){
     int ret = -1;
 
     // Close the sockets
-    if (sock_alpha_to_beta != -1) {
-        close(sock_alpha_to_beta);
-        sock_alpha_to_beta = -1;
+    if (sock_gamma_to_beta != -1) {
+        close(sock_gamma_to_beta);
+        sock_gamma_to_beta = -1;
     }
-    if (sock_alpha_to_gamma != -1) {
-        close(sock_alpha_to_gamma);
-        sock_alpha_to_gamma = -1;
+    if (sock_gamma_to_alpha != -1) {
+        close(sock_gamma_to_alpha);
+        sock_gamma_to_alpha = -1;
+    }
+    if (sock_gamma_to_alpha_con != -1) {
+        close(sock_gamma_to_alpha_con);
+        sock_gamma_to_alpha_con = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Alpha");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Gamma");
 
     return ret;
 }
 
-static void TestSrv_alpha(){
+static void TestSrv_gamma(){
     int ret;
 
     //Choose random message and random exponent
@@ -216,20 +225,20 @@ static void TestSrv_alpha(){
     mpz_class tag = rng.get_z_bits(P_BITS);
     Ciphertext<DCRTPoly> ct_tag = FHE_Enc_Tag(tag);
 
-    (void)sendAll(sock_alpha_to_beta, m1.get_str().c_str(), m1.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, m2.get_str().c_str(), m2.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, m3.get_str().c_str(), m3.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, m4.get_str().c_str(), m4.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c11.get_str().c_str(), c11.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c12.get_str().c_str(), c12.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c21.get_str().c_str(), c21.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c22.get_str().c_str(), c22.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c31.get_str().c_str(), c31.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c32.get_str().c_str(), c32.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c41.get_str().c_str(), c41.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, c42.get_str().c_str(), c42.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, tag.get_str().c_str(), tag.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
+    (void)sendAll(sock_gamma_to_beta, m1.get_str().c_str(), m1.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, m2.get_str().c_str(), m2.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, m3.get_str().c_str(), m3.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, m4.get_str().c_str(), m4.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c11.get_str().c_str(), c11.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c12.get_str().c_str(), c12.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c21.get_str().c_str(), c21.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c22.get_str().c_str(), c22.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c31.get_str().c_str(), c31.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c32.get_str().c_str(), c32.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c41.get_str().c_str(), c41.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, c42.get_str().c_str(), c42.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, tag.get_str().c_str(), tag.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
 
     return;
 }
@@ -331,11 +340,12 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 int main(int argc, char *argv[])
 {
     #if 1
-    InitSrv_alpha();
+    InitSrv_gamma();
 
-    TestSrv_alpha();
+    TestSrv_gamma();
 
-    FinSrv_alpha();
+    FinSrv_gamma();
+
     #else
 
     unsigned long hash_table_sz = (N + sqrt_N);

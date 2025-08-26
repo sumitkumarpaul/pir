@@ -39,11 +39,13 @@ using namespace lbcrypto;
 
 #define SERVER_ALPHA_IP "192.168.16.246" // IP address of the server_alpha
 #define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
-#define SERVER_GAMMA_IP "192.168.16.244" // IP address of the server_gamma
+//#define SERVER_GAMMA_IP "192.168.16.244" // IP address of the server_gamma
+#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
 
-#define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port to listen to alpha
-#define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port to listen to gamma
-#define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port to listen to client
+#define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
+#define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
+#define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port of beta to listen to client
+#define GAMMA_LISTENING_TO_ALPHA_PORT   1237 // Port of gamma to listen to alpha
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
