@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <openssl/sha.h>
 #include "fss/fss-common.h"
 #include "fss/fss-server.h"
 #include "fss/fss-client.h"
@@ -240,81 +241,87 @@ ostream &operator<<(ostream &stream, item_type item)
     return stream;
 }
 
-void print_table(const KukuTable &table)
+void print_stash(const KukuTable &table)
 {
-    table_size_type col_count = 8;
-    for (table_size_type i = 0; i < table.table_size(); i++)
-    {
-        const auto &item = table.table(i);
-        cout << setw(5)
-            << i << ": " << setw(5) << get_high_word(item) << "," << get_low_word(item)
-            << ((i % col_count == col_count - 1) ? "\n" : "\t");
-    }
-
-    cout << endl << endl << "Stash: " << endl;
     for (table_size_type i = 0; i < table.stash().size(); i++)
     {
         const auto &item = table.stash(i);
-        cout << i << ": " << get_high_word(item) << "," << get_low_word(item) << endl;
+        //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Stash item " + to_string(i) + ": " + get_high_word(item) + get_low_word(item));
     }
-    cout << endl;
 }
 
 /* Copied from: https://github.com/microsoft/Kuku/blob/main/examples/example.cpp */
 static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe)
 {
-    item_type loc_func_seed = make_random_item();
+    unsigned int rehash_cnt = 0;
+    KukuTable *table = nullptr;
+    //unsigned long hash_table_sz = (N + sqrt_N);
+    unsigned long hash_table_sz = table_size;
+    item_type loc_func_seed;
     item_type empty_item = make_item(0, 0);
+    uint64_t high_rand, low_rand;
+    mpz_class rand_val_high, rand_val_low;
+    unsigned long i;
 
-    KukuTable table(table_size, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
+    #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 
-    uint64_t round_counter = 0;
-    while (true)
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Starting to build Cuckoo hash table of size: " + to_string(hash_table_sz) + " with stash size: " + to_string(stash_size) + " with function count: " + to_string(loc_func_count)  + " and " + to_string(max_probe) + " number of maximum probes");
+
+    while (rehash_cnt < CUCKOO_HASH_TABLE_REHASH_TRY_COUNT) // Limit the number of rehash attempts to avoid infinite loops
     {
-        cout << "Inserted " << round_counter * 20 << " items" << endl;
-        cout << "Fill rate: " << table.fill_rate() << endl;
+        rand_val_high = rng.get_z_bits(64);
+        rand_val_low = rng.get_z_bits(64);
 
-        char c;
-        cin.get(c);
+        mpz_export(&high_rand, nullptr, 1, sizeof(high_rand), 0, 0, rand_val_high.get_mpz_t());
+        mpz_export(&low_rand, nullptr, 1, sizeof(low_rand), 0, 0, rand_val_low.get_mpz_t());
 
-        for (uint64_t i = 0; i < 20; i++)
+        loc_func_seed = make_item(high_rand, low_rand);
+
+        // Allocate a new Cuckoo hash table
+        // KukuTable table(table_size, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
+        table = new KukuTable(hash_table_sz, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
+
+        for (i = 0; i < hash_table_sz; i++)
         {
-            if (!table.insert(make_item(i + 1, round_counter + 1)))
+            /* Create a random ||P||-bit tag for the moment */
+            mpz_class tag = rng.get_z_bits(P_BITS);
+            // Convert tag to string
+            std::string tag_str = tag.get_str();
+
+            // Hash with SHA-256
+            unsigned char hash[SHA256_DIGEST_LENGTH];
+            SHA256(reinterpret_cast<const unsigned char *>(tag_str.data()), tag_str.size(), hash);
+
+            // Get first 128 bits as two 64-bit words
+            uint64_t high = 0, low = 0;
+            memcpy(&high, hash, 8);
+            memcpy(&low, hash + 8, 8);
+
+            // Create item_type key
+            item_type key = make_item(high, low);
+
+            // Insert into the cuckoo hash table
+            if (!table->insert(key))
             {
-                cout << "Insertion failed: round_counter = " << round_counter << ", i = " << i << endl;
-                cout << "Inserted successfully " << round_counter * 20 + i << " items" << endl;
-                cout << "Fill rate: " << table.fill_rate() << endl;
-                const auto &item = table.leftover_item();
-                cout << "Leftover item: " << get_high_word(item) << "," << get_low_word(item) << endl << endl;
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed for the tag, having value:" + tag.get_str());
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(hash_table_sz) + " items");
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()));
+                rehash_cnt++;
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Starting again, rehash count: " + to_string(rehash_cnt));
+
+                /* Delete the already built table */
+                delete table;
+                table = nullptr;
                 break;
+            }
+            if ((i > 0) && (i % 100000000 == 0)) {
+                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(i) + " items so far");
             }
         }
 
-        print_table(table);
-
-        if (!table.is_empty_item(table.leftover_item()))
-        {
-            break;
-        }
-
-        round_counter++;
-    }
-
-    while (true)
-    {
-        cout << "Query item: ";
-        char hw[64];
-        char lw[64];
-        cin.getline(hw, 10, ',');
-        cin.getline(lw, 10, '\n');
-        item_type item = make_item(static_cast<uint64_t>(atoi(lw)), static_cast<uint64_t>(atoi(hw)));
-        QueryResult res = table.query(item);
-        cout << "Found: " << boolalpha << !!res << endl;
-        if (res)
-        {
-            cout << "Location: " << res.location() << endl;
-            cout << "In stash: " << boolalpha << res.in_stash() << endl;
-            cout << "Hash function index: " << res.loc_func_index() << endl << endl;
+        if (i == hash_table_sz) {
+            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Successfully inserted all " + to_string(hash_table_sz) + " items, to the Cuckoo hash table, after: " + to_string(rehash_cnt) + " rehash attempts, and the stash size is: " + to_string(table->stash().size()));
+            break; // Successfully inserted all items
         }
     }
 
@@ -322,7 +329,7 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 }
 
 
-int main()
+int main(int argc, char *argv[])
 {
     #if 0
     InitSrv_alpha();
@@ -332,7 +339,18 @@ int main()
     FinSrv_alpha();
     #endif
 
-    Test_CuckooHash(256, 5, 2, 100);
+    unsigned long hash_table_sz = (N + sqrt_N);
+
+    /* Probe upto half of the items, it will increase the build time, but not the lookup time */
+    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 32, (hash_table_sz/2));
+
+    /* Keep decreasing the function count */
+    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 16, (hash_table_sz/2));
+
+    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 2, (hash_table_sz/2));
+
+
+    //Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
 
 
     return 0;
