@@ -52,8 +52,9 @@ using namespace lbcrypto;
 #define log_N   31    // ceil((log2(N)))
 #define sqrt_N  40960 // ceil((sqrt(N)))
 
-#define P_BITS  3072//5 // Size of p in bits
-#define Q_BITS  (256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
+/* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
+#define P_BITS  128//3072//5 // Size of p in bits
+#define Q_BITS  (64+2)//(256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
 #define R_BITS  64//2 // Size of r in bits
 
 /*****************************************************************

@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include "pir_common.h"
 
+#define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 
 static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
@@ -41,7 +42,7 @@ static void TestPKEOperations_alpha();
 static void TestSelShuffDBSearchTag_alpha();
 
 using namespace kuku;
-static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
+static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
 
 // Function definitions
 static int InitSrv_alpha(){
@@ -307,7 +308,7 @@ void print_stash(const KukuTable &table)
 }
 
 /* Copied from: https://github.com/microsoft/Kuku/blob/main/examples/example.cpp */
-static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe)
+static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe)
 {
     unsigned int rehash_cnt = 0;
     KukuTable *table = nullptr;
@@ -317,11 +318,13 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
     item_type empty_item = make_item(0, 0);
     uint64_t high_rand, low_rand;
     mpz_class rand_val_high, rand_val_low;
-    unsigned long i;
+    unsigned long I;
+    bool success = false;
 
-    #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
+    /* Select a random rho for experimentation */
+    mpz_class local_Rho = ElGamal_randomGroupElement();
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Starting to build Cuckoo hash table of size: " + to_string(hash_table_sz) + " with stash size: " + to_string(stash_size) + " with function count: " + to_string(loc_func_count)  + " and " + to_string(max_probe) + " number of maximum probes");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Starting to build Cuckoo hash table of size: " + to_string(hash_table_sz) + " , number of entries: " + to_string(num_entry) + " with stash size: " + to_string(stash_size) + " with function count: " + to_string(loc_func_count)  + " and " + to_string(max_probe) + " number of maximum probes");
 
     while (rehash_cnt < CUCKOO_HASH_TABLE_REHASH_TRY_COUNT) // Limit the number of rehash attempts to avoid infinite loops
     {
@@ -333,20 +336,25 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 
         loc_func_seed = make_item(high_rand, low_rand);
 
-        // Allocate a new Cuckoo hash table
-        // KukuTable table(table_size, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
+        // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
         table = new KukuTable(hash_table_sz, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
 
-        for (i = 0; i < hash_table_sz; i++)
+        /* From I = 1 to N+sqrt{N} */
+        for (I = 1; I < (num_entry+1); I++)
         {
-            /* Create a random ||P||-bit tag for the moment */
-            mpz_class tag = rng.get_z_bits(P_BITS);
+            /* Create a ||P||-bit tag as per our MAC-function */
+            mpz_class Rho_pow_I;
+            mpz_powm(Rho_pow_I.get_mpz_t(), local_Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
+
+            mpz_class T_I;
+            mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
+
             // Convert tag to string
-            std::string tag_str = tag.get_str();
+            std::string T_I_str = T_I.get_str();
 
             // Hash with SHA-256
             unsigned char hash[SHA256_DIGEST_LENGTH];
-            SHA256(reinterpret_cast<const unsigned char *>(tag_str.data()), tag_str.size(), hash);
+            SHA256(reinterpret_cast<const unsigned char *>(T_I_str.data()), T_I_str.size(), hash);
 
             // Get first 128 bits as two 64-bit words
             uint64_t high = 0, low = 0;
@@ -359,8 +367,8 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
             // Insert into the cuckoo hash table
             if (!table->insert(key))
             {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed for the tag, having value:" + tag.get_str());
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(hash_table_sz) + " items");
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed for the tag, having value:" + T_I.get_str());
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Before failure, successfully inserted: " + to_string(I) + " out of " + to_string(hash_table_sz) + " items");
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()));
                 rehash_cnt++;
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Starting again, rehash count: " + to_string(rehash_cnt));
@@ -370,16 +378,63 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
                 table = nullptr;
                 break;
             }
-            if ((i > 0) && (i % 100000000 == 0)) {
-                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(i) + " items so far");
+            if ((I > 0) && (I % 100000000 == 0)) {
+                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(I) + " items so far, and current stash size is: " + to_string(table->stash().size()));
             }
         }
 
-        if (i == hash_table_sz) {
+        if (I == (num_entry+1)) {
             PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Successfully inserted all " + to_string(hash_table_sz) + " items, to the Cuckoo hash table, after: " + to_string(rehash_cnt) + " rehash attempts, and the stash size is: " + to_string(table->stash().size()));
+            success = true;
             break; // Successfully inserted all items
         }
     }
+
+    if (success == true) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table built successfully, now starting to process queries");
+
+        /* From I = 1 to N+sqrt{N} */
+        for (I = 1; I < (num_entry+1); I++)
+        {
+            /* Create a ||P||-bit tag as per our MAC-function */
+            mpz_class Rho_pow_I;
+            mpz_powm(Rho_pow_I.get_mpz_t(), local_Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
+
+            mpz_class T_I;
+            mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
+
+            // Convert tag to string
+            std::string T_I_str = T_I.get_str();
+
+            // Hash with SHA-256
+            unsigned char hash[SHA256_DIGEST_LENGTH];
+            SHA256(reinterpret_cast<const unsigned char *>(T_I_str.data()), T_I_str.size(), hash);
+
+            // Get first 128 bits as two 64-bit words
+            uint64_t high = 0, low = 0;
+            memcpy(&high, hash, 8);
+            memcpy(&low, hash + 8, 8);
+
+            // Create item_type key
+            item_type key = make_item(high, low);
+
+            QueryResult res = table->query(key);
+            
+            if (!res)
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the tag, having value:" + T_I.get_str());
+            }
+            if ((I > 0) && (I % 100000000 == 0)) {
+                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed " + to_string(I) + " queries so far, and current stash size is: " + to_string(table->stash().size()));
+            }
+        }
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to build Cuckoo hash table");
+    }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed all the query processing");
+
+    delete table;
 
     return 0;
 }
@@ -387,9 +442,8 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 
 int main(int argc, char *argv[])
 {
-    #if 1
     InitSrv_alpha();
-
+    #if 0
     TestSrv_alpha();
 
     FinSrv_alpha();
@@ -398,15 +452,15 @@ int main(int argc, char *argv[])
     unsigned long hash_table_sz = (N + sqrt_N);
 
     /* Probe upto half of the items, it will increase the build time, but not the lookup time */
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 32, (hash_table_sz/2));
+    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 32, (hash_table_sz/2));
 
     /* Keep decreasing the function count */
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 16, (hash_table_sz/2));
+    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 16, (hash_table_sz/2));
 
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 2, (hash_table_sz/2));
+    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 2, (hash_table_sz/2));
 
 
-    //Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+    Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
     #endif
 
 
