@@ -1,0 +1,41 @@
+nohup: ignoring input
+[27-08-2025 13:53:09:434] [server_alpha.cpp:57] TRACE: Established connection with Server Beta
+[27-08-2025 13:53:13:289] [server_alpha.cpp:66] TRACE: Server Alpha: Successfully received initialization parameters from Server Beta
+[27-08-2025 13:53:14:289] [server_alpha.cpp:71] TRACE: Established connection with Server Gamma
+[27-08-2025 13:53:14:289] [server_alpha.cpp:73] INFO: Server Alpha initialization complete
+[27-08-2025 13:53:14:289] [server_alpha.cpp:327] INFO: Starting to build Cuckoo hash table of size: 2147480000 , number of entries: 1677762560 with stash size: 10240 with function count: 8 and 1000000 number of maximum probes
+[27-08-2025 13:59:36:831] [server_alpha.cpp:382] INFO: Inserted 100000000 items so far, and current stash size is: 0
+[27-08-2025 14:05:41:743] [server_alpha.cpp:382] INFO: Inserted 200000000 items so far, and current stash size is: 0
+[27-08-2025 14:11:46:626] [server_alpha.cpp:382] INFO: Inserted 300000000 items so far, and current stash size is: 0
+[27-08-2025 14:17:53:498] [server_alpha.cpp:382] INFO: Inserted 400000000 items so far, and current stash size is: 0
+[27-08-2025 14:23:59:267] [server_alpha.cpp:382] INFO: Inserted 500000000 items so far, and current stash size is: 0
+[27-08-2025 14:30:06:618] [server_alpha.cpp:382] INFO: Inserted 600000000 items so far, and current stash size is: 0
+[27-08-2025 14:36:16:419] [server_alpha.cpp:382] INFO: Inserted 700000000 items so far, and current stash size is: 0
+[27-08-2025 14:42:24:941] [server_alpha.cpp:382] INFO: Inserted 800000000 items so far, and current stash size is: 0
+[27-08-2025 14:48:33:238] [server_alpha.cpp:382] INFO: Inserted 900000000 items so far, and current stash size is: 0
+[27-08-2025 14:54:46:470] [server_alpha.cpp:382] INFO: Inserted 1000000000 items so far, and current stash size is: 0
+[27-08-2025 15:00:57:220] [server_alpha.cpp:382] INFO: Inserted 1100000000 items so far, and current stash size is: 0
+[27-08-2025 15:07:16:947] [server_alpha.cpp:382] INFO: Inserted 1200000000 items so far, and current stash size is: 0
+[27-08-2025 15:13:35:334] [server_alpha.cpp:382] INFO: Inserted 1300000000 items so far, and current stash size is: 0
+[27-08-2025 15:19:51:637] [server_alpha.cpp:382] INFO: Inserted 1400000000 items so far, and current stash size is: 0
+[27-08-2025 15:26:08:703] [server_alpha.cpp:382] INFO: Inserted 1500000000 items so far, and current stash size is: 0
+[27-08-2025 15:32:28:699] [server_alpha.cpp:382] INFO: Inserted 1600000000 items so far, and current stash size is: 0
+[27-08-2025 15:37:28:241] [server_alpha.cpp:387] INFO: Successfully inserted all 2147480000 items, to the Cuckoo hash table, after: 0 rehash attempts, and the stash size is: 0
+[27-08-2025 15:37:28:241] [server_alpha.cpp:394] INFO: Cuckoo hash table built successfully, now starting to process queries
+[27-08-2025 15:42:11:958] [server_alpha.cpp:428] INFO: Completed 100000000 queries so far, and current stash size is: 0
+[27-08-2025 15:47:01:056] [server_alpha.cpp:428] INFO: Completed 200000000 queries so far, and current stash size is: 0
+[27-08-2025 15:51:50:645] [server_alpha.cpp:428] INFO: Completed 300000000 queries so far, and current stash size is: 0
+[27-08-2025 15:56:44:001] [server_alpha.cpp:428] INFO: Completed 400000000 queries so far, and current stash size is: 0
+[27-08-2025 16:01:38:251] [server_alpha.cpp:428] INFO: Completed 500000000 queries so far, and current stash size is: 0
+[27-08-2025 16:06:36:822] [server_alpha.cpp:428] INFO: Completed 600000000 queries so far, and current stash size is: 0
+[27-08-2025 16:11:38:272] [server_alpha.cpp:428] INFO: Completed 700000000 queries so far, and current stash size is: 0
+[27-08-2025 16:16:40:270] [server_alpha.cpp:428] INFO: Completed 800000000 queries so far, and current stash size is: 0
+[27-08-2025 16:21:43:250] [server_alpha.cpp:428] INFO: Completed 900000000 queries so far, and current stash size is: 0
+[27-08-2025 16:26:49:449] [server_alpha.cpp:428] INFO: Completed 1000000000 queries so far, and current stash size is: 0
+[27-08-2025 16:31:55:612] [server_alpha.cpp:428] INFO: Completed 1100000000 queries so far, and current stash size is: 0
+[27-08-2025 16:37:04:951] [server_alpha.cpp:428] INFO: Completed 1200000000 queries so far, and current stash size is: 0
+[27-08-2025 16:42:15:883] [server_alpha.cpp:428] INFO: Completed 1300000000 queries so far, and current stash size is: 0
+[27-08-2025 16:47:26:337] [server_alpha.cpp:428] INFO: Completed 1400000000 queries so far, and current stash size is: 0
+[27-08-2025 16:52:36:736] [server_alpha.cpp:428] INFO: Completed 1500000000 queries so far, and current stash size is: 0
+[27-08-2025 16:57:51:130] [server_alpha.cpp:428] INFO: Completed 1600000000 queries so far, and current stash size is: 0
+[27-08-2025 17:01:56:776] [server_alpha.cpp:435] INFO: Completed all the query processing
