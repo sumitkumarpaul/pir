@@ -22,6 +22,7 @@
 #include "pir_common.h"
 
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
+#define NUM_CPU_CORES 16
 
 static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
@@ -30,7 +31,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
-static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
+static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
 
 std::pair<mpz_class, mpz_class> E_T_I;
 
@@ -39,10 +40,13 @@ static int InitSrv_alpha();
 static int RecvInitParamsFromBeta();
 static int FinSrv_alpha();
 static int SelShuffDBSearchTag_alpha();
+static int PerEpochReInit_alpha();
+
+
 static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
 static void TestSelShuffDBSearchTag_alpha();
-static int PerEpochReInit_alpha();
+static int TestShelterDPFSearch_alpha();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -236,6 +240,8 @@ static int SelShuffDBSearchTag_alpha(){
     int ret = 0;
     size_t received_sz = 0;
 
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Starting SelShuffDBSearchTag sequence");
+
     /* 1.a.1.1 Select random h_{alpha1} */
     mpz_class h_alpha1 = ElGamal_randomGroupElement();
     /* 1.a.1.2 Also find its inverse */
@@ -372,22 +378,15 @@ static void TestPKEOperations_alpha(){
 static void TestSrv_alpha()
 {
     //TestPKEOperations_alpha();
-    TestSelShuffDBSearchTag_alpha();
+    //TestSelShuffDBSearchTag_alpha();
+    TestShelterDPFSearch_alpha();
+    return;
 }
 
 ostream &operator<<(ostream &stream, item_type item)
 {
     stream << item[1] << " " << item[0];
     return stream;
-}
-
-void print_stash(const KukuTable &table)
-{
-    for (table_size_type i = 0; i < table.stash().size(); i++)
-    {
-        const auto &item = table.stash(i);
-        //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Stash item " + to_string(i) + ": " + get_high_word(item) + get_low_word(item));
-    }
 }
 
 /* Copied from: https://github.com/microsoft/Kuku/blob/main/examples/example.cpp */
@@ -520,6 +519,96 @@ static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table
     delete table;
 
     return 0;
+}
+
+static int TestShelterDPFSearch_alpha() {
+    // Set up variables
+    Fss fClient, fServer;
+    ServerKeyEq k0;
+    ServerKeyEq k1;
+
+    #define DPF_SEARCH_INDEX_K 6
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of size: " + to_string(sqrt_N));
+
+    /* Populate the shelter, with random elements */
+    for(size_t k = 0; k < sqrt_N; k++) {
+        // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
+        Ciphertext<DCRTPoly> element_FHE_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(k));
+        sh[k].serialized_element_ct = import_from_bytes(Serial::SerializeToString(element_FHE_ct));
+        //sh[k].serialized_element_ct = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+
+
+        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag_short = sh[k].tag % r; // Create a random short tag
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+
+    /* Suppose we want to search for k = 2864, a random location */
+    mpz_class T_sh = sh[DPF_SEARCH_INDEX_K].tag_short;
+
+    // Initialize client, use 64 bits in domain as example
+    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+
+    // Equality FSS test
+    generateTreeEq(&fClient, &k0, &k1, T_sh, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+
+    // Initialize server
+    initializeServer(&fServer, &fClient);
+
+    mpz_class ans0, ans1, fin;
+    ans0 = 0;
+    ans1 = 0;
+
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    for (size_t k = 0; k < sqrt_N; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < N)
+            {
+                auto y = evaluateEq(&fServer, &k0, sh[k + j].tag_short);// Evaluate the FSS on the short tag
+                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+                thread_sums[j] += y * sh[k + j].serialized_element_ct; // Multiply the result with the block content
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            ans0 += thread_sums[t];
+    }
+
+    for (size_t k = 0; k < sqrt_N; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < N)
+            {
+                auto y = evaluateEq(&fServer, &k1, sh[k + j].tag_short);// Evaluate the FSS on the short tag
+                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+                thread_sums[j] += y * sh[k + j].serialized_element_ct; // Multiply the result with the block content
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            ans1 += thread_sums[t];
+    }
+
+    fin = ans0 - ans1;
+
+    if (fin != sh[DPF_SEARCH_INDEX_K].serialized_element_ct) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot reform the FHE-ciphertext after DPF-search and combination");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
+    }
+
+    return 1;
 }
 
 

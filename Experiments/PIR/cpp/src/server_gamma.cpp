@@ -254,7 +254,8 @@ static int SelShuffDBSearchTag_gamma(){
     }
     mpz_class T_star = mpz_class(std::string(net_buf, received_sz));
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ended SelShuffDBSearchTag sequence");
 
     return ret;
 }

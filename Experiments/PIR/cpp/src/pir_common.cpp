@@ -503,3 +503,14 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     return;
 }
 
+// bytes: most-significant byte first (big-endian)
+mpz_class import_from_bytes(const std::string &bytes) {
+    mpz_t tmp;
+    mpz_init(tmp);
+    // count = bytes.size(), size=1 (bytes), order=1 (most-significant word first),
+    // endian = 1 (most-significant byte first), nails = 0
+    mpz_import(tmp, bytes.size(), 1, 1, 1, 0, bytes.data());
+    mpz_class out(tmp);
+    mpz_clear(tmp);
+    return out;
+}
