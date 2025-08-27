@@ -34,9 +34,14 @@ static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pai
 // Function declarations
 static int InitSrv_gamma();
 static int RecvInitParamsFromBeta();
+static int SelShuffDBSearchTag_gamma();
+static int PerEpochReInit_gamma();
 static int FinSrv_gamma();
+
 static void TestSrv_gamma();
 static void TestPKEOperations_gamma();
+static void TestSelShuffDBSearchTag_gamma();
+
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -72,7 +77,13 @@ static int InitSrv_gamma(){
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Alpha");
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
+    ret = PerEpochReInit_gamma();
+
+    if (ret == 0) {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ready for new epoch");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to reinitialize for new epoch");
+    }
 
     return 0;
 }
@@ -183,6 +194,71 @@ static int RecvInitParamsFromBeta() {
     return 0;
 }
 
+static int PerEpochReInit_gamma(){
+    int ret = 0;
+    size_t received_sz = 0;
+
+    /* Receive ready message from server-beta */
+    (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive READY_FOR_EPOCH message from Server Beta");
+        return ret;
+    }
+
+    if (std::string(net_buf, received_sz) != ready_for_epoch_message) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected READY_FOR_EPOCH message from Server Beta");
+        return -1;
+    }
+
+    return ret;
+}
+
+static int SelShuffDBSearchTag_gamma(){
+    int ret = -1;
+    size_t received_sz = 0;    
+
+    // 8.c.1 Receive T_phi.h_{\\beta 0} from the server beta
+    ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive T_phi.h_{\\beta 0} from Server Beta");
+        close(sock_gamma_to_beta);
+        return ret;
+    }
+    mpz_class T_phi_h_beta_0 = mpz_class(std::string(net_buf, received_sz));
+
+    // 9.c Receive h_{\\alpha 2} from the server alpha
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive h_{\\alpha 2} from Server Alpha");
+        close(sock_gamma_to_alpha_con);
+        return ret;
+    }
+    mpz_class h_alpha2 = mpz_class(std::string(net_buf, received_sz));
+
+    /* 10.c.1 Compute T_phi.h_{\alpha 2}.h_{\beta 0} */
+    mpz_class T_phi_h_alpha2_h_beta0 = (T_phi_h_beta_0*h_alpha2) % p;
+
+    /* 10.c.2 FHE Encrypt T_phi.h_{\\alpha 2}.h_{\\beta 0} */
+    Ciphertext<DCRTPoly> FHE_ct_T_phi_h_alpha2_h_beta0 = FHE_Enc_Tag(T_phi_h_alpha2_h_beta0);
+
+    /* 10.c.3 Send the ciphertext to server alpha */
+    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).size());
+
+    // 14.c.1 Receive T_* from the server alpha
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive T_* from Server Alpha");
+        close(sock_gamma_to_alpha_con);
+        return ret;
+    }
+    mpz_class T_star = mpz_class(std::string(net_buf, received_sz));
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());
+
+    return ret;
+}
+
 static int FinSrv_gamma(){
     int ret = -1;
 
@@ -245,7 +321,17 @@ static void TestPKEOperations_gamma(){
 }
 
 static void TestSrv_gamma(){
-    TestPKEOperations_gamma();
+    //TestPKEOperations_gamma();
+    TestSelShuffDBSearchTag_gamma();
+}
+
+
+static void TestSelShuffDBSearchTag_gamma(){
+    int ret = -1;
+
+    ret = SelShuffDBSearchTag_gamma();
+
+    return;
 }
 
 ostream &operator<<(ostream &stream, item_type item)
@@ -344,29 +430,11 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 
 int main(int argc, char *argv[])
 {
-    #if 1
     InitSrv_gamma();
 
     TestSrv_gamma();
 
     FinSrv_gamma();
-
-    #else
-
-    unsigned long hash_table_sz = (N + sqrt_N);
-
-    /* Probe upto half of the items, it will increase the build time, but not the lookup time */
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 32, (hash_table_sz/2));
-
-    /* Keep decreasing the function count */
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 16, (hash_table_sz/2));
-
-    Test_CuckooHash(hash_table_sz, (sqrt_N/2), 2, (hash_table_sz/2));
-
-
-    //Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
-    #endif
-
 
     return 0;
 }

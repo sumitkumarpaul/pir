@@ -20,7 +20,9 @@ PrivateKey<DCRTPoly> sk_F;
 CryptoContext<DCRTPoly> FHEcryptoContext;
 Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 Ciphertext<DCRTPoly> vectorOnesforTag_ct;
+Ciphertext<DCRTPoly> fnd_ct;
 
+std::string ready_for_epoch_message = "READY_FOR_EPOCH";
 
 void PrintLog(int log_level, const char* file, int line, const std::string& message) {
 

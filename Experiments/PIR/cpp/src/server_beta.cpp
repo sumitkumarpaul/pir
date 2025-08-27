@@ -5,16 +5,15 @@
 #include <algorithm> // std::swap
 #include "pir_common.h"
 
-
 //Global variables
 static char net_buf[NET_BUF_SZ] = {0};
 static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
-
+static mpz_class Rho;
+static std::vector<mpz_class> SetPhi;
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
-static int shuffle();
 static int shuffle();
 static int FinSrv_beta();
 static int InitSrv_beta();
@@ -22,6 +21,7 @@ static int OneTimeInitialization();
 static int SendInitializedParamsToAllServers();
 static mpz_class selectRho();
 static int SelShuffDBSearchTag_beta();
+static int PerEpochReInit_beta();
 
 
 static void TestSrv_beta();
@@ -116,7 +116,7 @@ static int OneTimeInitialization(){
     // Initialize random number generator
     // good-ish seed source: std::random_device (combine two samples)
     std::random_device rd;
-    unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd();
+    unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd(); // Seed for RNG
     rng.seed(seed); // seed() seeds the gmp_randclass
 
     //Initialize p, q, g, GG(cyclic group) and r
@@ -185,7 +185,71 @@ static int InitSrv_beta(){
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
     }
 
+    /* At this moment, only execute single epoch */
+    ret = PerEpochReInit_beta();
+
+    if (ret == 0) {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Ready for new epoch");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to reinitialize for new epoch");
+    }
+
+
     return ret;
+}
+
+static int PerEpochReInit_beta(){
+    int ret = 0;
+
+    Rho = selectRho();
+
+    /* For the time being, just create the set of dummies */
+    SetPhi.clear(); // Clear SetPhi before populating
+    for (int I = (N+1); I < (N + sqrt_N + 1); ++I) {
+        mpz_class Rho_pow_I;
+        mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
+
+        mpz_class T_phi;
+        mpz_powm(T_phi.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
+        SetPhi.push_back(T_phi);
+    }
+
+    /* And then send E_q(Rho) */
+    //std::pair<mpz_class, mpz_class> E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+
+    /* Send ready message to Server Alpha and Server Gamma */
+    std::string msg = "READY_FOR_EPOCH";
+    (void)sendAll(sock_beta_alpha_con, msg.c_str(), msg.size());
+    (void)sendAll(sock_beta_gamma_con, msg.c_str(), msg.size());
+#if 0
+    //Send parameters to Server Alpha
+    (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, q.get_str().c_str(), q.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, g.get_str().c_str(), g.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, g_q.get_str().c_str(), g_q.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, r.get_str().c_str(), r.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, pk_E.get_str().c_str(), pk_E.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+
+    //Send parameters to Server Gamma
+    (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, q.get_str().c_str(), q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, g.get_str().c_str(), g.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, g_q.get_str().c_str(), g_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, r.get_str().c_str(), r.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, pk_E.get_str().c_str(), pk_E.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+#endif
+
+    return 0;
 }
 
 static int FinSrv_beta(){
@@ -257,12 +321,15 @@ static mpz_class selectRho() {
 
 static int SelShuffDBSearchTag_beta(){
     int ret = -1;
-    size_t received_sz = 0;    
+    size_t received_sz = 0;
+
+    /* 1.b.1 Select random h_{\beta 0} */
     mpz_class h_beta0 = ElGamal_randomGroupElement();
+    /* Also select its inverse */
     mpz_class h_beta0_1;
     mpz_invert(h_beta0_1.get_mpz_t(), h_beta0.get_mpz_t(), p.get_mpz_t());
 
-    // Receive first component of E(T_I.h_{\alpha 1})
+    // 2.1.b Receive first component of E(T_I.h_{\alpha 1})
     ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive first component of E(T_I.h_{\\alpha 1} from Server Alpha");
@@ -271,7 +338,7 @@ static int SelShuffDBSearchTag_beta(){
     }
     mpz_class E_T_I_h_alpha1_1 = mpz_class(std::string(net_buf, received_sz));
 
-    //Receive second component of E(T_I.h_{\alpha 1})
+    //2.2.b Receive second component of E(T_I.h_{\alpha 1})
     ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive second component of E(T_I.h_{\\alpha 1} from Server Alpha");
@@ -279,15 +346,56 @@ static int SelShuffDBSearchTag_beta(){
         return ret;
     }
 
+    //3. Decrypt to T_I.h_{\\alpha 1}
     mpz_class E_T_I_h_alpha1_2 = mpz_class(std::string(net_buf, received_sz));
     std::pair<mpz_class, mpz_class> E_T_I_h_alpha1_local = std::make_pair(E_T_I_h_alpha1_1, E_T_I_h_alpha1_2);
-    mpz_class T_I_h_alpha1_local = ElGamal_decrypt(E_T_I_h_alpha1_local, sk_E);
+    mpz_class T_I_h_alpha1 = ElGamal_decrypt(E_T_I_h_alpha1_local, sk_E);
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted T_I.h_{\\alpha 1}: " + T_I_h_alpha1_local.get_str());
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted T_I.h_{\\alpha 1}: " + T_I_h_alpha1.get_str());
 
-    /* Compute and send T_I.h_{\alpha 1}h_{\beta 0} */
-    mpz_class T_I_h_alpha1_h_beta0 = (T_I_h_alpha1_local*h_beta0) % p;
+    /* 4.b.1 Compute T_I.h_{\alpha 1}h_{\beta 0} */
+    mpz_class T_I_h_alpha1_h_beta0 = (T_I_h_alpha1*h_beta0) % p;
+    /* 4.b.2 Send T_I.h_{\alpha 1}h_{\beta 0} to server alpha */
     (void)sendAll(sock_beta_alpha_con, T_I_h_alpha1_h_beta0.get_str().c_str(), T_I_h_alpha1_h_beta0.get_str().size());
+
+    /* 7. Select a new dummy tag */
+    mpz_class T_phi;
+    if (!SetPhi.empty()) {
+        // move the last element into `T_phi` and remove it from the vector
+        T_phi = std::move(SetPhi.back());
+        SetPhi.pop_back();
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected new dummy tag is: " + T_phi.get_str());
+    }
+    else
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "SetPhi is empty");
+        return -1;
+    }
+
+    /* 8.b.1 Compute T_phi.h_{\beta 0} */
+    mpz_class T_phi_h_beta0 = (T_phi*h_beta0) % p;
+    /* 8.b.2 Send to server gamma */
+    (void)sendAll(sock_beta_gamma_con, T_phi_h_beta0.get_str().c_str(), T_phi_h_beta0.get_str().size());
+
+    //11.b.1 Receive FHE-ciphertext of (T_star.h_{\alpha 2}.h_{\beta 0})
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive FHE ciphertext of T_star.h_{\\alpha 2}.h_{\\beta 0} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0;
+    Serial::DeserializeFromString(FHE_ct_T_star_h_alpha2_h_beta0, std::string(net_buf, received_sz));
+
+    /* 12.1 Decrypt the FHE-ciphertext */
+    mpz_class T_star_h_alpha2_h_beta0;
+    FHE_Dec_Tag(FHE_ct_T_star_h_alpha2_h_beta0, T_star_h_alpha2_h_beta0);
+
+    /* 12.2Remove h_{\beta 0} */
+    mpz_class T_star_h_alpha2 = (T_star_h_alpha2_h_beta0*h_beta0_1) % p;
+    
+    /* 13.a Send to server alpha */
+    (void)sendAll(sock_beta_alpha_con, T_star_h_alpha2.get_str().c_str(), T_star_h_alpha2.get_str().size());
 
     return ret;
 }
@@ -306,7 +414,7 @@ static void TestBlindedExponentiation() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
 
-    mpz_class Rho = selectRho();
+    Rho = selectRho();
 
     mpz_class h = rng.get_z_range(q-1) + 1;//To ensure that the element belongs to ZZ_q*
     mpz_class h_1;
@@ -440,7 +548,7 @@ static void TestBlindedExponentiation1() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
 
-    mpz_class Rho = selectRho();
+    Rho = selectRho();
 
     mpz_class h = rng.get_z_range(q-1) + 1;//To ensure that the element belongs to ZZ_q*
     mpz_class h_1;
@@ -551,7 +659,7 @@ static void TestBlindedExponentiation2() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in ZZ*_q parameters g_q: " + g_q.get_str()+ " pk_E_q: " + pk_E_q.get_str()+ " sk_E_q: " + sk_E_q.get_str());
 
-    mpz_class Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class h = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class h_1;
     mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), q.get_mpz_t());

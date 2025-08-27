@@ -47,14 +47,16 @@ using namespace lbcrypto;
 #define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port of beta to listen to client
 #define GAMMA_LISTENING_TO_ALPHA_PORT   1237 // Port of gamma to listen to alpha
 
+extern std::string ready_for_epoch_message;
+
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
 #define sqrt_N  40960 // ceil((sqrt(N)))
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
-#define P_BITS  128//3072//5 // Size of p in bits
-#define Q_BITS  (64+2)//(256+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
+#define P_BITS  3072//128//5 // Size of p in bits
+#define Q_BITS  (256+2)//(64+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
 #define R_BITS  64//2 // Size of r in bits
 
 /*****************************************************************
@@ -84,6 +86,7 @@ extern PrivateKey<DCRTPoly> sk_F;
 extern CryptoContext<DCRTPoly> FHEcryptoContext;
 extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
+extern Ciphertext<DCRTPoly> fnd_ct;
 
 //Function prototypes
 //Logging related

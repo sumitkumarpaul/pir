@@ -32,14 +32,17 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 
+std::pair<mpz_class, mpz_class> E_T_I;
+
 // Function declarations
 static int InitSrv_alpha();
 static int RecvInitParamsFromBeta();
 static int FinSrv_alpha();
-static int SelShuffDBSearchTag_alpha(std::pair<mpz_class, mpz_class>& E_T_I);
+static int SelShuffDBSearchTag_alpha();
 static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
 static void TestSelShuffDBSearchTag_alpha();
+static int PerEpochReInit_alpha();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -71,6 +74,16 @@ static int InitSrv_alpha(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
+
+
+    /* At this moment receive for the ready message from the server beta */
+    ret = PerEpochReInit_alpha();
+
+    if (ret == 0) {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Ready for new epoch");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Failed to reinitialize for new epoch");
+    }
 
     return 0;
 }
@@ -199,37 +212,102 @@ static int FinSrv_alpha(){
     return ret;
 }
 
-
-static int SelShuffDBSearchTag_alpha(std::pair<mpz_class, mpz_class>& E_T_I){
+static int PerEpochReInit_alpha(){
     int ret = 0;
     size_t received_sz = 0;
-    mpz_class h_alpha1 = ElGamal_randomGroupElement();
-    mpz_class h_alpha1_1;
-    mpz_invert(h_alpha1_1.get_mpz_t(), h_alpha1.get_mpz_t(), p.get_mpz_t());
 
-    mpz_class h_alpha2 = ElGamal_randomGroupElement();
-    mpz_class h_alpha2_1;
-    mpz_invert(h_alpha2_1.get_mpz_t(), h_alpha2.get_mpz_t(), p.get_mpz_t());
-
-    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1 = ElGamal_mult_ct(E_T_I, ElGamal_encrypt(h_alpha1, pk_E));
-
-    /* Send E(T_I.h_{\alpha 1}) */
-    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.first.get_str().c_str(), E_T_I_h_alpha1.first.get_str().size());
-    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.second.get_str().c_str(), E_T_I_h_alpha1.second.get_str().size());
-
-    /* Receive E(T_I.h_{\alpha 1}h_{\beta 0}) */
+    /* Receive ready message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E(T_I.h_{\\alpha 1}h_{\\beta 0}) from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive READY_FOR_EPOCH message from Server Beta");
         return ret;
     }
 
-    /* Remove h_{\alpha 1} and deternube T_I_h_beta0 */
+    if (std::string(net_buf, received_sz) != ready_for_epoch_message) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected READY_FOR_EPOCH message from Server Beta");
+        return -1;
+    }
+
+    return ret;
+}
+
+static int SelShuffDBSearchTag_alpha(){
+    int ret = 0;
+    size_t received_sz = 0;
+
+    /* 1.a.1.1 Select random h_{alpha1} */
+    mpz_class h_alpha1 = ElGamal_randomGroupElement();
+    /* 1.a.1.2 Also find its inverse */
+    mpz_class h_alpha1_1;
+    mpz_invert(h_alpha1_1.get_mpz_t(), h_alpha1.get_mpz_t(), p.get_mpz_t());
+
+    /* 1.a.2.1 Select random h_{alpha2} */
+    mpz_class h_alpha2 = ElGamal_randomGroupElement();
+    /* 1.a.2.2 Also find its inverse */
+    mpz_class h_alpha2_1;
+    mpz_invert(h_alpha2_1.get_mpz_t(), h_alpha2.get_mpz_t(), p.get_mpz_t());
+
+    /* 2.1 Compute E(T_I.h_{\alpha 1}) to server beta */
+    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1 = ElGamal_mult_ct(E_T_I, ElGamal_encrypt(h_alpha1, pk_E));
+
+    /* 2.2 Send both the componets of E(T_I.h_{\alpha 1}) */
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.first.get_str().c_str(), E_T_I_h_alpha1.first.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.second.get_str().c_str(), E_T_I_h_alpha1.second.get_str().size());
+
+    /* 4.a.1 Receive T_I.h_{\alpha 1}h_{\beta 0} */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T_I.h_{\\alpha 1}h_{\\beta 0} from Server Beta");
+        return ret;
+    }
+
+    /* 5. Remove h_{\alpha 1} and determine T_I_h_beta0 */
     mpz_class T_I_h_alpha1_h_beta0 = mpz_class(std::string(net_buf, received_sz));
     mpz_class T_I_h_beta0 = (T_I_h_alpha1_h_beta0 * h_alpha1_1) % p;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Determined T_I.h_{\\beta 0}: " + T_I_h_beta0.get_str());
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Determined T_I.h_{\\beta 0}: " + T_I_h_beta0.get_str());
+
+    /* 6.1 Determine T_I.h_{\\alpha 2}.h_{\\beta 0} */
+    mpz_class T_I_h_alpha2_h_beta0 = (T_I_h_beta0 * h_alpha2) % p;
+
+    /* 6.2 FHE Encrypt T_I.h_{\\alpha 2}.h_{\\beta 0} */
+    Ciphertext<DCRTPoly> FHE_ct_T_I_h_alpha2_h_beta0 = FHE_Enc_Tag(T_I_h_alpha2_h_beta0);
+
+    /* 9.a Send h_{\alpha 2} to server gamma */
+    (void)sendAll(sock_alpha_to_gamma, h_alpha2.get_str().c_str(), h_alpha2.get_str().size());
+
+    // 10.a Receive FHE Ciphertext of T_phi.h_{\\alpha 2}.h_{\\beta 0}
+    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext of T_phi.h_{\\alpha 2}.h_{\\beta 0} from Server Gamma");
+        return -1;
+    }
+    Ciphertext<DCRTPoly> FHE_ct_T_phi_h_alpha2_h_beta0;
+    Serial::DeserializeFromString(FHE_ct_T_phi_h_alpha2_h_beta0, std::string(net_buf, received_sz));
+
+    /* 11.a.1 Homomorphically select T_*h_{\\alpha 2}h_{\\beta 0} */
+    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_SelectTag(fnd_ct, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
+
+    /* 11.a.2 Send FHE_ct_T_star_h_alpha2_h_beta0 to server beta for decryption */
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).size());
+
+    /* 13.a Receive T_star.h_{\alpha 2} from the server beta */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T_star.h_{\\alpha 2} from Server Beta");
+        return -1;
+    }
+    mpz_class T_star_h_alpha2 = mpz_class(std::string(net_buf, received_sz));
+
+    /* 14.a.1 Extract T_* */
+    mpz_class T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
+
+    /* 14.a.2 Send T_* to server gamma */
+    (void)sendAll(sock_alpha_to_gamma, T_star.get_str().c_str(), T_star.get_str().size());
 
     return ret;
 }
@@ -237,12 +315,17 @@ static int SelShuffDBSearchTag_alpha(std::pair<mpz_class, mpz_class>& E_T_I){
 static void TestSelShuffDBSearchTag_alpha(){
     int ret = -1;
     mpz_class test_T_I = ElGamal_randomGroupElement();
+    /* For testing purpose, either choose as ciphertext of 0s */
+    //fnd_ct = FHE_Enc_Tag(mpz_class(0));
+    /* Or, the ciphertext of 1 */
+    fnd_ct = vectorOnesforTag_ct;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TestSelShuffDBSearchTag_alpha: Testing with T_I: " + test_T_I.get_str());
 
-    std::pair<mpz_class, mpz_class> E_T_I = ElGamal_encrypt(test_T_I, pk_E);
+    /* Generate a dummy E_T_I for testing purpose */
+    E_T_I = ElGamal_encrypt(test_T_I, pk_E);
 
-    ret = SelShuffDBSearchTag_alpha(E_T_I);
+    ret = SelShuffDBSearchTag_alpha();
 
     return;
 }
@@ -443,10 +526,8 @@ static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table
 int main(int argc, char *argv[])
 {
     InitSrv_alpha();
-    #if 0
+    #if 1
     TestSrv_alpha();
-
-    FinSrv_alpha();
     #else
 
     unsigned long hash_table_sz = (N + sqrt_N);
@@ -462,7 +543,7 @@ int main(int argc, char *argv[])
 
     Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
     #endif
-
+    FinSrv_alpha();
 
     return 0;
 }
