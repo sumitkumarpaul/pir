@@ -31,7 +31,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
-static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
+static shelter_tags sh[sqrt_N]; // Database to store values, each entry is a tuple.
 
 std::pair<mpz_class, mpz_class> E_T_I;
 
@@ -528,6 +528,8 @@ static int TestShelterDPFSearch_alpha() {
     ServerKeyEq k1;
 
     #define DPF_SEARCH_INDEX_K 6
+    //#define SHELTER_STORING_LOCATION std::string("./")
+    #define SHELTER_STORING_LOCATION std::string("/dev/shm/")
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of size: " + to_string(sqrt_N));
 
@@ -535,10 +537,22 @@ static int TestShelterDPFSearch_alpha() {
     for(size_t k = 0; k < sqrt_N; k++) {
         // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
         Ciphertext<DCRTPoly> element_FHE_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(k));
-        sh[k].serialized_element_ct = import_from_bytes(Serial::SerializeToString(element_FHE_ct));
-        //sh[k].serialized_element_ct = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+        /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
+        if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", element_FHE_ct, SerType::BINARY) == true)
+        {
+            Ciphertext<DCRTPoly> deserialized_element_FHE_ct;
+            if (Serial::DeserializeFromFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", deserialized_element_FHE_ct, SerType::BINARY) == false) {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to deserialize element FHE ciphertext from file");
+            } else {
+                if (*(element_FHE_ct) != *(deserialized_element_FHE_ct)) {
+                    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Deserialized element FHE ciphertext does not match original");
+                }
+            }
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
+        }
 
-
+        /* Generate the tags and keep them in the variable, which will be used for DPF search */
         sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
         sh[k].tag_short = sh[k].tag % r; // Create a random short tag
     }
@@ -546,13 +560,13 @@ static int TestShelterDPFSearch_alpha() {
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
 
     /* Suppose we want to search for k = 2864, a random location */
-    mpz_class T_sh = sh[DPF_SEARCH_INDEX_K].tag_short;
+    mpz_class T_sh_short = sh[DPF_SEARCH_INDEX_K].tag_short;
 
     // Initialize client, use 64 bits in domain as example
     initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
 
     // Equality FSS test
-    generateTreeEq(&fClient, &k0, &k1, T_sh, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+    generateTreeEq(&fClient, &k0, &k1, T_sh_short, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
 
     // Initialize server
     initializeServer(&fServer, &fClient);
@@ -572,9 +586,11 @@ static int TestShelterDPFSearch_alpha() {
         {
             if ((k + j) < N)
             {
-                auto y = evaluateEq(&fServer, &k0, sh[k + j].tag_short);// Evaluate the FSS on the short tag
+                mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
-                thread_sums[j] += y * sh[k + j].serialized_element_ct; // Multiply the result with the block content
+                if (y == mpz_class(0)) {
+                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+                }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -591,9 +607,12 @@ static int TestShelterDPFSearch_alpha() {
         {
             if ((k + j) < N)
             {
-                auto y = evaluateEq(&fServer, &k1, sh[k + j].tag_short);// Evaluate the FSS on the short tag
+                mpz_class y = (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
-                thread_sums[j] += y * sh[k + j].serialized_element_ct; // Multiply the result with the block content
+
+                if (y == mpz_class(0)) {
+                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+                }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -602,11 +621,21 @@ static int TestShelterDPFSearch_alpha() {
 
     fin = ans0 - ans1;
 
+    #if 0
     if (fin != sh[DPF_SEARCH_INDEX_K].serialized_element_ct) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot reform the FHE-ciphertext after DPF-search and combination");
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
     }
+    #endif
+
+    auto y0 = evaluateEq(&fServer, &k0, sh[DPF_SEARCH_INDEX_K].tag_short);
+    mpz_class y0_mod2 = y0 % mpz_class(2);
+    auto y1 = evaluateEq(&fServer, &k1, sh[DPF_SEARCH_INDEX_K].tag_short);
+    mpz_class y1_mod2 = y1 % mpz_class(2);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(DPF_SEARCH_INDEX_K)+ " is: " + y0.get_str() + " and y0_mod2 is: " + y0_mod2.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(DPF_SEARCH_INDEX_K)+ " is: " + y1.get_str() + " and y1_mod2 is: " + y1_mod2.get_str());
 
     return 1;
 }

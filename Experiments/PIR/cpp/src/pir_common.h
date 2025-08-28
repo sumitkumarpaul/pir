@@ -89,10 +89,10 @@ extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
 
 typedef struct {
-    mpz_class serialized_element_ct;
+    /* Here only storing the tags. The ciphertext part is stored in the RAM, in serialized format */
     mpz_class tag;
     mpz_class tag_short;
-} shelter_element;
+} shelter_tags;
 
 //Function prototypes
 //Logging related

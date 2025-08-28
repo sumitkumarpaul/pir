@@ -330,8 +330,11 @@ int FHE_keyGen(){
      * ***************************************************************/
 
     //At this moment, using the value mentioned in the original example.
-    parameters.SetMaxRelinSkDeg(1);//What does this value mean?
+    parameters.SetMaxRelinSkDeg(1);// Initially 1 What does this value mean?
     parameters.SetScalingTechnique(FIXEDAUTO);//Only this is not giving any exception and giving good result
+    
+    //parameters.SetSecurityLevel(HEStd_128_classic);
+    //parameters.SetRingDim(8192);
 
     FHEcryptoContext = GenCryptoContext(parameters);
     // enable features that you wish to use
@@ -377,6 +380,10 @@ Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_
 
     Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(DBElementVector);
 
+    /* TODO: If problem occurs, check whether it is due to this compression or not */
+    //return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 1);
+
+    /* Let's not compress at this moment, since it might take extra time, as well as can break functionality */
     return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
 }
 
@@ -505,6 +512,7 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
 
 // bytes: most-significant byte first (big-endian)
 mpz_class import_from_bytes(const std::string &bytes) {
+    PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Size of the serialized ciphertext: " + std::to_string(bytes.size()) + " bytes");
     mpz_t tmp;
     mpz_init(tmp);
     // count = bytes.size(), size=1 (bytes), order=1 (most-significant word first),
