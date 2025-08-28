@@ -522,3 +522,24 @@ mpz_class import_from_bytes(const std::string &bytes) {
     mpz_clear(tmp);
     return out;
 }
+
+mpz_class serialized_ct_to_mpz_class(const std::string& filename) {
+    std::ifstream in(filename, std::ios::binary);
+    if (!in) throw std::runtime_error("Cannot open file");
+
+    std::vector<unsigned char> buf(
+        (std::istreambuf_iterator<char>(in)),
+        std::istreambuf_iterator<char>()
+    );
+
+    mpz_t tmp;
+    mpz_init(tmp);
+    // Interpret the buffer as big-endian bytes:
+    mpz_import(tmp, buf.size(), 1, 1, 1, 0, buf.data());
+
+    mpz_class result(tmp);
+    mpz_clear(tmp);
+
+    in.close();
+    return result;
+}

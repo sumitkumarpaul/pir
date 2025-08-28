@@ -540,6 +540,7 @@ static int TestShelterDPFSearch_alpha() {
         /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
         if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", element_FHE_ct, SerType::BINARY) == true)
         {
+            #if 0 /* Already performed this error checking, while doing experimentation for serveral times. Hence ommited */
             Ciphertext<DCRTPoly> deserialized_element_FHE_ct;
             if (Serial::DeserializeFromFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", deserialized_element_FHE_ct, SerType::BINARY) == false) {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to deserialize element FHE ciphertext from file");
@@ -548,6 +549,7 @@ static int TestShelterDPFSearch_alpha() {
                     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Deserialized element FHE ciphertext does not match original");
                 }
             }
+            #endif
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
         }
@@ -589,12 +591,17 @@ static int TestShelterDPFSearch_alpha() {
                 mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
                 if (y == mpz_class(0)) {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct").get_mpz_t());
+                    //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }
             }
         }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            ans0 += thread_sums[t];
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            //ans0 += thread_sums[t];
+            mpz_xor(ans0.get_mpz_t(), ans0.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
+
     }
 
     for (size_t k = 0; k < sqrt_N; k += NUM_CPU_CORES)
@@ -611,23 +618,29 @@ static int TestShelterDPFSearch_alpha() {
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
 
                 if (y == mpz_class(0)) {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct").get_mpz_t());
+                    //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }
             }
         }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            ans1 += thread_sums[t];
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            //ans1 += thread_sums[t];
+            mpz_xor(ans1.get_mpz_t(), ans1.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
     }
 
-    fin = ans0 - ans1;
+    //fin = ans0 - ans1;
+    mpz_xor(fin.get_mpz_t(), ans1.get_mpz_t(), ans0.get_mpz_t());
 
-    #if 0
-    if (fin != sh[DPF_SEARCH_INDEX_K].serialized_element_ct) {
+    
+    mpz_class expected_result = serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(DPF_SEARCH_INDEX_K) + "].ct");
+
+    if (fin != expected_result) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot reform the FHE-ciphertext after DPF-search and combination");
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
     }
-    #endif
 
     auto y0 = evaluateEq(&fServer, &k0, sh[DPF_SEARCH_INDEX_K].tag_short);
     mpz_class y0_mod2 = y0 % mpz_class(2);
