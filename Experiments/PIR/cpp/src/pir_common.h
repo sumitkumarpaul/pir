@@ -17,6 +17,7 @@
 #include <ctime>
 #include <iomanip>
 #include <fstream>
+#include <filesystem> 
 #include <iterator>
 #include <openfhe.h>
 
@@ -90,9 +91,10 @@ extern Ciphertext<DCRTPoly> fnd_ct;
 
 typedef struct {
     /* Here only storing the tags. The ciphertext part is stored in the RAM, in serialized format */
+    mpz_class element_FHE_ct;
     mpz_class tag;
     mpz_class tag_short;
-} shelter_tags;
+} shelter_element;
 
 //Function prototypes
 //Logging related
@@ -132,3 +134,5 @@ extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct
 extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct);
 extern mpz_class serialized_ct_to_mpz_class(const std::string& filename);
+//extern void serialized_ct_to_mpz_class(const std::string& filename);
+extern void mpz_class_to_serialized_ct(const mpz_class& value, const std::string& filename);

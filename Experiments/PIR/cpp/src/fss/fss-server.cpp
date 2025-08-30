@@ -141,5 +141,8 @@ mpz_class evaluateEq(Fss* f, ServerKeyEq *k, uint64_t x) {
     mpz_import(ans.get_mpz_t(), 34, 1, sizeof(sIntArray[0]), 0, 0, sIntArray);
     ans = ans * k->w;
     ans = ans % f->prime;
+
+    /* Sumit: Based on whether 1 or 0, we can perform XORing tin two-party DPF */
+    ans = (ans % 2);
     return ans;
 }
