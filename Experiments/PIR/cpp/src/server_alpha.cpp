@@ -528,6 +528,8 @@ static int TestShelterDPFSearch_alpha() {
     ServerKeyEq k1;
     int ret = 0;
     size_t received_sz = 0;
+    /* On average half of the shelter elements will be populated */
+    int average_shelter_size = (sqrt_N/2);
 
     #define DPF_SEARCH_INDEX_K 6
     //#define SHELTER_STORING_LOCATION std::string("./")
@@ -542,11 +544,10 @@ static int TestShelterDPFSearch_alpha() {
     }
     Serial::DeserializeFromString(sk_F, std::string(net_buf, received_sz));
 
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of size: " + to_string(sqrt_N));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of average size: " + to_string(average_shelter_size));
 
     /* Populate the shelter, with random elements */
-    for(size_t k = 0; k < sqrt_N; k++) {
+    for(size_t k = 0; k < average_shelter_size; k++) {
         //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
         if (1) {
             // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
@@ -570,6 +571,9 @@ static int TestShelterDPFSearch_alpha() {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
             }
         }
+        
+        sh[k].element_FHE_ct = serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
+
         /* Generate the tags and keep them in the variable, which will be used for DPF search */
         sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
         sh[k].tag_short = sh[k].tag % r; // Create a random short tag
@@ -594,7 +598,7 @@ static int TestShelterDPFSearch_alpha() {
     ans1 = 0;
 
     std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
-    for (size_t k = 0; k < sqrt_N; k += NUM_CPU_CORES)
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t)
             thread_sums[t] = 0;
@@ -602,13 +606,13 @@ static int TestShelterDPFSearch_alpha() {
 #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
-            if ((k + j) < sqrt_N)
+            if ((k + j) < average_shelter_size)
             {
                 //mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
                 if (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) {
                     //serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct").get_mpz_t());
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
                     //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }
@@ -621,7 +625,9 @@ static int TestShelterDPFSearch_alpha() {
 
     }
 
-    for (size_t k = 0; k < sqrt_N; k += NUM_CPU_CORES)
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation over average number of shelter elements");
+
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t)
             thread_sums[t] = 0;
@@ -629,14 +635,14 @@ static int TestShelterDPFSearch_alpha() {
 #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
-            if ((k + j) < sqrt_N)
+            if ((k + j) < average_shelter_size)
             {
                 //mpz_class y = (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
 
                 if (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) {
                     //serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct").get_mpz_t());
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
                     //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }

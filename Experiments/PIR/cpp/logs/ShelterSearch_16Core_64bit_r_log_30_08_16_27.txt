@@ -1,0 +1,11 @@
+[30-08-2025 20:27:51:470] [server_alpha.cpp:64] TRACE: Established connection with Server Beta
+[30-08-2025 20:27:53:651] [server_alpha.cpp:73] TRACE: Server Alpha: Successfully received initialization parameters from Server Beta
+[30-08-2025 20:27:54:652] [server_alpha.cpp:78] TRACE: Established connection with Server Gamma
+[30-08-2025 20:27:54:652] [server_alpha.cpp:80] INFO: Server Alpha initialization complete
+[30-08-2025 20:27:54:652] [server_alpha.cpp:87] TRACE: Server Alpha: Ready for new epoch
+[30-08-2025 20:27:54:677] [server_alpha.cpp:547] TRACE: Starting to randomly populate a shelter of average size: 20480
+[30-08-2025 20:30:06:354] [server_alpha.cpp:582] TRACE: Starting to test DPF-search on the shelter
+[30-08-2025 20:30:06:946] [server_alpha.cpp:628] TRACE: Completed DPF evaluation over average number of shelter elements
+[30-08-2025 20:30:07:479] [server_alpha.cpp:666] INFO: Exact same ciphertext is formed
+[30-08-2025 20:30:07:485] [server_alpha.cpp:681] INFO: Decrypted block index matches the expected index
+[30-08-2025 20:30:07:486] [server_alpha.cpp:214] ***** Finalized Server Alpha
