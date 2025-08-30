@@ -30,6 +30,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
+mpz_class T_star;
 
 // Function declarations
 static int InitSrv_gamma();
@@ -252,10 +253,7 @@ static int SelShuffDBSearchTag_gamma(){
         close(sock_gamma_to_alpha_con);
         return ret;
     }
-    mpz_class T_star = mpz_class(std::string(net_buf, received_sz));
-
-    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ended SelShuffDBSearchTag sequence");
+    T_star = mpz_class(std::string(net_buf, received_sz));
 
     return ret;
 }
@@ -331,6 +329,9 @@ static void TestSelShuffDBSearchTag_gamma(){
     int ret = -1;
 
     ret = SelShuffDBSearchTag_gamma();
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ended SelShuffDBSearchTag sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());   
 
     return;
 }

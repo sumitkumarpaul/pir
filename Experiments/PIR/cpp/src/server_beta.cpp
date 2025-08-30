@@ -204,7 +204,6 @@ static int PerEpochReInit_beta(){
 
     Rho = selectRho();
 
-    #if 0/* For the experimentation purpose of DPF, this is not required */
     /* For the time being, just create the set of dummies */
     SetPhi.clear(); // Clear SetPhi before populating
     for (int I = (N+1); I < (N + sqrt_N + 1); ++I) {
@@ -215,7 +214,6 @@ static int PerEpochReInit_beta(){
         mpz_powm(T_phi.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
         SetPhi.push_back(T_phi);
     }
-    #endif
 
     /* And then send E_q(Rho) */
     //std::pair<mpz_class, mpz_class> E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
@@ -1185,8 +1183,8 @@ static void TestPKEOperations_beta() {
 static void TestSrv_beta()
 {
     //TestPKEOperations_beta();
-    //TestSelShuffDBSearchTag_beta();
-    TestShelterDPFSearch_beta();
+    TestSelShuffDBSearchTag_beta();
+    //TestShelterDPFSearch_beta();
 }
 
 int main() {

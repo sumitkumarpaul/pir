@@ -378,8 +378,8 @@ static void TestPKEOperations_alpha(){
 static void TestSrv_alpha()
 {
     //TestPKEOperations_alpha();
-    //TestSelShuffDBSearchTag_alpha();
-    TestShelterDPFSearch_alpha();
+    TestSelShuffDBSearchTag_alpha();
+    //TestShelterDPFSearch_alpha();
     return;
 }
 
