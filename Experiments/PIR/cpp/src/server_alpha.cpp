@@ -47,6 +47,7 @@ static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
 static void TestSelShuffDBSearchTag_alpha();
 static int TestShelterDPFSearch_alpha();
+static int TestClientProcessing_alpha();
 
 using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
@@ -378,8 +379,10 @@ static void TestPKEOperations_alpha(){
 static void TestSrv_alpha()
 {
     //TestPKEOperations_alpha();
-    TestSelShuffDBSearchTag_alpha();
+    //TestSelShuffDBSearchTag_alpha();
     //TestShelterDPFSearch_alpha();
+    TestClientProcessing_alpha();
+
     return;
 }
 
@@ -708,6 +711,113 @@ int main(int argc, char *argv[])
     Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
     #endif
     FinSrv_alpha();
+
+    return 0;
+}
+
+static int TestClientProcessing_alpha(){
+    int ret = 0;
+    size_t received_sz = 0;
+    size_t total_network_bytes = 0;
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Client timing part 1 starts here");
+
+    /* 1.a.1.1 Select random h_{alpha1} */
+    mpz_class h_alpha1 = ElGamal_randomGroupElement();
+    /* 1.a.1.2 Also find its inverse */
+    mpz_class h_alpha1_1;
+    mpz_invert(h_alpha1_1.get_mpz_t(), h_alpha1.get_mpz_t(), p.get_mpz_t());
+
+    /* 1.a.2.1 Select random h_{alpha2} */
+    mpz_class h_alpha2 = ElGamal_randomGroupElement();
+    /* 1.a.2.2 Also find its inverse */
+    mpz_class h_alpha2_1;
+    mpz_invert(h_alpha2_1.get_mpz_t(), h_alpha2.get_mpz_t(), p.get_mpz_t());
+
+    /* To simulate the timing for another E() */
+    ElGamal_encrypt(h_alpha1, pk_E);
+    /* 2.1 Compute E(T_I.h_{\alpha 1}) to server beta */
+    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1 = ElGamal_mult_ct(E_T_I, ElGamal_encrypt(h_alpha1, pk_E));
+
+    /* 2.2 Send both the componets of E(T_I.h_{\alpha 1}) */
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.first.get_str().c_str(), E_T_I_h_alpha1.first.get_str().size());
+    (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.second.get_str().c_str(), E_T_I_h_alpha1.second.get_str().size());
+
+    total_network_bytes += E_T_I_h_alpha1.first.get_str().size() + E_T_I_h_alpha1.second.get_str().size();
+    /* To approximate the size of Eq()+2*E() */
+    total_network_bytes = (total_network_bytes*3);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 1 ends here");
+
+    /* 4.a.1 Receive T_I.h_{\alpha 1}h_{\beta 0} */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T_I.h_{\\alpha 1}h_{\\beta 0} from Server Beta");
+        return ret;
+    }
+
+    /* 5. Remove h_{\alpha 1} and determine T_I_h_beta0 */
+    mpz_class T_I_h_alpha1_h_beta0 = mpz_class(std::string(net_buf, received_sz));
+    mpz_class T_I_h_beta0 = (T_I_h_alpha1_h_beta0 * h_alpha1_1) % p;
+
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Determined T_I.h_{\\beta 0}: " + T_I_h_beta0.get_str());
+
+    /* 6.1 Determine T_I.h_{\\alpha 2}.h_{\\beta 0} */
+    mpz_class T_I_h_alpha2_h_beta0 = (T_I_h_beta0 * h_alpha2) % p;
+
+    /************************************************************************************************ */
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 2 starts here");
+    
+    Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(2864));
+    /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
+    if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(2864) + "].ct", tmp_ct, SerType::BINARY) != true){
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of tmp_ct");
+        return 1;
+    }
+
+    // Open the serialized file and send its contents
+    std::ifstream file("/dev/shm/tmp.ct", std::ios::binary | std::ios::ate);
+    if (!file)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error opening /dev/shm/tmp.ct for sending");
+        return 1;
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(size);
+    if (!file.read(buffer.data(), size))
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error reading /dev/shm/tmp.ct for sending");
+        return 1;
+    }
+
+    // Send the serialized file contents
+    if (sendAll(sock_alpha_to_beta, buffer.data(), size) != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error sending serialized ciphertext to server beta");
+        return 1;
+    }
+
+    size_t FHE_ct_sz = size;
+    total_network_bytes += size;
+
+    /* Receiving a dummy block */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T_I.h_{\\alpha 1}h_{\\beta 0} from Server Beta");
+        return ret;
+    }
+
+    total_network_bytes += received_sz;
+
+    /* Simulating the time requirement for removal of mask by adding two random numbers */
+    mpz_class temp = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE+P_BITS) + rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE+P_BITS);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 2 ends here, size of FHE-ciphertext is: " + std::to_string(FHE_ct_sz) + ", while total network transfer size is: " + std::to_string(total_network_bytes));
+    /************************************************************************************* */
 
     return 0;
 }

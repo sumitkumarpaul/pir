@@ -32,6 +32,7 @@ static void TestBlindedExponentiation2();
 static void Test_FHE_DBElement();
 static void TestSelShuffDBSearchTag_beta();
 static int TestShelterDPFSearch_beta();
+static int TestClientProcessing_beta();
 
 
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
@@ -1183,8 +1184,9 @@ static void TestPKEOperations_beta() {
 static void TestSrv_beta()
 {
     //TestPKEOperations_beta();
-    TestSelShuffDBSearchTag_beta();
+    //TestSelShuffDBSearchTag_beta();
     //TestShelterDPFSearch_beta();
+    TestClientProcessing_beta();
 }
 
 int main() {
@@ -1203,4 +1205,59 @@ static int TestShelterDPFSearch_beta() {
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
 
     return 0;
+}
+
+static int TestClientProcessing_beta(){
+    int ret = -1;
+    size_t received_sz = 0;
+
+    /* 1.b.1 Select random h_{\beta 0} */
+    mpz_class h_beta0 = ElGamal_randomGroupElement();
+    /* Also select its inverse */
+    mpz_class h_beta0_1;
+    mpz_invert(h_beta0_1.get_mpz_t(), h_beta0.get_mpz_t(), p.get_mpz_t());
+
+    // 2.1.b Receive first component of E(T_I.h_{\alpha 1})
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive first component of E(T_I.h_{\\alpha 1} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+    mpz_class E_T_I_h_alpha1_1 = mpz_class(std::string(net_buf, received_sz));
+
+    //2.2.b Receive second component of E(T_I.h_{\alpha 1})
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive second component of E(T_I.h_{\\alpha 1} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+
+    //3. Decrypt to T_I.h_{\\alpha 1}
+    mpz_class E_T_I_h_alpha1_2 = mpz_class(std::string(net_buf, received_sz));
+    std::pair<mpz_class, mpz_class> E_T_I_h_alpha1_local = std::make_pair(E_T_I_h_alpha1_1, E_T_I_h_alpha1_2);
+    mpz_class T_I_h_alpha1 = ElGamal_decrypt(E_T_I_h_alpha1_local, sk_E);
+
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted T_I.h_{\\alpha 1}: " + T_I_h_alpha1.get_str());
+
+    /* 4.b.1 Compute T_I.h_{\alpha 1}h_{\beta 0} */
+    mpz_class T_I_h_alpha1_h_beta0 = (T_I_h_alpha1*h_beta0) % p;
+    /* 4.b.2 Send T_I.h_{\alpha 1}h_{\beta 0} to server alpha */
+    (void)sendAll(sock_beta_alpha_con, T_I_h_alpha1_h_beta0.get_str().c_str(), T_I_h_alpha1_h_beta0.get_str().size());
+
+    /********************************************************************
+     * For simulating communication with the client*********************/
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to receive FHE ciphertext of T_star.h_{\\alpha 2}.h_{\\beta 0} from Server Alpha");
+        close(sock_beta_alpha_con);
+        return ret;
+    }
+
+    mpz_class random_value = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE+P_BITS);
+    (void)sendAll(sock_beta_alpha_con, random_value.get_str().c_str(), random_value.get_str().size());
+
+    /* End of simulation of client communication */
+    return ret;
 }

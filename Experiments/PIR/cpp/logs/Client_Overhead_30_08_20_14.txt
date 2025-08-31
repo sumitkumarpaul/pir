@@ -1,0 +1,10 @@
+[31-08-2025 00:14:46:795] [server_alpha.cpp:65] TRACE: Established connection with Server Beta
+[31-08-2025 00:14:49:353] [server_alpha.cpp:74] TRACE: Server Alpha: Successfully received initialization parameters from Server Beta
+[31-08-2025 00:14:50:354] [server_alpha.cpp:79] TRACE: Established connection with Server Gamma
+[31-08-2025 00:14:50:354] [server_alpha.cpp:81] INFO: Server Alpha initialization complete
+[31-08-2025 00:14:50:354] [server_alpha.cpp:88] TRACE: Server Alpha: Ready for new epoch
+[31-08-2025 00:14:50:354] [server_alpha.cpp:723] TRACE: Client timing part 1 starts here
+[31-08-2025 00:14:50:358] [server_alpha.cpp:750] INFO: Client timing part 1 ends here
+[31-08-2025 00:14:50:358] [server_alpha.cpp:770] INFO: Client timing part 2 starts here
+[31-08-2025 00:14:50:366] [server_alpha.cpp:819] INFO: Client timing part 2 ends here, size of FHE-ciphertext is: 263331, while total network transfer size is: 264416
+[31-08-2025 00:14:50:366] [server_alpha.cpp:215] ***** Finalized Server Alpha

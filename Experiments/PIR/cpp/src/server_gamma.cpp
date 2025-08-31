@@ -321,7 +321,8 @@ static void TestPKEOperations_gamma(){
 
 static void TestSrv_gamma(){
     //TestPKEOperations_gamma();
-    TestSelShuffDBSearchTag_gamma();
+    //TestSelShuffDBSearchTag_gamma();
+    //Nothing is required to be executed during measuring the performance of client(simulated)
 }
 
 
