@@ -161,6 +161,7 @@ target_link_libraries(server_beta
     OpenSSL::SSL
     OpenSSL::Crypto
     crypto
+    Kuku::kuku
     ${EXTRA_LIBS}
 )
 

@@ -13,7 +13,6 @@
 
 #include <iomanip>
 #include <iostream>
-#include <kuku/kuku.h>
 
 
 #include <iterator>
@@ -49,7 +48,6 @@ static void TestSelShuffDBSearchTag_alpha();
 static int TestShelterDPFSearch_alpha();
 static int TestClientProcessing_alpha();
 
-using namespace kuku;
 static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
 
 // Function definitions

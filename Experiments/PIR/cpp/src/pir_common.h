@@ -20,6 +20,8 @@
 #include <filesystem> 
 #include <iterator>
 #include <openfhe.h>
+#include <kuku/kuku.h>
+
 
 #include "ciphertext-ser.h"
 #include "cryptocontext-ser.h"
@@ -27,6 +29,8 @@
 #include "scheme/bgvrns/bgvrns-ser.h"
 
 using namespace lbcrypto;
+using namespace kuku;
+
 
 #define LOG_LEVEL_SPECIAL   0
 #define LOG_LEVEL_ERROR     1
