@@ -21,7 +21,6 @@ static int FinSrv_beta();
 static int InitSrv_beta();
 static int OneTimeInitialization();
 static int SendInitializedParamsToAllServers();
-static mpz_class selectRho();
 static int SelShuffDBSearchTag_beta();
 static int PerEpochReInit_beta();
 
@@ -206,18 +205,18 @@ static int InitSrv_beta(){
 
 static int CreateRandomDatabase(){
     int ret = 0;
-    mpz_class rand_block_content[N];
+    mpz_class rand_block_content;
     size_t count;
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION);
 
     for (unsigned int i = 0; i < N; ++i) {
         unsigned char raw_bytes[(PLAINTEXT_PIR_BLOCK_DATA_SIZE / 8)];
-        rand_block_content[i] = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+        rand_block_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
 
         std::string filename = DATABASE_LOCATION+"DB["+std::to_string(i)+"].bin";
 
-        mpz_export(raw_bytes, &count, 1, 1, 1, 0, rand_block_content[i].get_mpz_t());
+        mpz_export(raw_bytes, &count, 1, 1, 1, 0, rand_block_content.get_mpz_t());
         // Open the file in binary mode for writing
         std::ofstream ofs(filename, std::ios::out | std::ios::binary);
 
@@ -233,33 +232,6 @@ static int CreateRandomDatabase(){
         ofs.close();
     }
 
-    for (unsigned int i = 0; i < N; ++i)
-    {
-        std::string filename = DATABASE_LOCATION + "DB[" + std::to_string(i) + "].bin";
-        std::ifstream ifs(filename, std::ios::in | std::ios::binary | std::ios::ate);
-        if (!ifs.is_open())
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error opening file for reading: " + filename);
-            continue;
-        }
-        std::streamsize size = ifs.tellg();
-        ifs.seekg(0, std::ios::beg);
-        std::vector<unsigned char> raw_bytes(size);
-        ifs.read(reinterpret_cast<char *>(raw_bytes.data()), size);
-        ifs.close();
-
-        mpz_t tmp;
-        mpz_init(tmp);
-        mpz_import(tmp, raw_bytes.size(), 1, 1, 1, 0, raw_bytes.data());
-        mpz_class imported_value(tmp);
-        mpz_clear(tmp);
-
-        if (imported_value != rand_block_content[i])
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch in file " + filename + "\nExpected: " + rand_block_content[i].get_str() + "\nRead: " + imported_value.get_str());
-        }
-    }
-
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Database creation complete");
 
     return ret;
@@ -267,55 +239,100 @@ static int CreateRandomDatabase(){
 
 static int PerEpochReInit_beta(){
     int ret = 0;
+    mpz_class Rho_pow_I;
+    mpz_class T_I;
+    mpz_class d, d_alpha, d_gamma;
 
-    Rho = selectRho();
+    // RNG: mt19937 seeded from random_device
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    // build SS = {1, 2, ..., (N + sqrt_N))}
+    unsigned int M = N + sqrt_N;
+    std::vector<unsigned int> SS;
+    SS.reserve(M);
+    for (unsigned int i = 1; i <= M; ++i) SS.push_back(i);
+
+    if (SS.empty()) return -1; // nothing to do for N == 0
+
+    Rho = rng.get_z_range(((q-1)/2)) + 1; // Randomly choose Rho in ZZ_((q-1)/2)*
+
+    /* And then prepare E_q(Rho) */
+    std::pair<mpz_class, mpz_class> E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+    /* During each request, the client first fetches this from the server_beta */
 
     /* For the time being, just create the set of dummies */
     SetPhi.clear(); // Clear SetPhi before populating
-    for (int I = (N+1); I < (N + sqrt_N + 1); ++I) {
-        mpz_class Rho_pow_I;
+
+    // repeatedly pick a random index in [0, SS.size()-1], print element,
+    // then remove it by swapping with the last element and pop_back()
+    for (unsigned int iter = 0; iter < M; ++iter) {
+        std::uniform_int_distribution<std::size_t> dist(0, SS.size() - 1);
+        std::size_t idx = dist(gen);
+        unsigned int I = SS[idx];
         mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
 
-        mpz_class T_phi;
-        mpz_powm(T_phi.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
-        SetPhi.push_back(T_phi);
-    }
+        mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
-    /* And then send E_q(Rho) */
-    //std::pair<mpz_class, mpz_class> E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+        if (I <= N){
+            std::string filename = DATABASE_LOCATION + "DB[" + std::to_string(I) + "].bin";
+            std::ifstream ifs(filename, std::ios::in | std::ios::binary | std::ios::ate);
+            if (!ifs.is_open())
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error opening file for reading: " + filename);
+                continue;
+            }
+            std::streamsize size = ifs.tellg();
+            ifs.seekg(0, std::ios::beg);
+            std::vector<unsigned char> raw_bytes(size);
+            ifs.read(reinterpret_cast<char *>(raw_bytes.data()), size);
+            ifs.close();
+
+            mpz_t tmp;
+            mpz_init(tmp);
+            mpz_import(tmp, raw_bytes.size(), 1, 1, 1, 0, raw_bytes.data());
+            mpz_class imported_value(tmp);
+            mpz_clear(tmp);
+
+            mpz_mul_2exp(imported_value.get_mpz_t(), imported_value.get_mpz_t(), log_N); // Left shift log_N-bits, so that index can be appended next
+            mpz_ior(imported_value.get_mpz_t(), imported_value.get_mpz_t(), mpz_class(I).get_mpz_t());// Attach the index at the end
+        } else {
+            d = mpz_class(0);
+            SetPhi.push_back(T_I);
+        }
+
+        /* Send the generated tag to both the servers  */
+        //(void)sendAll(sock_beta_alpha_con, T_I.get_str().c_str(), T_I.get_str().size());
+        //(void)sendAll(sock_beta_gamma_con, T_I.get_str().c_str(), T_I.get_str().size());
+
+
+        /* First create a random number as the secret-share for server_alpha */
+        d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
+        /* Send the share to server alpha */
+        //(void)sendAll(sock_beta_alpha_con, d_alpha.get_str().c_str(), d_alpha.get_str().size());
+
+        d_gamma = (d - d_alpha);/* Another share */
+        /* Send the share to server beta */
+        //(void)sendAll(sock_beta_gamma_con, d_gamma.get_str().c_str(), d_gamma.get_str().size());
+
+        /* Verify, secret sharing works */
+        if ((d_alpha+d_gamma) != d){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error in secret sharing at Server Beta, for element: " + std::to_string(I));
+            return -1;
+        }
+
+        // remove chosen element (order not preserved)
+        std::swap(SS[idx], SS.back());
+        SS.pop_back();
+    }
 
     /* Send ready message to Server Alpha and Server Gamma */
     std::string msg = "READY_FOR_EPOCH";
-    (void)sendAll(sock_beta_alpha_con, msg.c_str(), msg.size());
-    (void)sendAll(sock_beta_gamma_con, msg.c_str(), msg.size());
-#if 0
-    //Send parameters to Server Alpha
-    (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, q.get_str().c_str(), q.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, g.get_str().c_str(), g.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, g_q.get_str().c_str(), g_q.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, r.get_str().c_str(), r.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, pk_E.get_str().c_str(), pk_E.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+    //(void)sendAll(sock_beta_alpha_con, msg.c_str(), msg.size());
+    //(void)sendAll(sock_beta_gamma_con, msg.c_str(), msg.size());
 
-    //Send parameters to Server Gamma
-    (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, q.get_str().c_str(), q.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, g.get_str().c_str(), g.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, g_q.get_str().c_str(), g_q.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, r.get_str().c_str(), r.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, pk_E.get_str().c_str(), pk_E.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
-    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
-    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
-    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
-#endif
-
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed re-initialization for new epoch");
+    
     return 0;
 }
 
@@ -370,20 +387,6 @@ static int shuffle() {
     std::cout << '\n';
 
     return 0;
-}
-
-static mpz_class selectRho() {
-
-    mpz_class rho = ElGamal_randomGroupElement();
-
-    // rho must not be divided by q
-    while ((rho % q) == 0) {
-        rho = ElGamal_randomGroupElement();
-    }
-
-    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected rho: " + rho.get_str());
-
-    return rho;
 }
 
 static int SelShuffDBSearchTag_beta(){
@@ -481,7 +484,7 @@ static void TestBlindedExponentiation() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
 
-    Rho = selectRho();
+    Rho = rng.get_z_range(((q-1)/2)) + 1; // Randomly choose Rho in ZZ_((q-1)/2)*
 
     mpz_class h = rng.get_z_range(q-1) + 1;//To ensure that the element belongs to ZZ_q*
     mpz_class h_1;
@@ -615,7 +618,7 @@ static void TestBlindedExponentiation1() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
 
-    Rho = selectRho();
+    Rho = rng.get_z_range(((q-1)/2)) + 1; // Randomly choose Rho in ZZ_((q-1)/2)*
 
     mpz_class h = rng.get_z_range(q-1) + 1;//To ensure that the element belongs to ZZ_q*
     mpz_class h_1;
@@ -1251,7 +1254,7 @@ static void TestSrv_beta()
     //TestPKEOperations_beta();
     //TestSelShuffDBSearchTag_beta();
     //TestShelterDPFSearch_beta();
-    TestClientProcessing_beta();
+    //TestClientProcessing_beta();
 }
 
 int main(int argc, char *argv[]){
@@ -1265,8 +1268,6 @@ int main(int argc, char *argv[]){
     } else {
         PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Assuming database is already present at:"+ DATABASE_LOCATION);
     }
-
-    return 0;
 
     InitSrv_beta();
 
