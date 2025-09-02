@@ -771,7 +771,7 @@ static int TestClientProcessing_alpha(){
     
     Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(2864));
     /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
-    if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(2864) + "].ct", tmp_ct, SerType::BINARY) != true){
+    if (Serial::SerializeToFile("/dev/shm/tmp.ct", tmp_ct, SerType::BINARY) != true){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of tmp_ct");
         return 1;
     }
