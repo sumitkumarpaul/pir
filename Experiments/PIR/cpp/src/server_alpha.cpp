@@ -82,13 +82,7 @@ static int InitSrv_alpha(){
     /* At this moment receive for the ready message from the server beta */
     ret = PerEpochReInit_alpha();
 
-    if (ret == 0) {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Ready for new epoch");
-    } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Failed to reinitialize for new epoch");
-    }
-
-    return 0;
+    return ret;
 }
 
 static int RecvInitParamsFromBeta() {
@@ -217,7 +211,44 @@ static int FinSrv_alpha(){
 
 static int PerEpochReInit_alpha(){
     int ret = 0;
+    mpz_class T_I, d_share_alpha;
     size_t received_sz = 0;
+    uint64_t M = N + sqrt_N;
+
+    /* Receive ready message from server-beta */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive START_REINIT_FOR_EPOCH message from Server Beta");
+        return ret;
+    }
+
+    if (std::string(net_buf, received_sz) != start_reinit_for_epoch_message) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected START_REINIT_FOR_EPOCH message from Server Beta");
+        return -1;
+    }
+
+    for (uint64_t i = 1; i <= M; ++i){
+        /* Receive the tag */
+        ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+        if (ret == 0)
+        {
+            mpz_import(T_I.get_mpz_t(), received_sz, 1, 1, 1, 0, net_buf);
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta");
+            return ret;
+        }
+
+        /* Receive the secret-share */
+        ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+        if (ret == 0)
+        {
+            mpz_import(d_share_alpha.get_mpz_t(), received_sz, 1, 1, 1, 0, net_buf);
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta");
+            return ret;
+        }
+    }
 
     /* Receive ready message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -227,9 +258,11 @@ static int PerEpochReInit_alpha(){
         return ret;
     }
 
-    if (std::string(net_buf, received_sz) != ready_for_epoch_message) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected READY_FOR_EPOCH message from Server Beta");
+    if (std::string(net_buf, received_sz) != completed_reinit_for_epoch_message) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
         return -1;
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Ready for processing client requests");
     }
 
     return ret;

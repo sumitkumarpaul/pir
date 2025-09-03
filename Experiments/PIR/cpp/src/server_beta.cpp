@@ -14,6 +14,7 @@ static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
 
 #define DATABASE_LOCATION std::string("/mnt/sumit/PIR_DATABASE_BETA/")
+std::string pdb_filename = DATABASE_LOCATION+"PlaintextDB.bin";
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
@@ -194,13 +195,6 @@ static int InitSrv_beta(){
     /* At this moment, only execute single epoch */
     ret = PerEpochReInit_beta();
 
-    if (ret == 0) {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Ready for new epoch");
-    } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Failed to reinitialize for new epoch");
-    }
-
-
     return ret;
 }
 
@@ -209,7 +203,6 @@ static int CreateRandomDatabase(){
     mpz_class rand_block_content;
     size_t count;
     plain_db_entry random_entry, read_entry;
-    std::string pdb_filename = DATABASE_LOCATION+"PlaintextDB.bin";
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION);
     pdb.open(pdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
@@ -240,6 +233,8 @@ static int CreateRandomDatabase(){
     }
     #endif
 
+    pdb.close();
+
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Database creation complete");
 
     return ret;
@@ -247,26 +242,43 @@ static int CreateRandomDatabase(){
 
 static int PerEpochReInit_beta(){
     int ret = 0;
+    size_t send_size = 0;
+    mpz_t tmp;
+    std::pair<mpz_class, mpz_class> E_q_Rho;
     mpz_class Rho_pow_I;
     mpz_class T_I;
     mpz_class d, d_alpha, d_gamma;
+    plain_db_entry read_entry;
+
+    /* Start sync messages to both the servers, so that everyone is in sync regarding re-initialization process for the epoch */
+    (void)sendAll(sock_beta_alpha_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
+    (void)sendAll(sock_beta_gamma_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
+
+    pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
 
     // RNG: mt19937 seeded from random_device
     std::random_device rd;
     std::mt19937 gen(rd());
 
     // build SS = {1, 2, ..., (N + sqrt_N))}
-    unsigned int M = N + sqrt_N;
-    std::vector<unsigned int> SS;
+    uint64_t M = N + sqrt_N;
+    std::vector<uint64_t> SS;
     SS.reserve(M);
-    for (unsigned int i = 1; i <= M; ++i) SS.push_back(i);
+    for (uint64_t i = 1; i <= M; ++i){
+        SS.push_back(i);
+    }
 
-    if (SS.empty()) return -1; // nothing to do for N == 0
+    mpz_init(tmp);
+    
+    if (SS.empty()){
+        ret = -1; // nothing to do for N == 0
+        goto exit;
+    }
 
     Rho = rng.get_z_range(((q-1)/2)) + 1; // Randomly choose Rho in ZZ_((q-1)/2)*
 
     /* And then prepare E_q(Rho) */
-    std::pair<mpz_class, mpz_class> E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+    E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
     /* During each request, the client first fetches this from the server_beta */
 
     /* For the time being, just create the set of dummies */
@@ -274,59 +286,49 @@ static int PerEpochReInit_beta(){
 
     // repeatedly pick a random index in [0, SS.size()-1], print element,
     // then remove it by swapping with the last element and pop_back()
-    for (unsigned int iter = 0; iter < M; ++iter) {
+    for (uint64_t iter = 0; iter < M; ++iter) {
         std::uniform_int_distribution<std::size_t> dist(0, SS.size() - 1);
         std::size_t idx = dist(gen);
-        unsigned int I = SS[idx];
+        uint64_t I = SS[idx];
         mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
 
         mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
         if (I <= N){
-            std::string filename = DATABASE_LOCATION + "DB[" + std::to_string(I) + "].bin";
-            std::ifstream ifs(filename, std::ios::in | std::ios::binary | std::ios::ate);
-            if (!ifs.is_open())
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error opening file for reading: " + filename);
-                continue;
-            }
-            std::streamsize size = ifs.tellg();
-            ifs.seekg(0, std::ios::beg);
-            std::vector<unsigned char> raw_bytes(size);
-            ifs.read(reinterpret_cast<char *>(raw_bytes.data()), size);
-            ifs.close();
+            read_pdb_entry(pdb, I, read_entry);
 
-            mpz_t tmp;
-            mpz_init(tmp);
-            mpz_import(tmp, raw_bytes.size(), 1, 1, 1, 0, raw_bytes.data());
-            mpz_class imported_value(tmp);
-            mpz_clear(tmp);
+            mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, read_entry.element);
+            d = mpz_class(tmp);
 
-            mpz_mul_2exp(imported_value.get_mpz_t(), imported_value.get_mpz_t(), log_N); // Left shift log_N-bits, so that index can be appended next
-            mpz_ior(imported_value.get_mpz_t(), imported_value.get_mpz_t(), mpz_class(I).get_mpz_t());// Attach the index at the end
+            mpz_mul_2exp(d.get_mpz_t(), d.get_mpz_t(), log_N); // Left shift log_N-bits, so that index can be appended next
+            mpz_ior(d.get_mpz_t(), d.get_mpz_t(), mpz_class(I).get_mpz_t());// Attach the index at the end
         } else {
             d = mpz_class(0);
             SetPhi.push_back(T_I);
         }
 
         /* Send the generated tag to both the servers  */
-        //(void)sendAll(sock_beta_alpha_con, T_I.get_str().c_str(), T_I.get_str().size());
-        //(void)sendAll(sock_beta_gamma_con, T_I.get_str().c_str(), T_I.get_str().size());
+        mpz_export(net_buf, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
+        (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
+        (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
 
         /* First create a random number as the secret-share for server_alpha */
         d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
         /* Send the share to server alpha */
-        //(void)sendAll(sock_beta_alpha_con, d_alpha.get_str().c_str(), d_alpha.get_str().size());
+        mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
+        (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
 
         d_gamma = (d - d_alpha);/* Another share */
         /* Send the share to server beta */
-        //(void)sendAll(sock_beta_gamma_con, d_gamma.get_str().c_str(), d_gamma.get_str().size());
+        mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
+        (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
         /* Verify, secret sharing works */
         if ((d_alpha+d_gamma) != d){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error in secret sharing at Server Beta, for element: " + std::to_string(I));
-            return -1;
+            ret = -1;
+            goto exit;
         }
 
         // remove chosen element (order not preserved)
@@ -335,13 +337,16 @@ static int PerEpochReInit_beta(){
     }
 
     /* Send ready message to Server Alpha and Server Gamma */
-    std::string msg = "READY_FOR_EPOCH";
-    //(void)sendAll(sock_beta_alpha_con, msg.c_str(), msg.size());
-    //(void)sendAll(sock_beta_gamma_con, msg.c_str(), msg.size());
+    (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
+    (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed re-initialization for new epoch");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+
+exit:
+    mpz_clear(tmp);
+    pdb.close();
     
-    return 0;
+    return ret;
 }
 
 static int FinSrv_beta(){
@@ -1276,8 +1281,6 @@ int main(int argc, char *argv[]){
     } else {
         PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Assuming database is already present at:"+ DATABASE_LOCATION);
     }
-
-    return 0;
 
     InitSrv_beta();
 

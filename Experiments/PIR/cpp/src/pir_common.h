@@ -52,10 +52,11 @@ using namespace kuku;
 #define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port of beta to listen to client
 #define GAMMA_LISTENING_TO_ALPHA_PORT   1237 // Port of gamma to listen to alpha
 
-extern std::string ready_for_epoch_message;
+extern std::string start_reinit_for_epoch_message;
+extern std::string completed_reinit_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       16//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
 #define sqrt_N  16//40960//1024//40960 // ceil((sqrt(N)))
 

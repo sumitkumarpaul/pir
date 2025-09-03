@@ -22,7 +22,8 @@ Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 Ciphertext<DCRTPoly> fnd_ct;
 
-std::string ready_for_epoch_message = "READY_FOR_EPOCH";
+std::string start_reinit_for_epoch_message = "START_REINIT_FOR_EPOCH";
+std::string completed_reinit_for_epoch_message = "COMPLETED_REINIT_FOR_EPOCH";
 
 void PrintLog(int log_level, const char* file, int line, const std::string& message) {
 
