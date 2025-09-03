@@ -11,6 +11,7 @@ static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
 static mpz_class Rho;
 static std::vector<mpz_class> SetPhi;
+static std::fstream pdb;
 
 #define DATABASE_LOCATION std::string("/mnt/sumit/PIR_DATABASE_BETA/")
 
@@ -207,30 +208,37 @@ static int CreateRandomDatabase(){
     int ret = 0;
     mpz_class rand_block_content;
     size_t count;
+    plain_db_entry random_entry, read_entry;
+    std::string pdb_filename = DATABASE_LOCATION+"PlaintextDB.bin";
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION);
+    pdb.open(pdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
 
-    for (unsigned int i = 0; i < N; ++i) {
-        unsigned char raw_bytes[(PLAINTEXT_PIR_BLOCK_DATA_SIZE / 8)];
+    for (uint64_t i = 0; i < N; ++i) {
+        memset(random_entry.element, 0, sizeof(random_entry.element));
         rand_block_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
-
-        std::string filename = DATABASE_LOCATION+"DB["+std::to_string(i)+"].bin";
-
-        mpz_export(raw_bytes, &count, 1, 1, 1, 0, rand_block_content.get_mpz_t());
-        // Open the file in binary mode for writing
-        std::ofstream ofs(filename, std::ios::out | std::ios::binary);
-
-        if (!ofs.is_open())
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error opening file for writing: " + std::string(filename));
-            return 1;
-        }
-
-        // Write the binary data
-        ofs.write(reinterpret_cast<const char *>(raw_bytes), count);
-
-        ofs.close();
+        mpz_export(random_entry.element, &count, 1, 1, 1, 0, rand_block_content.get_mpz_t());
+        insert_pdb_entry(pdb, i, random_entry);
     }
+
+    #if 0
+    //Verify 
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        read_pdb_entry(pdb, i, read_entry);
+
+        mpz_t tmp;
+        mpz_init(tmp);
+        mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, read_entry.element);
+        mpz_class imported_value(tmp);
+        mpz_clear(tmp);
+
+        if (imported_value != rand_block_content[i])
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch at location " + std::to_string(i) + " Expected: " + rand_block_content[i].get_str() + "\nRead: " + imported_value.get_str());
+        }
+    }
+    #endif
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Database creation complete");
 
@@ -1268,6 +1276,8 @@ int main(int argc, char *argv[]){
     } else {
         PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Assuming database is already present at:"+ DATABASE_LOCATION);
     }
+
+    return 0;
 
     InitSrv_beta();
 

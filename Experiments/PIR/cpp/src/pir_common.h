@@ -55,7 +55,7 @@ using namespace kuku;
 extern std::string ready_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       160105//16010558//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
 #define sqrt_N  16//40960//1024//40960 // ceil((sqrt(N)))
 
@@ -72,6 +72,8 @@ extern std::string ready_for_epoch_message;
 * ***************************************************************/
 #define PLAINTEXT_PIR_BLOCK_DATA_SIZE       512 // Number of bits in a single PIR block
 #define PLAINTEXT_FHE_BLOCK_SIZE            15 // Single encryptable plaintext block size is these many bits. Actually 16-bits, but 1 bit is kept reserved for carry forwarding during homomorphic selection processing
+#define NUM_BYTES_PER_PDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + 7) / 8) // Only data, no-index. To ensure ceiling value
+#define NUM_BYTES_PER_SDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N + 7) / 8) // Data and index. To ensure ceiling value
 #define NUM_FHE_BLOCKS_PER_PIR_BLOCK        ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 #define NUM_FHE_BLOCKS_PER_PIR_INDEX        ((log_N + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE)
 #define TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT    (NUM_FHE_BLOCKS_PER_PIR_BLOCK + NUM_FHE_BLOCKS_PER_PIR_INDEX)
@@ -92,6 +94,15 @@ extern CryptoContext<DCRTPoly> FHEcryptoContext;
 extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
+
+typedef struct {
+    char element[NUM_BYTES_PER_PDB_ELEMENT];//Only data, no index
+} plain_db_entry;
+
+typedef struct {
+    char T[(P_BITS/8)];// P_BITS will require (P_BITS/8) bytes
+    char element[NUM_BYTES_PER_SDB_ELEMENT];//Data and index
+} shuffled_db_entry;
 
 typedef struct {
     /* Here only storing the tags. The ciphertext part is stored in the RAM, in serialized format */
@@ -140,3 +151,9 @@ extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DC
 extern mpz_class serialized_ct_to_mpz_class(const std::string& filename);
 //extern void serialized_ct_to_mpz_class(const std::string& filename);
 extern void mpz_class_to_serialized_ct(const mpz_class& value, const std::string& filename);
+
+// Database related functions
+extern void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry);
+extern void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry);
+extern void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry);
+extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entry& entry);

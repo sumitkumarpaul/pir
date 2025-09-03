@@ -558,3 +558,33 @@ void mpz_class_to_serialized_ct(const mpz_class& value, const std::string& filen
     }
     out.close();
 }
+
+void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entry& entry) {
+    //TODO: Error check
+    pdb.seekp(static_cast<std::streampos>(id) * sizeof(plain_db_entry));
+    pdb.write(reinterpret_cast<const char*>(&entry), sizeof(plain_db_entry));
+
+    return;
+}
+
+void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry) {
+    //TODO: Error check
+    pdb.seekg(static_cast<std::streampos>(id) * sizeof(plain_db_entry));
+    pdb.read(reinterpret_cast<char*>(&out_entry), sizeof(plain_db_entry));
+    return;
+}
+
+void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry) {
+    //TODO: Error check
+    sdb.seekp(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    sdb.write(reinterpret_cast<const char*>(&entry), sizeof(shuffled_db_entry));
+
+    return;
+}
+
+void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry) {
+    //TODO: Error check
+    sdb.seekg(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    sdb.read(reinterpret_cast<char*>(&out_entry), sizeof(shuffled_db_entry));
+    return;
+}
