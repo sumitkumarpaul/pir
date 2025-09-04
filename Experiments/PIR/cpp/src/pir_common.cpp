@@ -524,8 +524,7 @@ mpz_class import_from_bytes(const std::string &bytes) {
     return out;
 }
 
-mpz_class serialized_ct_to_mpz_class(const std::string& filename) {
-//void serialized_ct_to_mpz_class(const std::string& filename) {
+mpz_class import_from_file_to_mpz_class(const std::string& filename) {
     std::ifstream in(filename, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file");
 
@@ -546,7 +545,7 @@ mpz_class serialized_ct_to_mpz_class(const std::string& filename) {
 }
 
 // Serializes an mpz_class to a file as big-endian bytes
-void mpz_class_to_serialized_ct(const mpz_class& value, const std::string& filename) {
+void export_to_file_from_mpz_class(const std::string& filename, const mpz_class& value) {
     std::ofstream out(filename, std::ios::binary);
     if (!out) throw std::runtime_error("Cannot open file for writing");
 

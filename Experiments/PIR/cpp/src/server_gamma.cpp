@@ -22,6 +22,7 @@
 #include "pir_common.h"
 
 
+
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
@@ -31,6 +32,12 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 mpz_class T_star;
+
+#define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
+#define PER_EPOCH_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/PER_EPOCH_MATERIALS/")
+#define DATABASE_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/")
+std::string sdb_filename = DATABASE_LOCATION_GAMMA+"ShuffledDB_gamma.bin";
+
 
 // Function declarations
 static int InitSrv_gamma();
@@ -185,6 +192,21 @@ static int RecvInitParamsFromBeta() {
         return -1;
     }
     Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
+
+    //Save parameters to local files
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin", p);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin", q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin", g);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin", r);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E.bin", pk_E);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E_q.bin", pk_E_q);
+
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
 
     return 0;
 }

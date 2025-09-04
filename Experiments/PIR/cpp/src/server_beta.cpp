@@ -13,15 +13,17 @@ static mpz_class Rho;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
 
-#define DATABASE_LOCATION std::string("/mnt/sumit/PIR_DATABASE_BETA/")
-std::string pdb_filename = DATABASE_LOCATION+"PlaintextDB.bin";
+#define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
+#define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
+#define DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
+std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
 static int shuffle();
 static int FinSrv_beta();
 static int InitSrv_beta();
-static int OneTimeInitialization();
+static int OneTimeInit_beta();
 static int SendInitializedParamsToAllServers();
 static int SelShuffDBSearchTag_beta();
 static int PerEpochReInit_beta();
@@ -88,6 +90,24 @@ static void Init_parameters(int p_bits, int q_bits, int r_bits) {
 static int SendInitializedParamsToAllServers(){
     int ret = 0;
 
+    //Save parameters to local files
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin", p);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin", q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin", g);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin", r);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin", pk_E);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin", sk_E);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin", pk_E_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin", sk_E_q);
+
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+
     //Send parameters to Server Alpha
     (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
     (void)sendAll(sock_beta_alpha_con, q.get_str().c_str(), q.get_str().size());
@@ -117,14 +137,8 @@ static int SendInitializedParamsToAllServers(){
     return 0;
 }
 
-static int OneTimeInitialization(){
+static int OneTimeInit_beta(){
     int ret = 0;
-
-    // Initialize random number generator
-    // good-ish seed source: std::random_device (combine two samples)
-    std::random_device rd;
-    unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd(); // Seed for RNG
-    rng.seed(seed); // seed() seeds the gmp_randclass
 
     //Initialize p, q, g, GG(cyclic group) and r
     Init_parameters(P_BITS, Q_BITS, R_BITS);
@@ -138,7 +152,7 @@ static int OneTimeInitialization(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair in ZZ*_q");
 
     //Initialize FHE key-pair
-    ret = FHE_keyGen();//TODO: Check allocation, call by reference etc.
+    ret = FHE_keyGen();
     
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to generate FHE key-pair");
@@ -149,12 +163,21 @@ static int OneTimeInitialization(){
 
     FHE_EncOfOnes(vectorOnesforElement_ct, vectorOnesforTag_ct);
 
-    //TODO: Temporary, just for testing. Calling from here, so that server_alpha is not required to be executed now
-    //TestBlindedExponentiation();
-    //TestBlindedExponentiation1();
-    //TestBlindedExponentiation2();
-    //Test_FHE_DBElement();
-    //return 0;
+    //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
+    ret = SendInitializedParamsToAllServers();
+
+    //Other parties must store them in their own pir_common.cpp file
+
+    return ret;
+}
+
+static int InitSrv_beta(){
+    int ret = 0;
+    // Initialize random number generator
+    // good-ish seed source: std::random_device (combine two samples)
+    std::random_device rd;
+    unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd(); // Seed for RNG
+    rng.seed(seed); // seed() seeds the gmp_randclass
 
     //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(BETA_LISTENING_TO_ALPHA_PORT, &sock_beta_alpha_srv, &sock_beta_alpha_con);
@@ -171,19 +194,6 @@ static int OneTimeInitialization(){
         return -1;
     }
 
-    //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
-    ret = SendInitializedParamsToAllServers();
-
-    //Other parties must store them in their own pir_common.cpp file
-
-    return ret;
-}
-
-static int InitSrv_beta(){
-    int ret = 0;
-
-    // Initialize server beta
-    ret = OneTimeInitialization();
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to initialize Server Beta");
@@ -191,9 +201,6 @@ static int InitSrv_beta(){
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
     }
-
-    /* At this moment, only execute single epoch */
-    ret = PerEpochReInit_beta();
 
     return ret;
 }
@@ -204,7 +211,7 @@ static int CreateRandomDatabase(){
     size_t count;
     plain_db_entry random_entry, read_entry;
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION_BETA);
     pdb.open(pdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
 
     for (uint64_t i = 0; i < N; ++i) {
@@ -1271,20 +1278,38 @@ static void TestSrv_beta()
 }
 
 int main(int argc, char *argv[]){
+    int ret = -1;
 
-    if (argc >= 2) {
-        if (std::string("gen_db").compare(std::string(argv[1]))==0) {
-            CreateRandomDatabase();
-        } else {
-            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Assuming database is already present at:"+ DATABASE_LOCATION);
-        }
-    } else {
-        PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Assuming database is already present at:"+ DATABASE_LOCATION);
-    }
-
+    /* Perform the basic initialization */
     InitSrv_beta();
 
-    TestSrv_beta();
+    /* Process as per the command line arguments */
+    if (argc >= 2) {
+        if (std::string("gen_db").compare(std::string(argv[1]))==0) {
+            ret = CreateRandomDatabase();
+        } else if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
+            // Perform one-time initialization for server beta
+            ret = OneTimeInit_beta();
+        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+            // Perform per-epoch initialization for server beta
+            ret = PerEpochReInit_beta();
+        } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
+            // Clear the existing state of current epoch, start as if this is the first request of the epoch
+            // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
+        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+            // Start from last saved state
+            // TODO: Start from last saved state
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: ./server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        }
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: ./server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
+    }
+
+    if (ret != 0) {
+        TestSrv_beta();
+    }
 
     FinSrv_beta();
 

@@ -20,9 +20,6 @@
 #include <unistd.h>
 #include "pir_common.h"
 
-#define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
-#define NUM_CPU_CORES 16
-
 static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
@@ -33,6 +30,15 @@ static char net_buf[NET_BUF_SZ] = {0};
 static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
 
 std::pair<mpz_class, mpz_class> E_T_I;
+
+#define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
+#define NUM_CPU_CORES 16
+
+#define ONE_TIME_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/ONE_TIME_MATERIALS/")
+#define PER_EPOCH_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/PER_EPOCH_MATERIALS/")
+#define DATABASE_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/")
+std::string sdb_filename = DATABASE_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
+
 
 // Function declarations
 static int InitSrv_alpha();
@@ -187,6 +193,20 @@ static int RecvInitParamsFromBeta() {
         return -1;
     }
     Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
+
+    //Save parameters to local files
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin", p);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin", q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g.bin", g);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin", r);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin", pk_E);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin", pk_E_q);
+
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     return 0;
 }
@@ -606,7 +626,7 @@ static int TestShelterDPFSearch_alpha() {
             }
         }
         
-        sh[k].element_FHE_ct = serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
+        sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
 
         /* Generate the tags and keep them in the variable, which will be used for DPF search */
         sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
@@ -645,9 +665,9 @@ static int TestShelterDPFSearch_alpha() {
                 //mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
                 if (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) {
-                    //serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
-                    //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }
             }
@@ -675,9 +695,9 @@ static int TestShelterDPFSearch_alpha() {
                 //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
 
                 if (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) {
-                    //serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
-                    //thread_sums[j] += serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
                 }
             }
@@ -691,7 +711,7 @@ static int TestShelterDPFSearch_alpha() {
     //fin = ans0 - ans1;
     mpz_xor(fin.get_mpz_t(), ans1.get_mpz_t(), ans0.get_mpz_t());
 
-    mpz_class expected_result = serialized_ct_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(DPF_SEARCH_INDEX_K) + "].ct");
+    mpz_class expected_result = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(DPF_SEARCH_INDEX_K) + "].ct");
     //mpz_class expected_result = 0;
 
     if (fin != expected_result) {
@@ -699,7 +719,7 @@ static int TestShelterDPFSearch_alpha() {
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
 
-        mpz_class_to_serialized_ct(fin, "/dev/shm/fin.ct");
+        export_to_file_from_mpz_class("/dev/shm/fin.ct", fin);
         // Deserialize the crypto context
         mpz_class dec_block_content, dec_block_index;
         Ciphertext<DCRTPoly> fin_ct;

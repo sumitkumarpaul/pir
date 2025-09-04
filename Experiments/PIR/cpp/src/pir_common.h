@@ -149,9 +149,8 @@ extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
 extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct);
-extern mpz_class serialized_ct_to_mpz_class(const std::string& filename);
-//extern void serialized_ct_to_mpz_class(const std::string& filename);
-extern void mpz_class_to_serialized_ct(const mpz_class& value, const std::string& filename);
+extern mpz_class import_from_file_to_mpz_class(const std::string& filename);
+extern void export_to_file_from_mpz_class(const std::string& filename, const mpz_class& value);
 
 // Database related functions
 extern void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry);
