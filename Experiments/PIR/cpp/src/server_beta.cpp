@@ -191,13 +191,7 @@ static int InitSrv_beta(){
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Gamma!!");
-        return -1;
-    }
-
-
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to initialize Server Beta");
-        return -1;
+        FinSrv_beta();
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
     }
@@ -1301,10 +1295,10 @@ int main(int argc, char *argv[]){
             // TODO: Start from last saved state
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: ./server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: ./server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
     }
 
     if (ret != 0) {

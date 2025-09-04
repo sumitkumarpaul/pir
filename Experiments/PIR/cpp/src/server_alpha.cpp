@@ -42,7 +42,7 @@ std::string sdb_filename = DATABASE_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
 
 // Function declarations
 static int InitSrv_alpha();
-static int RecvInitParamsFromBeta();
+static int OneTimeInit_alpha();
 static int FinSrv_alpha();
 static int SelShuffDBSearchTag_alpha();
 static int PerEpochReInit_alpha();
@@ -68,33 +68,22 @@ static int InitSrv_alpha(){
     InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
-    ret = RecvInitParamsFromBeta();
-
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Alpha: Failed to receive initialization parameters from Server Beta");
-        close(sock_alpha_to_beta);
-        return -1;
-    } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Successfully received initialization parameters from Server Beta");
-    }
-
     InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
 
-
-    /* At this moment receive for the ready message from the server beta */
-    ret = PerEpochReInit_alpha();
+    ret = 0;
 
     return ret;
 }
 
-static int RecvInitParamsFromBeta() {
+static int OneTimeInit_alpha() {
     size_t received_sz = 0;
     int ret_recv = 0;
 
+    // Receive all the parameters from server beta
     // Receive p
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
@@ -743,24 +732,37 @@ static int TestShelterDPFSearch_alpha() {
 
 int main(int argc, char *argv[])
 {
+    int ret = -1;
+
+    /* Perform the basic initialization */
     InitSrv_alpha();
-    #if 1
-    TestSrv_alpha();
-    #else
 
-    unsigned long hash_table_sz = (N + sqrt_N);
+    /* Process as per the command line arguments */
+    if (argc >= 2) {
+        if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
+            // Perform one-time initialization for server alpha
+            ret = OneTimeInit_alpha();
+        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+            // Perform per-epoch initialization for server alpha
+            ret = PerEpochReInit_alpha();
+        } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
+            // Clear the existing state of current epoch, start as if this is the first request of the epoch
+            // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
+        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+            // Start from last saved state
+            // TODO: Start from last saved state
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        }
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+    }
 
-    /* Probe upto half of the items, it will increase the build time, but not the lookup time */
-    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 32, (hash_table_sz/2));
+    if (ret != 0) {
+        TestSrv_alpha();
+    }
 
-    /* Keep decreasing the function count */
-    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 16, (hash_table_sz/2));
-
-    //Test_CuckooHash(hash_table_sz, (hash_table_sz +(hash_table_sz/2)), (sqrt_N/2), 2, (hash_table_sz/2));
-
-
-    Test_CuckooHash(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
-    #endif
     FinSrv_alpha();
 
     return 0;

@@ -41,7 +41,7 @@ std::string sdb_filename = DATABASE_LOCATION_GAMMA+"ShuffledDB_gamma.bin";
 
 // Function declarations
 static int InitSrv_gamma();
-static int RecvInitParamsFromBeta();
+static int OneTimeInit_gamma();
 static int SelShuffDBSearchTag_gamma();
 static int PerEpochReInit_gamma();
 static int FinSrv_gamma();
@@ -65,35 +65,29 @@ static int InitSrv_gamma(){
     InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_GAMMA_PORT, &sock_gamma_to_beta);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
-    ret = RecvInitParamsFromBeta();
-
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Ga: Failed to receive initialization parameters from Server Beta");
-        close(sock_gamma_to_beta);
-        return -1;
-    } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Successfully received initialization parameters from Server Beta");
-    }
-
-    //Initialize sockets for communication with server gamma
+    //Initialize sockets for communication with server alpha
     ret = InitAcceptingSocket(GAMMA_LISTENING_TO_ALPHA_PORT, &sock_gamma_to_alpha, &sock_gamma_to_alpha_con);
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Alpha!!");
-        return -1;
     } else {
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Alpha");
     }
 
-    ret = PerEpochReInit_gamma();
+    if (ret != 0) {
+        FinSrv_gamma();
+    }else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
+    }
 
     return ret;
 }
 
-static int RecvInitParamsFromBeta() {
+static int OneTimeInit_gamma() {
     size_t received_sz = 0;
     int ret_recv = 0;
 
+    // Receive all the parameters from server beta
     // Receive p
     ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
@@ -488,9 +482,36 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
 
 int main(int argc, char *argv[])
 {
+    int ret = -1;
+
+    /* Perform the basic initialization */
     InitSrv_gamma();
 
-    TestSrv_gamma();
+    /* Process as per the command line arguments */
+    if (argc >= 2) {
+        if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
+            // Perform one-time initialization for server gamma
+            ret = OneTimeInit_gamma();
+        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+            // Perform per-epoch initialization for server gamma
+            ret = PerEpochReInit_gamma();
+        } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
+            // Clear the existing state of current epoch, start as if this is the first request of the epoch
+            // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
+        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+            // Start from last saved state
+            // TODO: Start from last saved state
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        }
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+    }
+
+    if (ret != 0) {
+        TestSrv_gamma();
+    }
 
     FinSrv_gamma();
 
