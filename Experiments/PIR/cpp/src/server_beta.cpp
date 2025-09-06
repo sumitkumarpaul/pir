@@ -250,6 +250,30 @@ static int PerEpochReInit_beta(){
     mpz_class T_I;
     mpz_class d, d_alpha, d_gamma;
     plain_db_entry read_entry;
+    mpz_init(tmp);
+    // RNG: mt19937 seeded from random_device
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting PerEpochReInit sequence");
+
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
+    sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
+    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
     /* Start sync messages to both the servers, so that everyone is in sync regarding re-initialization process for the epoch */
     (void)sendAll(sock_beta_alpha_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
@@ -257,45 +281,48 @@ static int PerEpochReInit_beta(){
 
     pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
 
-    // RNG: mt19937 seeded from random_device
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    // 1. Randomly choose Rho in ZZ_((q-1)/2)*
+    Rho = rng.get_z_range(((q-1)/2)) + 1;
 
-    // build SS = {1, 2, ..., (N + sqrt_N))}
+    /* 2. TODO. And then prepare E_q(Rho) */
+    E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+
+    /* During each request, the client first fetches this from the server_beta, currently storing them in the disk */
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin", Rho);
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin", E_q_Rho.first);
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
+
+    // 3.1 build SS = {1, 2, ..., (N + sqrt_N))}
     uint64_t M = N + sqrt_N;
     std::vector<uint64_t> SS;
     SS.reserve(M);
     for (uint64_t i = 1; i <= M; ++i){
         SS.push_back(i);
     }
-
-    mpz_init(tmp);
     
     if (SS.empty()){
         ret = -1; // nothing to do for N == 0
         goto exit;
     }
 
-    Rho = rng.get_z_range(((q-1)/2)) + 1; // Randomly choose Rho in ZZ_((q-1)/2)*
-
-    /* And then prepare E_q(Rho) */
-    E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
-    /* During each request, the client first fetches this from the server_beta */
-
-    /* For the time being, just create the set of dummies */
-    SetPhi.clear(); // Clear SetPhi before populating
+    // 3.2 Clear SetPhi 
+    SetPhi.clear();
 
     // repeatedly pick a random index in [0, SS.size()-1], print element,
     // then remove it by swapping with the last element and pop_back()
     for (uint64_t iter = 0; iter < M; ++iter) {
+
+        // 4. Randomly choose an index I from SS
         std::uniform_int_distribution<std::size_t> dist(0, SS.size() - 1);
         std::size_t idx = dist(gen);
         uint64_t I = SS[idx];
-        mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
 
+        // 5. Compute T_I = g^{Rho^I mod p}
+        mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
         mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
         if (I <= N){
+            // 6. Compute d = (block_I || I)
             read_pdb_entry(pdb, I, read_entry);
 
             mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, read_entry.element);
@@ -304,35 +331,37 @@ static int PerEpochReInit_beta(){
             mpz_mul_2exp(d.get_mpz_t(), d.get_mpz_t(), log_N); // Left shift log_N-bits, so that index can be appended next
             mpz_ior(d.get_mpz_t(), d.get_mpz_t(), mpz_class(I).get_mpz_t());// Attach the index at the end
         } else {
+            // 7. Choose d as {0}^{B+log_N} and append T_I to SetPhi
             d = mpz_class(0);
             SetPhi.push_back(T_I);
         }
+        /* 8.1 First create a random number as the secret-share for server_alpha */
+        d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
+        /* 8.2 Create the second share for server_gamma */
+        d_gamma = (d - d_alpha);/* Another share */
 
-        /* Send the generated tag to both the servers  */
+        /* 9.a.1 and 9.c.1 Send the generated tag to both the servers  */
         mpz_export(net_buf, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
         (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
         (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
 
-        /* First create a random number as the secret-share for server_alpha */
-        d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
-        /* Send the share to server alpha */
+        /* 9.a.2 Send the share to server alpha */
         mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
         (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
 
-        d_gamma = (d - d_alpha);/* Another share */
-        /* Send the share to server beta */
+        /* 9.b.2 Send the share to server gamma */
         mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
         (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
-        /* Verify, secret sharing works */
+        /* TODO: Additionally verify, secret sharing works */
         if ((d_alpha+d_gamma) != d){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error in secret sharing at Server Beta, for element: " + std::to_string(I));
             ret = -1;
             goto exit;
         }
 
-        // remove chosen element (order not preserved)
+        // 11. Remove chosen element from SS (order not preserved)
         std::swap(SS[idx], SS.back());
         SS.pop_back();
     }

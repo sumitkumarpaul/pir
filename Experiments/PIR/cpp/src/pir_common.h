@@ -19,6 +19,7 @@
 #include <fstream>
 #include <filesystem> 
 #include <iterator>
+#include <openssl/sha.h>
 #include <openfhe.h>
 #include <kuku/kuku.h>
 
@@ -80,7 +81,6 @@ extern std::string completed_reinit_for_epoch_message;
 #define TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT    (NUM_FHE_BLOCKS_PER_PIR_BLOCK + NUM_FHE_BLOCKS_PER_PIR_INDEX)
 #define NUM_FHE_BLOCKS_PER_TAG              ((P_BITS + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 
-
 // Randoms
 extern gmp_randclass rng;
 
@@ -97,12 +97,13 @@ extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
 
 typedef struct {
-    char element[NUM_BYTES_PER_PDB_ELEMENT];//Only data, no index
+    unsigned char element[NUM_BYTES_PER_PDB_ELEMENT];//Only data, no index
 } plain_db_entry;
 
 typedef struct {
-    char T[(P_BITS/8)];// P_BITS will require (P_BITS/8) bytes
-    char element[NUM_BYTES_PER_SDB_ELEMENT];//Data and index
+    //char T[(P_BITS/8)];// P_BITS will require (P_BITS/8) bytes
+    unsigned char T_SHA[SHA256_DIGEST_LENGTH];// Instead of storing the full tag, only storing the SHA256 hash of the tag
+    unsigned char element[NUM_BYTES_PER_SDB_ELEMENT];//Data and index
 } shuffled_db_entry;
 
 typedef struct {

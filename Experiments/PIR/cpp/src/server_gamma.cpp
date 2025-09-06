@@ -22,7 +22,6 @@
 #include "pir_common.h"
 
 
-
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
@@ -32,12 +31,15 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 mpz_class T_star;
+static uint64_t K = 0; // Current number of entries in the shelter
 
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/")
+std::string L_filename = DATABASE_LOCATION_GAMMA+"L_gamma.bin";
 std::string sdb_filename = DATABASE_LOCATION_GAMMA+"ShuffledDB_gamma.bin";
-
+static std::fstream sdb;
+static std::fstream L;
 
 // Function declarations
 static int InitSrv_gamma();
@@ -207,9 +209,26 @@ static int OneTimeInit_gamma() {
 
 static int PerEpochReInit_gamma(){
     int ret = 0;
-    mpz_class T_I, d_share_gamma;
     size_t received_sz = 0;
+    shuffled_db_entry received_entry;
     uint64_t M = N + sqrt_N;
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochReInit sequence");
+
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 
     /* Receive ready message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -224,42 +243,68 @@ static int PerEpochReInit_gamma(){
         return -1;
     }
 
-    for (uint64_t i = 1; i <= M; ++i){
+    L.open(L_filename, std::ios::in | std::ios::binary | std::ios::app);
+
+    for (uint64_t i = 0; i < M; i++){
         /* Receive the tag */
         ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+        
         if (ret == 0)
         {
-            mpz_import(T_I.get_mpz_t(), received_sz, 1, 1, 1, 0, net_buf);
+            /* Instead of saving T_I, create a SHA256 of it and save that in received_entry */
+            SHA256(reinterpret_cast<const unsigned char *>(net_buf), received_sz, received_entry.T_SHA);
         } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta");
-            return ret;
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
+            goto exit;
         }
 
         /* Receive the secret-share */
         ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
         if (ret == 0)
         {
-            mpz_import(d_share_gamma.get_mpz_t(), received_sz, 1, 1, 1, 0, net_buf);
+            if (received_sz != NUM_BYTES_PER_SDB_ELEMENT) {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received secret share size does not match expected size for entry " + std::to_string(i));
+                ret = -1;
+                goto exit;
+            }
+
+            memcpy(received_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
+
+            /* 10.c Write the data into temporary list */
+            insert_sdb_entry(L, i, received_entry);
+
+            // TODO: Create the hash table as well
+            
         } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta");
-            return ret;
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
+            goto exit;
         }
     }
 
-    /* Receive ready message from server-beta */
+    /* Receive completed message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive READY_FOR_EPOCH message from Server Beta");
-        return ret;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
+        goto exit;
     }
 
     if (std::string(net_buf, received_sz) != completed_reinit_for_epoch_message) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
-        return -1;
+        ret = -1;
+        goto exit;
     } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ready for processing client requests");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
     }
+
+    // TODO: For all entries in L, put the items in the proper location
+
+    // 14.a. Clear the shelter count as well by setting it to zero
+    K = 0;
+
+exit:
+    L.close();
 
     return ret;
 }
