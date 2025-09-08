@@ -28,6 +28,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
 static uint64_t K = 0; // Current number of entries in the shelter
+static KukuTable *table = nullptr;
 
 std::pair<mpz_class, mpz_class> E_T_I;
 
@@ -37,8 +38,8 @@ std::pair<mpz_class, mpz_class> E_T_I;
 #define ONE_TIME_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/")
-std::string L_filename = DATABASE_LOCATION_ALPHA+"L_alpha.bin";
-std::string sdb_filename = DATABASE_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
+std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"L_alpha.bin";
+std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
 static std::fstream sdb;
 static std::fstream L;
 
@@ -223,8 +224,11 @@ static int FinSrv_alpha(){
 static int PerEpochReInit_alpha(){
     int ret = 0;
     size_t received_sz = 0;
-    shuffled_db_entry received_entry;
-    uint64_t M = N + sqrt_N;
+    shuffled_db_entry sdb_entry;
+    uint64_t M = (N + sqrt_N);
+    uint64_t high = 0, low = 0;
+    item_type key;
+    unsigned char hash_output[SHA256_DIGEST_LENGTH];
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochReInit sequence");
 
@@ -243,6 +247,18 @@ static int PerEpochReInit_alpha(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
+    std::fstream L(L_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!L) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
+        return -1;
+    }
+
+    std::fstream sdb(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        return -1;
+    }
+
     /* Receive ready message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
@@ -256,7 +272,13 @@ static int PerEpochReInit_alpha(){
         return -1;
     }
 
-    L.open(L_filename, std::ios::in | std::ios::binary | std::ios::app);
+    // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
+    table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
+    if (table == nullptr) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to allocate memory for Cuckoo hash table");
+        ret = -1;
+        goto exit;
+    }
 
     for (uint64_t i = 0; i < M; i++){
         /* Receive the tag */
@@ -265,7 +287,29 @@ static int PerEpochReInit_alpha(){
         if (ret == 0)
         {
             /* Instead of saving T_I, create a SHA256 of it and save that in received_entry */
-            SHA256(reinterpret_cast<const unsigned char *>(net_buf), received_sz, received_entry.T_SHA);
+            SHA256(reinterpret_cast<const unsigned char *>(net_buf), received_sz, hash_output);
+
+            // Get first 128 bits as two 64-bit words
+            memcpy(&sdb_entry.C_HASH_KEY[0], hash_output, 8);
+            memcpy(&sdb_entry.C_HASH_KEY[1], hash_output + 8, 8);
+
+            key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
+
+            // Insert into the cuckoo hash table
+            if (!table->insert(key))
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
+    
+                /* Delete the already built table */
+                delete table;
+                table = nullptr;
+                ret = -1;
+                goto exit;
+            } else {
+                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully inserted for: key generated with key[0] = " + std::to_string(sdb_entry.C_HASH_KEY[0]) + ", key[1] = " + std::to_string(sdb_entry.C_HASH_KEY[1]));
+            }
+
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
             goto exit;
@@ -276,21 +320,30 @@ static int PerEpochReInit_alpha(){
         if (ret == 0)
         {
             if (received_sz != NUM_BYTES_PER_SDB_ELEMENT) {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received secret share size does not match expected size for entry " + std::to_string(i));
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received secret share size does not match expected size for entry " + std::to_string(i)+ " expected: " + std::to_string(NUM_BYTES_PER_SDB_ELEMENT) + ", received: " + std::to_string(received_sz));
                 ret = -1;
                 goto exit;
             }
 
-            memcpy(received_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
+            memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
             
             /* 10.a Write the data into temporary list */
-            insert_sdb_entry(L, i, received_entry);
-            
+            insert_sdb_entry(L, i, sdb_entry);
+            std::cout << "Written key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[0]) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[1]) << std::endl;
+            std::cout << "Written element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
+
+            // For testing, read it back
+            read_sdb_entry(L, i, sdb_entry);
+            std::cout << "Read key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[0]) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[1]) << std::endl;
+            std::cout << "Read element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
+
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
             goto exit;
         }
     }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. The size of the stash: " + to_string(table->stash().size()) + ", max-probe count is: " + to_string(table->max_probe())+ ", table_size is: " + to_string(table->table_size())+ " and fill_rate is: " + to_string(table->fill_rate()));
 
     /* Receive completed message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -307,6 +360,25 @@ static int PerEpochReInit_alpha(){
         goto exit;
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+    }
+
+    //Now place all the elements from the temporary list to the shuffled database according to the cuckoo hash table
+    for (uint64_t i = 0; i < M; i++){
+        read_sdb_entry(L, i, sdb_entry);
+
+        key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
+        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Querying for: key generated with key[0] = " + std::to_string(sdb_entry.C_HASH_KEY[0]) + ", key[1] = " + std::to_string(sdb_entry.C_HASH_KEY[1]));
+
+        QueryResult res = table->query(key);
+
+        if (!res)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
+        }
+        else {
+            /* 13.a Insert at the location of the shuffled database, determined by the query result */
+            insert_sdb_entry(sdb, res.location(), sdb_entry);
+        }
     }
 
     // 14.c. Clear the shelter count as well by setting it to zero

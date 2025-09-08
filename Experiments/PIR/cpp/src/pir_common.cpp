@@ -576,15 +576,22 @@ void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry) {
 
 void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry) {
     //TODO: Error check
-    sdb.seekp(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    std::streampos pos = static_cast<std::streampos>(id) * sizeof(shuffled_db_entry);
+    //std::streampos pos = static_cast<std::streampos>(id) * 84;
+    sdb.seekp(pos, std::ios::beg);
     sdb.write(reinterpret_cast<const char*>(&entry), sizeof(shuffled_db_entry));
+
+    PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Inserted at position: " + std::to_string(pos));
 
     return;
 }
 
 void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry) {
     //TODO: Error check
-    sdb.seekg(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    std::streampos pos = static_cast<std::streampos>(id) * sizeof(shuffled_db_entry);
+    //std::streampos pos = static_cast<std::streampos>(id) * 84;
+    PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Reading from position: " + std::to_string(pos));
+    sdb.seekg(pos, std::ios::beg);
     sdb.read(reinterpret_cast<char*>(&out_entry), sizeof(shuffled_db_entry));
     return;
 }
