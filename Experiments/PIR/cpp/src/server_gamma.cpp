@@ -301,9 +301,13 @@ static int PerEpochReInit_gamma(){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
             goto exit;
         }
+
+        if (((i+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash table. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+        }
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. The size of the stash: " + to_string(table->stash().size()) + ", max-probe count is: " + to_string(table->max_probe())+ ", table_size is: " + to_string(table->table_size())+ " and fill_rate is: " + to_string(table->fill_rate()));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
 
     /* Receive completed message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -337,6 +341,9 @@ static int PerEpochReInit_gamma(){
         else {
             /* 13.a Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
+            if (((i+1) % 100000000) == 0){
+                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the shuffled database");
+            }
         }
     }
 

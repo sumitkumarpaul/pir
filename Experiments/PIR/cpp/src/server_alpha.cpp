@@ -57,8 +57,6 @@ static void TestSelShuffDBSearchTag_alpha();
 static int TestShelterDPFSearch_alpha();
 static int TestClientProcessing_alpha();
 
-static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe);
-
 // Function definitions
 static int InitSrv_alpha(){
     int ret = -1;
@@ -314,10 +312,13 @@ static int PerEpochReInit_alpha(){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
             goto exit;
         }
+
+        if (((i+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash table. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+        }
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. The size of the stash: " + to_string(table->stash().size()) + ", max-probe count is: " + to_string(table->max_probe())+ ", table_size is: " + to_string(table->table_size())+ " and fill_rate is: " + to_string(table->fill_rate()));
-
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
     /* Receive completed message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     
@@ -350,6 +351,10 @@ static int PerEpochReInit_alpha(){
         else {
             /* 13.a Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
+        }
+
+        if (((i+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the shuffled database");
         }
     }
 
@@ -517,138 +522,6 @@ ostream &operator<<(ostream &stream, item_type item)
 {
     stream << item[1] << " " << item[0];
     return stream;
-}
-
-/* Copied from: https://github.com/microsoft/Kuku/blob/main/examples/example.cpp */
-static int Test_CuckooHash(table_size_type table_size, uint64_t num_entry, table_size_type stash_size, uint8_t loc_func_count, uint64_t max_probe)
-{
-    unsigned int rehash_cnt = 0;
-    KukuTable *table = nullptr;
-    //unsigned long hash_table_sz = (N + sqrt_N);
-    unsigned long hash_table_sz = table_size;
-    item_type loc_func_seed;
-    item_type empty_item = make_item(0, 0);
-    uint64_t high_rand, low_rand;
-    mpz_class rand_val_high, rand_val_low;
-    unsigned long I;
-    bool success = false;
-
-    /* Select a random rho for experimentation */
-    mpz_class local_Rho = ElGamal_randomGroupElement();
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Starting to build Cuckoo hash table of size: " + to_string(hash_table_sz) + " , number of entries: " + to_string(num_entry) + " with stash size: " + to_string(stash_size) + " with function count: " + to_string(loc_func_count)  + " and " + to_string(max_probe) + " number of maximum probes");
-
-    while (rehash_cnt < CUCKOO_HASH_TABLE_REHASH_TRY_COUNT) // Limit the number of rehash attempts to avoid infinite loops
-    {
-        rand_val_high = rng.get_z_bits(64);
-        rand_val_low = rng.get_z_bits(64);
-
-        mpz_export(&high_rand, nullptr, 1, sizeof(high_rand), 0, 0, rand_val_high.get_mpz_t());
-        mpz_export(&low_rand, nullptr, 1, sizeof(low_rand), 0, 0, rand_val_low.get_mpz_t());
-
-        loc_func_seed = make_item(high_rand, low_rand);
-
-        // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
-        table = new KukuTable(hash_table_sz, stash_size, loc_func_count, loc_func_seed, max_probe, empty_item);
-
-        /* From I = 1 to N+sqrt{N} */
-        for (I = 1; I < (num_entry+1); I++)
-        {
-            /* Create a ||P||-bit tag as per our MAC-function */
-            mpz_class Rho_pow_I;
-            mpz_powm(Rho_pow_I.get_mpz_t(), local_Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
-
-            mpz_class T_I;
-            mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
-
-            // Convert tag to string
-            std::string T_I_str = T_I.get_str();
-
-            // Hash with SHA-256
-            unsigned char hash[SHA256_DIGEST_LENGTH];
-            SHA256(reinterpret_cast<const unsigned char *>(T_I_str.data()), T_I_str.size(), hash);
-
-            // Get first 128 bits as two 64-bit words
-            uint64_t high = 0, low = 0;
-            memcpy(&high, hash, 8);
-            memcpy(&low, hash + 8, 8);
-
-            // Create item_type key
-            item_type key = make_item(high, low);
-
-            // Insert into the cuckoo hash table
-            if (!table->insert(key))
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed for the tag, having value:" + T_I.get_str());
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Before failure, successfully inserted: " + to_string(I) + " out of " + to_string(hash_table_sz) + " items");
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()));
-                rehash_cnt++;
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Starting again, rehash count: " + to_string(rehash_cnt));
-
-                /* Delete the already built table */
-                delete table;
-                table = nullptr;
-                break;
-            }
-            if ((I > 0) && (I % 100000000 == 0)) {
-                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(I) + " items so far, and current stash size is: " + to_string(table->stash().size()));
-            }
-        }
-
-        if (I == (num_entry+1)) {
-            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Successfully inserted all " + to_string(hash_table_sz) + " items, to the Cuckoo hash table, after: " + to_string(rehash_cnt) + " rehash attempts, and the stash size is: " + to_string(table->stash().size()));
-            success = true;
-            break; // Successfully inserted all items
-        }
-    }
-
-    if (success == true) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table built successfully, now starting to process queries");
-
-        /* From I = 1 to N+sqrt{N} */
-        for (I = 1; I < (num_entry+1); I++)
-        {
-            /* Create a ||P||-bit tag as per our MAC-function */
-            mpz_class Rho_pow_I;
-            mpz_powm(Rho_pow_I.get_mpz_t(), local_Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
-
-            mpz_class T_I;
-            mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
-
-            // Convert tag to string
-            std::string T_I_str = T_I.get_str();
-
-            // Hash with SHA-256
-            unsigned char hash[SHA256_DIGEST_LENGTH];
-            SHA256(reinterpret_cast<const unsigned char *>(T_I_str.data()), T_I_str.size(), hash);
-
-            // Get first 128 bits as two 64-bit words
-            uint64_t high = 0, low = 0;
-            memcpy(&high, hash, 8);
-            memcpy(&low, hash + 8, 8);
-
-            // Create item_type key
-            item_type key = make_item(high, low);
-
-            QueryResult res = table->query(key);
-            
-            if (!res)
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the tag, having value:" + T_I.get_str());
-            }
-            if ((I > 0) && (I % 100000000 == 0)) {
-                PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed " + to_string(I) + " queries so far, and current stash size is: " + to_string(table->stash().size()));
-            }
-        }
-    } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to build Cuckoo hash table");
-    }
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed all the query processing");
-
-    delete table;
-
-    return 0;
 }
 
 static int TestShelterDPFSearch_alpha() {
