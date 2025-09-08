@@ -213,9 +213,7 @@ static int PerEpochReInit_gamma(){
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
-    uint64_t high = 0, low = 0;
-    item_type key;
-    unsigned char hash_output[SHA256_DIGEST_LENGTH];
+    QueryResult res;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochReInit sequence");
 
@@ -234,6 +232,18 @@ static int PerEpochReInit_gamma(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 
+    std::fstream L(L_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!L) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
+        return -1;
+    }
+
+    std::fstream sdb(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        return -1;
+    }
+
     /* Receive ready message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
@@ -247,8 +257,6 @@ static int PerEpochReInit_gamma(){
         return -1;
     }
 
-    L.open(L_filename, std::ios::in | std::ios::binary | std::ios::app);
-
     // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
     table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
     if (table == nullptr) {
@@ -260,20 +268,11 @@ static int PerEpochReInit_gamma(){
     for (uint64_t i = 0; i < M; i++){
         /* Receive the tag */
         ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-        
+
         if (ret == 0)
         {
-            /* Instead of saving T_I, create a SHA256 of it and save that in received_entry */
-            SHA256(reinterpret_cast<const unsigned char *>(net_buf), received_sz, hash_output);
-
-            // Get first 128 bits as two 64-bit words
-            memcpy(&sdb_entry.C_HASH_KEY[0], hash_output, 8);
-            memcpy(&sdb_entry.C_HASH_KEY[1], hash_output + 8, 8);
-
-            key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
-
-            // Insert into the cuckoo hash table
-            if (!table->insert(key))
+            convert_buf_to_item_type((const unsigned char*)net_buf, received_sz, sdb_entry.cuckoo_key);
+            if (!table->insert(sdb_entry.cuckoo_key))
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
@@ -284,7 +283,6 @@ static int PerEpochReInit_gamma(){
                 ret = -1;
                 goto exit;
             }
-
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
             goto exit;
@@ -304,6 +302,14 @@ static int PerEpochReInit_gamma(){
             
             /* 10.a Write the data into temporary list */
             insert_sdb_entry(L, i, sdb_entry);
+            std::cout << "Written key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
+            std::cout << "Written element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
+
+            // For testing, read it back
+            read_sdb_entry(L, i, sdb_entry);
+            std::cout << "Read key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
+            std::cout << "Read element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
+
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
             goto exit;
@@ -326,15 +332,14 @@ static int PerEpochReInit_gamma(){
         ret = -1;
         goto exit;
     } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
     }
 
     //Now place all the elements from the temporary list to the shuffled database according to the cuckoo hash table
     for (uint64_t i = 0; i < M; i++){
         read_sdb_entry(L, i, sdb_entry);
-        item_type key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
 
-        QueryResult res = table->query(key);
+        res = table->query(sdb_entry.cuckoo_key);
 
         if (!res)
         {
@@ -343,6 +348,7 @@ static int PerEpochReInit_gamma(){
         else {
             /* 13.a Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted at location: " + to_string(res.location()) + " for the item number: " + to_string(i));  
         }
     }
 

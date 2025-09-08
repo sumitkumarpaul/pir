@@ -577,11 +577,8 @@ void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry) {
 void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry) {
     //TODO: Error check
     std::streampos pos = static_cast<std::streampos>(id) * sizeof(shuffled_db_entry);
-    //std::streampos pos = static_cast<std::streampos>(id) * 84;
     sdb.seekp(pos, std::ios::beg);
     sdb.write(reinterpret_cast<const char*>(&entry), sizeof(shuffled_db_entry));
-
-    PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Inserted at position: " + std::to_string(pos));
 
     return;
 }
@@ -589,9 +586,27 @@ void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& e
 void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry) {
     //TODO: Error check
     std::streampos pos = static_cast<std::streampos>(id) * sizeof(shuffled_db_entry);
-    //std::streampos pos = static_cast<std::streampos>(id) * 84;
-    PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Reading from position: " + std::to_string(pos));
     sdb.seekg(pos, std::ios::beg);
     sdb.read(reinterpret_cast<char*>(&out_entry), sizeof(shuffled_db_entry));
+    return;
+}
+
+void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item) {
+    item_type tmp;
+    unsigned int quotient = (buf_size) / sizeof(item_type);
+    unsigned int remainder = (buf_size) % sizeof(item_type);
+    unsigned char* ptr = (unsigned char*)&out_item;
+    out_item = {0};
+
+    for(unsigned int i = 0; i < quotient; i++) {
+        for (unsigned int j = 0; j < sizeof(item_type); j++) {
+            ptr[j] ^= buf[(i * sizeof(item_type)) + j];
+        }
+    }
+
+    for(unsigned int i = 0; i < remainder; i++) {
+        ptr[i] ^= buf[quotient * sizeof(item_type) + i];
+    }
+
     return;
 }

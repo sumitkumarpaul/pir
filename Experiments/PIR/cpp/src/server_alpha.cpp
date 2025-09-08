@@ -226,9 +226,7 @@ static int PerEpochReInit_alpha(){
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
-    uint64_t high = 0, low = 0;
-    item_type key;
-    unsigned char hash_output[SHA256_DIGEST_LENGTH];
+    QueryResult res;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochReInit sequence");
 
@@ -286,17 +284,8 @@ static int PerEpochReInit_alpha(){
         
         if (ret == 0)
         {
-            /* Instead of saving T_I, create a SHA256 of it and save that in received_entry */
-            SHA256(reinterpret_cast<const unsigned char *>(net_buf), received_sz, hash_output);
-
-            // Get first 128 bits as two 64-bit words
-            memcpy(&sdb_entry.C_HASH_KEY[0], hash_output, 8);
-            memcpy(&sdb_entry.C_HASH_KEY[1], hash_output + 8, 8);
-
-            key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
-
-            // Insert into the cuckoo hash table
-            if (!table->insert(key))
+            convert_buf_to_item_type((const unsigned char*)net_buf, received_sz, sdb_entry.cuckoo_key);
+            if (!table->insert(sdb_entry.cuckoo_key))
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
@@ -306,10 +295,7 @@ static int PerEpochReInit_alpha(){
                 table = nullptr;
                 ret = -1;
                 goto exit;
-            } else {
-                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully inserted for: key generated with key[0] = " + std::to_string(sdb_entry.C_HASH_KEY[0]) + ", key[1] = " + std::to_string(sdb_entry.C_HASH_KEY[1]));
             }
-
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
             goto exit;
@@ -329,12 +315,12 @@ static int PerEpochReInit_alpha(){
             
             /* 10.a Write the data into temporary list */
             insert_sdb_entry(L, i, sdb_entry);
-            std::cout << "Written key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[0]) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[1]) << std::endl;
+            std::cout << "Written key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
             std::cout << "Written element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
 
             // For testing, read it back
             read_sdb_entry(L, i, sdb_entry);
-            std::cout << "Read key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[0]) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(&sdb_entry.C_HASH_KEY[1]) << std::endl;
+            std::cout << "Read key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
             std::cout << "Read element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
 
         } else {
@@ -366,10 +352,7 @@ static int PerEpochReInit_alpha(){
     for (uint64_t i = 0; i < M; i++){
         read_sdb_entry(L, i, sdb_entry);
 
-        key = make_item(sdb_entry.C_HASH_KEY[0], sdb_entry.C_HASH_KEY[1]);
-        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Querying for: key generated with key[0] = " + std::to_string(sdb_entry.C_HASH_KEY[0]) + ", key[1] = " + std::to_string(sdb_entry.C_HASH_KEY[1]));
-
-        QueryResult res = table->query(key);
+        res = table->query(sdb_entry.cuckoo_key);
 
         if (!res)
         {
@@ -378,6 +361,7 @@ static int PerEpochReInit_alpha(){
         else {
             /* 13.a Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted at location: " + to_string(res.location()) + " for the item number: " + to_string(i));  
         }
     }
 
