@@ -25,6 +25,17 @@ sudo apt-get install m4
 sudo apt install libomp-dev
 ```
 
+# Modify the Kuku library (Required for Cuckoo hash functions)
+File: Kuku-2.1/kuku/common.h
+```
+    //using table_size_type = location_type;
+    using table_size_type = std::uint64_t;//To support larger table_size
+    :
+    //constexpr table_size_type max_table_size = table_size_type(1) << 30;
+    constexpr table_size_type max_table_size = table_size_type(1) << 32;//To support larger table_size to support 100 GB database
+```
+
+
 # Install Kuku library (Required for Cuckoo hash functions)
 ```
 cmake -S . -B build
