@@ -292,24 +292,11 @@ static int PerEpochReInit_gamma(){
         ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
         if (ret == 0)
         {
-            if (received_sz != NUM_BYTES_PER_SDB_ELEMENT) {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received secret share size does not match expected size for entry " + std::to_string(i)+ " expected: " + std::to_string(NUM_BYTES_PER_SDB_ELEMENT) + ", received: " + std::to_string(received_sz));
-                ret = -1;
-                goto exit;
-            }
-
-            memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
+            memset(sdb_entry.element, 0, NUM_BYTES_PER_SDB_ELEMENT);
+            memcpy(sdb_entry.element, net_buf, received_sz);
             
             /* 10.a Write the data into temporary list */
             insert_sdb_entry(L, i, sdb_entry);
-            std::cout << "Written key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
-            std::cout << "Written element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
-
-            // For testing, read it back
-            read_sdb_entry(L, i, sdb_entry);
-            std::cout << "Read key for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << get_low_word(sdb_entry.cuckoo_key) << std::hex << std::setfill('0') << std::setw(16) << get_high_word(sdb_entry.cuckoo_key) << std::endl;
-            std::cout << "Read element for the entry: " << std::to_string(i) << std::hex << std::setfill('0') << std::setw(16) << *reinterpret_cast<uint64_t*>(sdb_entry.element) << std::endl;
-
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
             goto exit;
@@ -344,13 +331,16 @@ static int PerEpochReInit_gamma(){
         if (!res)
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
+            ret = -1;
+            goto exit;
         }
         else {
             /* 13.a Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted at location: " + to_string(res.location()) + " for the item number: " + to_string(i));  
         }
     }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
 
     // 14.c. Clear the shelter count as well by setting it to zero
     K = 0;
