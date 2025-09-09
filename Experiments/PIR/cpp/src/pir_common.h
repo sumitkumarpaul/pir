@@ -44,9 +44,9 @@ using namespace kuku;
 #define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
 
 #define SERVER_ALPHA_IP "192.168.16.246" // IP address of the server_alpha
-#define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
+#define SERVER_BETA_IP  "192.168.16.86"//"192.168.16.245" // IP address of the server_beta
 //#define SERVER_GAMMA_IP "192.168.16.244" // IP address of the server_gamma
-#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
+#define SERVER_GAMMA_IP "192.168.16.62" // For the time being
 
 #define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
