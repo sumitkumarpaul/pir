@@ -43,10 +43,10 @@ using namespace kuku;
 
 #define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
 
-#define SERVER_ALPHA_IP "192.168.16.246" // IP address of the server_alpha
-#define SERVER_BETA_IP  "192.168.16.86"//"192.168.16.245" // IP address of the server_beta
+#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
+#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
 //#define SERVER_GAMMA_IP "192.168.16.244" // IP address of the server_gamma
-#define SERVER_GAMMA_IP "192.168.16.62" // For the time being
+#define SERVER_GAMMA_IP "192.168.16.132" // For the time being
 
 #define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
@@ -57,9 +57,9 @@ extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       4//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  40960//1024//40960 // ceil((sqrt(N)))
+#define sqrt_N  2//40960//1024//40960 // ceil((sqrt(N)))
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -152,7 +152,9 @@ extern int sendAll(int sock, const char* data, size_t sz);
 // FHE related functions
 extern int FHE_keyGen();
 extern Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_class block_index);
+extern Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index);
 extern void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index);
+extern void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
 extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
 extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
 extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
@@ -168,3 +170,4 @@ extern void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_e
 extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entry& entry);
 
 extern void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item);
+extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, unsigned char& out_item);

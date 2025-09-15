@@ -410,6 +410,40 @@ void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content,
     }
 }
 
+
+Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index) {
+    std::vector<int64_t> SDBElementVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
+    
+    /* Add the block content */
+    mpz_class tmp = block_content_and_index;
+    for (unsigned i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
+        mpz_class rem;
+        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
+        SDBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
+        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
+    }
+
+    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(SDBElementVector);
+
+    /* Let's not compress at this moment, since it might take extra time, as well as can break functionality */
+    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
+}
+
+// Decrypts a ciphertext, unpacks the packed vector, and reconstructs the concatenation of block_content and block_index as mpz_class
+void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index) {
+    Plaintext pt;
+    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
+    pt->SetLength(TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT);
+    const std::vector<int64_t>& packed = pt->GetPackedValue();
+
+    // Reconstruct block_content from first NUM_FHE_BLOCKS_PER_PIR_BLOCK elements
+    block_content_and_index = 0;
+    for (int i = TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1; i >= 0; --i) {
+        block_content_and_index <<= PLAINTEXT_FHE_BLOCK_SIZE;
+        block_content_and_index += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+    }
+}
+
 // Encrypt the tag
 Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag) {
     std::vector<int64_t> TagVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
@@ -592,6 +626,26 @@ void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& out_entry
 }
 
 void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item) {
+    item_type tmp;
+    unsigned int quotient = (buf_size) / sizeof(item_type);
+    unsigned int remainder = (buf_size) % sizeof(item_type);
+    unsigned char* ptr = (unsigned char*)&out_item;
+    out_item = {0};
+
+    for(unsigned int i = 0; i < quotient; i++) {
+        for (unsigned int j = 0; j < sizeof(item_type); j++) {
+            ptr[j] ^= buf[(i * sizeof(item_type)) + j];
+        }
+    }
+
+    for(unsigned int i = 0; i < remainder; i++) {
+        ptr[i] ^= buf[quotient * sizeof(item_type) + i];
+    }
+
+    return;
+}
+
+void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, unsigned char& out_item) {
     item_type tmp;
     unsigned int quotient = (buf_size) / sizeof(item_type);
     unsigned int remainder = (buf_size) % sizeof(item_type);

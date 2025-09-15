@@ -12,11 +12,25 @@ static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
 static mpz_class Rho;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
+static std::fstream D_K;
+static std::fstream D_alpha;
+static std::fstream D_gamma;
 
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
 std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
+std::string D_K_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_K.bin";
+std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
+std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
+
+#warning "Check with small number to verify the previous contents are not getting used"
+#define NUM_ITEMS_IN_TMP_BUF 8//100000 // After these many item creation, everything is written to the disk
+static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
+static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
+static unsigned char TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
+
+static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
@@ -27,6 +41,7 @@ static int OneTimeInit_beta();
 static int SendInitializedParamsToAllServers();
 static int SelShuffDBSearchTag_beta();
 static int PerEpochReInit_beta();
+static int CreateRandomDatabase();
 
 
 static void TestSrv_beta();
@@ -39,7 +54,7 @@ static void Test_FHE_DBElement();
 static void TestSelShuffDBSearchTag_beta();
 static int TestShelterDPFSearch_beta();
 static int TestClientProcessing_beta();
-static int CreateRandomDatabase();
+static void TestShuffDBFetch_beta();
 
 
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
@@ -241,6 +256,20 @@ static int CreateRandomDatabase(){
     return ret;
 }
 
+/* Its current transcripts are:
+13-09-2025 17:41:56:987] [server_beta.cpp:390] TRACE: Number of flushed item is: 199999
+[13-09-2025 17:43:31:250] [server_beta.cpp:390] TRACE: Number of flushed item is: 299999
+[13-09-2025 17:45:04:080] [server_beta.cpp:390] TRACE: Number of flushed item is: 399999
+[13-09-2025 17:46:36:968] [server_beta.cpp:390] TRACE: Number of flushed item is: 499999
+[13-09-2025 17:48:10:243] [server_beta.cpp:390] TRACE: Number of flushed item is: 599999
+[13-09-2025 17:49:43:623] [server_beta.cpp:390] TRACE: Number of flushed item is: 699999
+[13-09-2025 17:51:16:732] [server_beta.cpp:390] TRACE: Number of flushed item is: 799999
+[13-09-2025 17:52:50:328] [server_beta.cpp:390] TRACE: Number of flushed item is: 899999
+[13-09-2025 17:54:23:701] [server_beta.cpp:390] TRACE: Number of flushed item is: 999999
+
+From it, it looks like it will take more than 30hours, even if used 16-cores simultaneously.
+Most expensive operation is exponentiation
+*/
 static int PerEpochReInit_beta(){
     int ret = 0;
     size_t send_size = 0;
@@ -280,6 +309,9 @@ static int PerEpochReInit_beta(){
     (void)sendAll(sock_beta_gamma_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
 
     pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
+    D_K.open(D_K_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    D_alpha.open(D_alpha_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    D_gamma.open(D_gamma_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
     // 1. Randomly choose Rho in ZZ_((q-1)/2)*
     Rho = rng.get_z_range(((q-1)/2)) + 1;
@@ -302,6 +334,7 @@ static int PerEpochReInit_beta(){
     
     if (SS.empty()){
         ret = -1; // nothing to do for N == 0
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error nothing to do per-epoch, since N is: 0");
         goto exit;
     }
 
@@ -317,11 +350,18 @@ static int PerEpochReInit_beta(){
         std::size_t idx = dist(gen);
         uint64_t I = SS[idx];
 
+        /* TODO: Temporarily store the index-location mapping. For the purpose of testing */
+        TMP_IDX_LOC_MAP[(I-1)] = iter;//Since I = 0, is not a valid index
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string(iter));
+
         // 5. Compute T_I = g^{Rho^I mod p}
         mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
         mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
         if (I <= N){
+            /* TODO: Issue bulk read, in that case number of read entries will not be same as number of write entries due to the existance of the dummies */
+
             // 6. Compute d = (block_I || I)
             read_pdb_entry(pdb, I, read_entry);
 
@@ -340,31 +380,52 @@ static int PerEpochReInit_beta(){
         /* 8.2 Create the second share for server_gamma */
         d_gamma = (d - d_alpha);/* Another share */
 
-        /* 9.a.1 and 9.c.1 Send the generated tag to both the servers  */
+        mpz_class d_sum = d_alpha + d_gamma;
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha for index " + std::to_string(I) + " is: " + d_alpha.get_str(16));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma for index " + std::to_string(I) + " is: " + d_gamma.get_str(16));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha + d_gamma for index " + std::to_string(I) + " is: " + d_sum.get_str(16) + "\n");
+
+        /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
         mpz_export(net_buf, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
-        (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
-        (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
+        //convert_buf_to_item_type1((const unsigned char*)net_buf, (P_BITS/8), TMP_KEY_BUF[(sizeof(item_type))*(iter % NUM_ITEMS_IN_TMP_BUF)]);
 
+        //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
+        //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
-        /* 9.a.2 Send the share to server alpha */
-        mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
-        (void)sendAll(sock_beta_alpha_con, net_buf, send_size);
+        /* 10.1 Store the d_alpha share in the local buffer */
+        mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
+        //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
 
-        /* 9.b.2 Send the share to server gamma */
-        mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
-        (void)sendAll(sock_beta_gamma_con, net_buf, send_size);
-
-        /* TODO: Additionally verify, secret sharing works */
-        if ((d_alpha+d_gamma) != d){
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error in secret sharing at Server Beta, for element: " + std::to_string(I));
-            ret = -1;
-            goto exit;
-        }
+        /* 10.2 Store the d_gamma share in the local buffer */
+        mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
+        //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
         // 11. Remove chosen element from SS (order not preserved)
         std::swap(SS[idx], SS.back());
         SS.pop_back();
+
+        if (((iter + 1) % NUM_ITEMS_IN_TMP_BUF) == 0){
+            /* Flush into the disk */
+            D_K.write((const char*)TMP_KEY_BUF, sizeof(TMP_KEY_BUF));
+            D_alpha.write((const char*)TMP_D_ALPHA_BUF, sizeof(TMP_D_ALPHA_BUF));
+            D_gamma.write((const char*)TMP_D_GAMMA_BUF, sizeof(TMP_D_GAMMA_BUF));
+
+            /* Clear the buffers */
+            memset(TMP_KEY_BUF, 0, ((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF));
+            memset(TMP_D_ALPHA_BUF, 0, (NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF));
+            memset(TMP_D_GAMMA_BUF, 0, (NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF));
+
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Number of flushed item is: " + std::to_string(iter+1));
+        }
+        else if ((iter + 1) == M){ /* It is the last element */
+            /* Flush into the disk */
+            D_K.write((const char*)TMP_KEY_BUF, ((sizeof(item_type))*((iter + 1) % NUM_ITEMS_IN_TMP_BUF)));
+            D_alpha.write((const char*)TMP_D_ALPHA_BUF, ((NUM_BYTES_PER_SDB_ELEMENT)*((iter + 1) % NUM_ITEMS_IN_TMP_BUF)));
+            D_gamma.write((const char*)TMP_D_GAMMA_BUF, ((NUM_BYTES_PER_SDB_ELEMENT)*((iter + 1) % NUM_ITEMS_IN_TMP_BUF)));
+        }
     }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed preparing the database shares and key-database");
 
     /* Send ready message to Server Alpha and Server Gamma */
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
@@ -375,6 +436,9 @@ static int PerEpochReInit_beta(){
 exit:
     mpz_clear(tmp);
     pdb.close();
+    D_alpha.close();
+    D_gamma.close();
+    D_K.close();
     
     return ret;
 }
@@ -1298,7 +1362,127 @@ static void TestSrv_beta()
     //TestSelShuffDBSearchTag_beta();
     //TestShelterDPFSearch_beta();
     //TestClientProcessing_beta();
+    TestShuffDBFetch_beta();
 }
+
+static void TestShuffDBFetch_beta(){
+    int ret = -1;
+    plain_db_entry read_entry;
+    mpz_t tmp;
+    mpz_init(tmp);
+
+    /* First perform the per-epoch initialization */
+    PerEpochReInit_beta();
+
+    // RNG: mt19937 seeded from random_device
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    /* I: Choose a random index to be fetched from the shuffled databases */
+    std::uniform_int_distribution<std::uint64_t> dist(1, (N+sqrt_N)); // Indices are from 1 to N+sqrt(N)
+    //std::uint64_t I = dist(gen);
+    std::uint64_t I = 3;// Currently hardcoding for testing
+    /* Figureout its corresponding location in the shuffled database */
+    uint64_t loc = TMP_IDX_LOC_MAP[(I-1)];//Location for item I is stored at index (i-1)
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Randomly selected fetch index is: " + std::to_string(I) + ", and its location in shuffled database is: " + std::to_string(loc));
+
+    /* Fetch the share from that location of D_alpha */
+    D_alpha.open(D_alpha_filename, std::ios::in | std::ios::binary | std::ios::app);
+    D_alpha.seekg((loc*NUM_BYTES_PER_SDB_ELEMENT), std::ios::beg);
+    D_alpha.read(reinterpret_cast<char*>(net_buf), NUM_BYTES_PER_SDB_ELEMENT);
+    mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, net_buf);
+    mpz_class d_alpha = mpz_class(tmp);    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched d_alpha");
+
+    /* Fetch the share from that location of D_gamma */
+    D_gamma.open(D_gamma_filename, std::ios::in | std::ios::binary | std::ios::app);
+    D_gamma.seekg((loc*NUM_BYTES_PER_SDB_ELEMENT), std::ios::beg);
+    D_gamma.read(reinterpret_cast<char*>(net_buf), NUM_BYTES_PER_SDB_ELEMENT);
+    mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, net_buf);
+    mpz_class d_gamma = mpz_class(tmp);    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched d_gamma");
+
+    mpz_class d_pt = d_alpha + d_gamma;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched plaintext d_alpha: " + d_alpha.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched plaintext d_gamma: " + d_gamma.get_str(16));
+    #warning TODO: Check for dummy element as well
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched sum of (d_alpha + d_gamma) is: " + d_pt.get_str(16));
+
+    /* FHE encrypt both the shares */
+    Ciphertext<DCRTPoly> ct_d_alpha = FHE_Enc_SDBElement(d_alpha);
+    Ciphertext<DCRTPoly> ct_d_gamma = FHE_Enc_SDBElement(d_gamma);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "FHE Encrypted both the shares");
+
+    mpz_class dec_d_alpha, dec_d_gamma;
+    FHE_Dec_SDBElement(ct_d_alpha, dec_d_alpha);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypting to verify the content of d_alpha: " + dec_d_alpha.get_str(16));
+
+    FHE_Dec_SDBElement(ct_d_gamma, dec_d_gamma);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypting to verify the content of d_gamma: " + dec_d_gamma.get_str(16));
+
+    /* Homorphically add those shares */
+    //Ciphertext<DCRTPoly> ct_d = ct_d_alpha + ct_d_gamma;
+    Ciphertext<DCRTPoly> ct_d = FHEcryptoContext->EvalAdd(ct_d_alpha, ct_d_gamma);
+    FHEcryptoContext->ModReduceInPlace(ct_d);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphically adding the shares");
+
+    /* Decrypt the resulting ciphertext */
+    mpz_class dec_block_content, dec_block_index, dec_block_and_index;
+    FHE_Dec_DBElement(ct_d, dec_block_content, dec_block_index);
+    FHE_Dec_SDBElement(ct_d, dec_block_and_index);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypt the resulting ciphertext");
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypted block and index: " + dec_block_and_index.get_str(16));
+
+    /* Test with different values */
+    d_alpha = mpz_class(0x3FFF);
+    d_gamma = mpz_class(0x3FFF);
+    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
+
+    d_alpha = mpz_class(0);
+    d_gamma = mpz_class(0x3FFF);
+    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
+
+    d_alpha = mpz_class(0x3FFF);
+    d_gamma = mpz_class(0);
+    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
+
+    if (I < N) {
+        /* Match with the expection. Both the content as well as the index. */
+        read_pdb_entry(pdb, I, read_entry);
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Read the item from the plaintext database");
+    } else {
+        memset(&read_entry, 0, sizeof(read_entry));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "It is a dummy index");
+    }
+
+    mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, 
+    read_entry.element);
+    mpz_class d = mpz_class(tmp);
+    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Converted the decrypted plaintext to mpz_class");
+    
+    if (d == dec_block_content){
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Matched block content");
+    }else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch in block content: expected " + d.get_str(16) + ", got " + dec_block_content.get_str(16));
+    }
+
+    if (mpz_class(I) == dec_block_index){
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Matched block index");
+    }else {
+        std::stringstream ss;
+        ss << std::hex << I;
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch in block index: expected " + ss.str() + ", got " + dec_block_index.get_str(16));
+    }
+
+    return;
+}
+
 
 int main(int argc, char *argv[]){
     int ret = -1;
@@ -1322,6 +1506,8 @@ int main(int argc, char *argv[]){
         } else if (std::string("continue").compare(std::string(argv[1]))==0) {
             // Start from last saved state
             // TODO: Start from last saved state
+        } else if (std::string("test").compare(std::string(argv[1]))==0) {
+            TestSrv_beta();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
@@ -1330,7 +1516,7 @@ int main(int argc, char *argv[]){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
     }
 
-    if (ret != 0) {
+    if (ret == 0) {
         TestSrv_beta();
     }
 
