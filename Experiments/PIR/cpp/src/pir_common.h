@@ -73,7 +73,7 @@ extern std::string completed_reinit_for_epoch_message;
 * Hence, each individual plaintext must remain within 15-bit.
 * ***************************************************************/
 #define PLAINTEXT_PIR_BLOCK_DATA_SIZE       512 // Number of bits in a single PIR block
-#define PLAINTEXT_FHE_BLOCK_SIZE            15 // Single encryptable plaintext block size is these many bits. Actually 16-bits, but 1 bit is kept reserved for carry forwarding during homomorphic selection processing
+#define PLAINTEXT_FHE_BLOCK_SIZE            14//Single encryptable plaintext block size is these many bits. Actually 16-bits, but after experimentation it is found that, homomorphic addition is not working for larger than 14-bit values
 #define NUM_BYTES_PER_PDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + 7) / 8) // Only data, no-index. To ensure ceiling value
 #define NUM_BYTES_PER_SDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N + 7) / 8) // Data and index. To ensure ceiling value
 #define NUM_FHE_BLOCKS_PER_PIR_BLOCK        ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
@@ -151,9 +151,7 @@ extern int sendAll(int sock, const char* data, size_t sz);
 
 // FHE related functions
 extern int FHE_keyGen();
-extern Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_class block_index);
 extern Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index);
-extern void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index);
 extern void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
 extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
 extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);

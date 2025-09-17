@@ -358,59 +358,6 @@ int FHE_keyGen(){
     return 0;
 }
 
-Ciphertext<DCRTPoly> FHE_Enc_DBElement(const mpz_class block_content, const mpz_class block_index) {
-    std::vector<int64_t> DBElementVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
-    
-    /* Add the block content */
-    mpz_class tmp = block_content;
-    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_PIR_BLOCK; ++i) {
-        mpz_class rem;
-        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
-        DBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
-        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
-    }
-
-    /* Append the index */
-    tmp = block_index;
-    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_PIR_INDEX; ++i) {
-        mpz_class rem;
-        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
-        DBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
-        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
-    }
-
-    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(DBElementVector);
-
-    /* TODO: If problem occurs, check whether it is due to this compression or not */
-    //return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 1);
-
-    /* Let's not compress at this moment, since it might take extra time, as well as can break functionality */
-    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
-}
-
-// Decrypts a ciphertext, unpacks the packed vector, and reconstructs block_content and block_index as mpz_class
-void FHE_Dec_DBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content, mpz_class& block_index) {
-    Plaintext pt;
-    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
-    pt->SetLength(TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT);
-    const std::vector<int64_t>& packed = pt->GetPackedValue();
-
-    // Reconstruct block_content from first NUM_FHE_BLOCKS_PER_PIR_BLOCK elements
-    block_content = 0;
-    for (int i = NUM_FHE_BLOCKS_PER_PIR_BLOCK - 1; i >= 0; --i) {
-        block_content <<= PLAINTEXT_FHE_BLOCK_SIZE;
-        block_content += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-    }
-
-    // Reconstruct block_index from next NUM_FHE_BLOCKS_PER_PIR_INDEX elements
-    block_index = 0;
-    for (int i = TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1; i >= NUM_FHE_BLOCKS_PER_PIR_BLOCK; --i) {
-        block_index <<= PLAINTEXT_FHE_BLOCK_SIZE;
-        block_index += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-    }
-}
-
-
 Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index) {
     std::vector<int64_t> SDBElementVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
     
@@ -440,7 +387,7 @@ void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content
     block_content_and_index = 0;
     for (int i = TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1; i >= 0; --i) {
         block_content_and_index <<= PLAINTEXT_FHE_BLOCK_SIZE;
-        block_content_and_index += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+        block_content_and_index |= (packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1));
     }
 }
 

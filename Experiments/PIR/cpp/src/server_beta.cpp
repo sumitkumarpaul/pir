@@ -377,13 +377,6 @@ static int PerEpochReInit_beta(){
         }
         /* 8.1 First create a random number as the secret-share for server_alpha */
         d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
-        /* 8.2 Create the second share for server_gamma */
-        d_gamma = (d - d_alpha);/* Another share */
-
-        mpz_class d_sum = d_alpha + d_gamma;
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha for index " + std::to_string(I) + " is: " + d_alpha.get_str(16));
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma for index " + std::to_string(I) + " is: " + d_gamma.get_str(16));
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha + d_gamma for index " + std::to_string(I) + " is: " + d_sum.get_str(16) + "\n");
 
         /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
         mpz_export(net_buf, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
@@ -395,6 +388,33 @@ static int PerEpochReInit_beta(){
         /* 10.1 Store the d_alpha share in the local buffer */
         mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
         //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
+
+        /* 8.2 Create the second share for server_gamma */
+        //d_gamma = (d - d_alpha);/* Another share */ But this is creating error while combining homomorphically
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I = " + std::to_string(I) + " value of d: " + d.get_str(16) + " and d_alpha: " + d_alpha.get_str(16));
+
+        mpz_class d_part, d_alpha_part, d_gamma_part, mask = mpz_class(0x3FFF);
+        d_gamma = mpz_class(0);
+
+        for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++){
+            /* Extract least significant 15-bits of d and d_alpha */
+            d_alpha_part = (d_alpha & mask);
+            d_part = (d & mask);
+
+            /* Compute the difference between two parts */
+            d_gamma_part = (d_part - d_alpha_part);
+
+            /* Again remove any additional part, if it is more than 15-bits */
+            d_gamma_part = (d_gamma_part & mask);
+
+            /* Append the part at the proper location */
+            d_gamma = (d_gamma | d_gamma_part);
+
+            mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
+        }
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma: " + d_gamma.get_str(16));
 
         /* 10.2 Store the d_gamma share in the local buffer */
         mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
@@ -916,8 +936,26 @@ static void TestBlindedExponentiation2() {
     }
 }
 
-// Test function for FHE_Enc_DBElement and FHE_Dec_DBElement
+// Test function for FHE_Enc_SDBElement and FHE_Dec_SDBElement
 static void Test_FHE_DBElement() {
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
+    sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
+    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
+
     // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits
     mpz_class block_1_content = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
     // Generate random block_index of log_N bits
@@ -931,15 +969,15 @@ static void Test_FHE_DBElement() {
     // Generate another random tag of P_BITS bits
     mpz_class tag_2 = rng.get_z_bits(P_BITS);
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block 1 content: " + block_1_content.get_str() + "\nblock 1 index: " + block_1_index.get_str() + "\nblock 2 content: " + block_2_content.get_str() + "\nblock 2 index: " + block_2_index.get_str() + "\ntag 1: " + tag_1.get_str()+ "\ntag 2: " + tag_2.get_str());
+    //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block 1 content: " + block_1_content.get_str() + "\nblock 1 index: " + block_1_index.get_str() + "\nblock 2 content: " + block_2_content.get_str() + "\nblock 2 index: " + block_2_index.get_str() + "\ntag 1: " + tag_1.get_str()+ "\ntag 2: " + tag_2.get_str());
 
     // Encrypt
-    Ciphertext<DCRTPoly> ct_element_1 = FHE_Enc_DBElement(block_1_content, block_1_index);
-    Ciphertext<DCRTPoly> ct_element_2 = FHE_Enc_DBElement(block_2_content, block_2_index);
+    Ciphertext<DCRTPoly> ct_element_1 = FHE_Enc_SDBElement((block_1_content << log_N) | block_1_index);
+    Ciphertext<DCRTPoly> ct_element_2 = FHE_Enc_SDBElement((block_2_content << log_N) | block_2_index);
     Ciphertext<DCRTPoly> ct_tag_1 = FHE_Enc_Tag(tag_1);
     Ciphertext<DCRTPoly> ct_tag_2 = FHE_Enc_Tag(tag_2);
     
-    Ciphertext<DCRTPoly> selectElementBits_ct = FHE_Enc_DBElement(mpz_class(0), mpz_class(0));
+    Ciphertext<DCRTPoly> selectElementBits_ct = FHE_Enc_SDBElement(mpz_class(0));
     Ciphertext<DCRTPoly> selectTagBits_ct = FHE_Enc_Tag(mpz_class(0));
     // Also tested with 1, which is 0b...000000000000001000000000000001
     //Ciphertext<DCRTPoly> selectElementBits_ct = vectorOnesforElement_ct;
@@ -948,16 +986,24 @@ static void Test_FHE_DBElement() {
 
 
     // Decrypt
-    mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_block_content, dec_selected_block_index;
-    FHE_Dec_DBElement(ct_element_1, dec_block_1_content, dec_block_1_index);
-    FHE_Dec_DBElement(ct_element_2, dec_block_2_content, dec_block_2_index);
+    mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_content, dec_selected_index, dec_content_and_index;
+    FHE_Dec_SDBElement(ct_element_1, dec_content_and_index);
+    dec_block_1_content = (dec_content_and_index >> log_N);
+    dec_block_1_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+
+    FHE_Dec_SDBElement(ct_element_2, dec_content_and_index);
+    dec_block_2_content = (dec_content_and_index >> log_N);
+    dec_block_2_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+    
     FHE_Dec_Tag(ct_tag_1, dec_tag_1);
     FHE_Dec_Tag(ct_tag_2, dec_tag_2);
     FHE_Dec_Tag(selectTagBits_ct, dec_fnd);
     Ciphertext<DCRTPoly> ct_selected_element = FHE_SelectElement(selectElementBits_ct, ct_element_1, ct_element_2);
     Ciphertext<DCRTPoly> ct_selected_tag = FHE_SelectTag(selectTagBits_ct, ct_tag_1, ct_tag_2);
     FHE_Dec_Tag(ct_selected_tag, dec_selected_tag);
-    FHE_Dec_DBElement(ct_selected_element, dec_selected_block_content, dec_selected_block_index);
+    FHE_Dec_SDBElement(ct_selected_element, dec_content_and_index);
+    dec_selected_content = (dec_content_and_index >> log_N);
+    dec_selected_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
 
     // Verify
     if (block_1_content != dec_block_1_content) {
@@ -996,16 +1042,16 @@ static void Test_FHE_DBElement() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the tags:( Expected: " + tag_1.get_str() + " but got: " + dec_selected_tag.get_str());
     }
 
-    if (dec_selected_block_content == block_1_content) {
+    if (dec_selected_content == block_1_content) {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block content..!!..Ha ha..Thank you..:) :) :) :) :)");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block content :( Expected: " + block_1_content.get_str() + " but got: " + dec_selected_block_content.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block content :( Expected: " + block_1_content.get_str() + " but got: " + dec_selected_content.get_str());
     }
 
-    if (dec_selected_block_index == block_1_index) {
+    if (dec_selected_index == block_1_index) {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block index..!!..Ha ha..Thank you..:) :) :) :) :)");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block index :( Expected: " + block_1_index.get_str() + " but got: " + dec_selected_block_index.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block index :( Expected: " + block_1_index.get_str() + " but got: " + dec_selected_index.get_str());
     }
 }
 
@@ -1363,6 +1409,7 @@ static void TestSrv_beta()
     //TestShelterDPFSearch_beta();
     //TestClientProcessing_beta();
     TestShuffDBFetch_beta();
+    //Test_FHE_DBElement();
 }
 
 static void TestShuffDBFetch_beta(){
@@ -1380,12 +1427,14 @@ static void TestShuffDBFetch_beta(){
 
     /* I: Choose a random index to be fetched from the shuffled databases */
     std::uniform_int_distribution<std::uint64_t> dist(1, (N+sqrt_N)); // Indices are from 1 to N+sqrt(N)
-    //std::uint64_t I = dist(gen);
-    std::uint64_t I = 3;// Currently hardcoding for testing
+    std::uint64_t I = dist(gen);
+    
     /* Figureout its corresponding location in the shuffled database */
     uint64_t loc = TMP_IDX_LOC_MAP[(I-1)];//Location for item I is stored at index (i-1)
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Randomly selected fetch index is: " + std::to_string(I) + ", and its location in shuffled database is: " + std::to_string(loc));
+
+    pdb.open(pdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
 
     /* Fetch the share from that location of D_alpha */
     D_alpha.open(D_alpha_filename, std::ios::in | std::ios::binary | std::ios::app);
@@ -1393,7 +1442,6 @@ static void TestShuffDBFetch_beta(){
     D_alpha.read(reinterpret_cast<char*>(net_buf), NUM_BYTES_PER_SDB_ELEMENT);
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, net_buf);
     mpz_class d_alpha = mpz_class(tmp);    
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched d_alpha");
 
     /* Fetch the share from that location of D_gamma */
     D_gamma.open(D_gamma_filename, std::ios::in | std::ios::binary | std::ios::app);
@@ -1401,84 +1449,50 @@ static void TestShuffDBFetch_beta(){
     D_gamma.read(reinterpret_cast<char*>(net_buf), NUM_BYTES_PER_SDB_ELEMENT);
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, net_buf);
     mpz_class d_gamma = mpz_class(tmp);    
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched d_gamma");
 
-    mpz_class d_pt = d_alpha + d_gamma;
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched plaintext d_alpha: " + d_alpha.get_str(16));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched plaintext d_gamma: " + d_gamma.get_str(16));
     #warning TODO: Check for dummy element as well
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetched sum of (d_alpha + d_gamma) is: " + d_pt.get_str(16));
-
-    /* FHE encrypt both the shares */
-    Ciphertext<DCRTPoly> ct_d_alpha = FHE_Enc_SDBElement(d_alpha);
-    Ciphertext<DCRTPoly> ct_d_gamma = FHE_Enc_SDBElement(d_gamma);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "FHE Encrypted both the shares");
-
-    mpz_class dec_d_alpha, dec_d_gamma;
-    FHE_Dec_SDBElement(ct_d_alpha, dec_d_alpha);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypting to verify the content of d_alpha: " + dec_d_alpha.get_str(16));
-
-    FHE_Dec_SDBElement(ct_d_gamma, dec_d_gamma);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypting to verify the content of d_gamma: " + dec_d_gamma.get_str(16));
-
-    /* Homorphically add those shares */
-    //Ciphertext<DCRTPoly> ct_d = ct_d_alpha + ct_d_gamma;
-    Ciphertext<DCRTPoly> ct_d = FHEcryptoContext->EvalAdd(ct_d_alpha, ct_d_gamma);
-    FHEcryptoContext->ModReduceInPlace(ct_d);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphically adding the shares");
-
-    /* Decrypt the resulting ciphertext */
-    mpz_class dec_block_content, dec_block_index, dec_block_and_index;
-    FHE_Dec_DBElement(ct_d, dec_block_content, dec_block_index);
-    FHE_Dec_SDBElement(ct_d, dec_block_and_index);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypt the resulting ciphertext");
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decrypted block and index: " + dec_block_and_index.get_str(16));
-
-    /* Test with different values */
-    d_alpha = mpz_class(0x3FFF);
-    d_gamma = mpz_class(0x3FFF);
-    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
-
-    d_alpha = mpz_class(0);
-    d_gamma = mpz_class(0x3FFF);
-    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
-
-    d_alpha = mpz_class(0x3FFF);
-    d_gamma = mpz_class(0);
-    FHE_Dec_SDBElement((FHE_Enc_SDBElement(d_alpha)-FHE_Enc_SDBElement(d_gamma)), dec_block_and_index);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Homomorphic addition of " + d_alpha.get_str(16) + " - " + d_gamma.get_str(16) + " = " + dec_block_and_index.get_str(16));
-
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha is: " + d_alpha.get_str(16) + " d_gamma is: " + d_gamma.get_str(16));
+    
     if (I < N) {
         /* Match with the expection. Both the content as well as the index. */
         read_pdb_entry(pdb, I, read_entry);
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Read the item from the plaintext database");
     } else {
         memset(&read_entry, 0, sizeof(read_entry));
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "It is a dummy index");
     }
 
     mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, 
     read_entry.element);
-    mpz_class d = mpz_class(tmp);
+    mpz_class d = mpz_class(tmp);    
     
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Converted the decrypted plaintext to mpz_class");
-    
-    if (d == dec_block_content){
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Matched block content");
-    }else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch in block content: expected " + d.get_str(16) + ", got " + dec_block_content.get_str(16));
+    /* FHE encrypt both the shares */
+    Ciphertext<DCRTPoly> ct_d_alpha = FHE_Enc_SDBElement(d_alpha);
+    Ciphertext<DCRTPoly> ct_d_gamma = FHE_Enc_SDBElement(d_gamma);
+
+    /* Homorphically add those shares */
+    Ciphertext<DCRTPoly> ct_d = ct_d_alpha + ct_d_gamma;
+
+    /* Decrypt the resulting ciphertext */
+    mpz_class dec_block_and_index, dec_block, dec_index;
+    FHE_Dec_SDBElement(ct_d, dec_block_and_index);
+
+    dec_index = (dec_block_and_index & ((1U << log_N) - 1U));
+    dec_block = (dec_block_and_index >> log_N);
+
+    if (dec_index == I) {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Index matches with the expected result..!!");
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Index does not match with the expected result. Expected: " + std::to_string(I) + " but got: " + dec_index.get_str());
     }
 
-    if (mpz_class(I) == dec_block_index){
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Matched block index");
-    }else {
-        std::stringstream ss;
-        ss << std::hex << I;
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Mismatch in block index: expected " + ss.str() + ", got " + dec_block_index.get_str(16));
+    if (dec_block == d) {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data matches with the expected result..!!");
+    } else {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data does not match with the expected result. Expected: " + d.get_str(16) + " but got: " + dec_block.get_str(16));
     }
+
+    pdb.close();
+    D_alpha.close();
+    D_gamma.close();
 
     return;
 }

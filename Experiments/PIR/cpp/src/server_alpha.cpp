@@ -554,7 +554,7 @@ static int TestShelterDPFSearch_alpha() {
         //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
         if (1) {
             // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(k));
+            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
             /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
             if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
             {
@@ -670,13 +670,15 @@ static int TestShelterDPFSearch_alpha() {
 
         export_to_file_from_mpz_class("/dev/shm/fin.ct", fin);
         // Deserialize the crypto context
-        mpz_class dec_block_content, dec_block_index;
+        mpz_class dec_block_content, dec_block_index, dec_content_and_index;
         Ciphertext<DCRTPoly> fin_ct;
         if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", fin_ct, SerType::BINARY)) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot read serialization from " + std::string("/dev/shm/fin.ct"));
-        }  
+        }
 
-        FHE_Dec_DBElement(fin_ct, dec_block_content, dec_block_index);
+        FHE_Dec_SDBElement(fin_ct, dec_content_and_index);
+        dec_block_content = (dec_content_and_index >> log_N);
+        dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
 
         if (dec_block_index != mpz_class(DPF_SEARCH_INDEX_K)) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Decrypted block index does not match the expected index. Expected: " + std::to_string(DPF_SEARCH_INDEX_K) + ", but got: " + dec_block_index.get_str());
@@ -782,7 +784,7 @@ static int TestClientProcessing_alpha(){
     /************************************************************************************************ */
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 2 starts here");
     
-    Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_DBElement(rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE), mpz_class(2864));
+    Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(2864));
     /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
     if (Serial::SerializeToFile("/dev/shm/tmp.ct", tmp_ct, SerType::BINARY) != true){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of tmp_ct");
