@@ -24,8 +24,7 @@ std::string D_K_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_K.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
 
-#warning "Check with small number to verify the previous contents are not getting used"
-#define NUM_ITEMS_IN_TMP_BUF 8//100000 // After these many item creation, everything is written to the disk
+#define NUM_ITEMS_IN_TMP_BUF 2//8//100000 // After these many item creation, everything is written to the disk
 static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 static unsigned char TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
@@ -353,7 +352,7 @@ static int PerEpochReInit_beta(){
         /* TODO: Temporarily store the index-location mapping. For the purpose of testing */
         TMP_IDX_LOC_MAP[(I-1)] = iter;//Since I = 0, is not a valid index
 
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string(iter));
+        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string(iter));
 
         // 5. Compute T_I = g^{Rho^I mod p}
         mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
@@ -363,7 +362,7 @@ static int PerEpochReInit_beta(){
             /* TODO: Issue bulk read, in that case number of read entries will not be same as number of write entries due to the existance of the dummies */
 
             // 6. Compute d = (block_I || I)
-            read_pdb_entry(pdb, I, read_entry);
+            read_pdb_entry(pdb, (I-1), read_entry);
 
             mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, read_entry.element);
             d = mpz_class(tmp);
@@ -388,25 +387,30 @@ static int PerEpochReInit_beta(){
         /* 10.1 Store the d_alpha share in the local buffer */
         mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
         //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
+    
+        /* For some numbers, gmp exporting an additional byte. This is a corresponding fix */
+        if (send_size != NUM_BYTES_PER_SDB_ELEMENT){
+            /* For some reason, for dummy elements exporting d_gamma takes one more byte and that is causing the problem. Hence, first exporting that to a different buffer and then copy the content from there. */
+            mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
+            memcpy(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], (net_buf+1), NUM_BYTES_PER_SDB_ELEMENT);
+        }
 
         /* 8.2 Create the second share for server_gamma */
         //d_gamma = (d - d_alpha);/* Another share */ But this is creating error while combining homomorphically
 
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I = " + std::to_string(I) + " value of d: " + d.get_str(16) + " and d_alpha: " + d_alpha.get_str(16));
+        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I = " + std::to_string(I) + " value of d: " + d.get_str(16) + " and d_alpha: " + d_alpha.get_str(16));
 
-        mpz_class d_part, d_alpha_part, d_gamma_part, mask = mpz_class(0x3FFF);
+        mpz_class d_part, d_alpha_part, d_gamma_part;
         d_gamma = mpz_class(0);
-
+        mpz_class mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) -1);
+            
         for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++){
             /* Extract least significant 15-bits of d and d_alpha */
             d_alpha_part = (d_alpha & mask);
             d_part = (d & mask);
 
-            /* Compute the difference between two parts */
-            d_gamma_part = (d_part - d_alpha_part);
-
-            /* Again remove any additional part, if it is more than 15-bits */
-            d_gamma_part = (d_gamma_part & mask);
+            /* Compute the difference between two parts. And take only 15-bits */
+            d_gamma_part = (d_part - d_alpha_part)& mask;
 
             /* Append the part at the proper location */
             d_gamma = (d_gamma | d_gamma_part);
@@ -414,10 +418,18 @@ static int PerEpochReInit_beta(){
             mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
         }
 
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma: " + d_gamma.get_str(16));
-
         /* 10.2 Store the d_gamma share in the local buffer */
         mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
+
+        /* For some numbers, gmp exporting an additional byte. This is a corresponding fix */
+        if (send_size != NUM_BYTES_PER_SDB_ELEMENT){
+            /* For some reason, for dummy elements exporting d_gamma takes one more byte and that is causing the problem. Hence, first exporting that to a different buffer and then copy the content from there. */
+            mpz_export(net_buf, &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
+            memcpy(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT*(iter % NUM_ITEMS_IN_TMP_BUF))], (net_buf+1), NUM_BYTES_PER_SDB_ELEMENT);
+        }
+
+        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma: " + d_gamma.get_str(16) + " exported size: " + std::to_string(send_size));
+
         //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
         // 11. Remove chosen element from SS (order not preserved)
@@ -1450,18 +1462,16 @@ static void TestShuffDBFetch_beta(){
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, net_buf);
     mpz_class d_gamma = mpz_class(tmp);    
 
-    #warning TODO: Check for dummy element as well
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha is: " + d_alpha.get_str(16) + " d_gamma is: " + d_gamma.get_str(16));
     
-    if (I < N) {
-        /* Match with the expection. Both the content as well as the index. */
-        read_pdb_entry(pdb, I, read_entry);
-    } else {
+    if (I > N) {
         memset(&read_entry, 0, sizeof(read_entry));
+    } else {
+        /* Match with the expection. Both the content as well as the index. */
+        read_pdb_entry(pdb, (I-1), read_entry);
     }
 
-    mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, 
-    read_entry.element);
+    mpz_import(tmp, sizeof(read_entry.element), 1, 1, 1, 0, read_entry.element);
     mpz_class d = mpz_class(tmp);    
     
     /* FHE encrypt both the shares */
@@ -1478,16 +1488,24 @@ static void TestShuffDBFetch_beta(){
     dec_index = (dec_block_and_index & ((1U << log_N) - 1U));
     dec_block = (dec_block_and_index >> log_N);
 
+    if (I > N) {
+        I = 0;// Because in that case the index will be just 0.
+        // And in the case of dummy, the content match does not make any sense
+    } else {
+        if (dec_block == d)
+        {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data matches with the expected result..!!");
+        }
+        else
+        {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data does not match with the expected result. Expected: " + d.get_str(16) + " but got: " + dec_block.get_str(16));
+        }
+    }
+
     if (dec_index == I) {
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Index matches with the expected result..!!");
     } else {
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Index does not match with the expected result. Expected: " + std::to_string(I) + " but got: " + dec_index.get_str());
-    }
-
-    if (dec_block == d) {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data matches with the expected result..!!");
-    } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Data does not match with the expected result. Expected: " + d.get_str(16) + " but got: " + dec_block.get_str(16));
     }
 
     pdb.close();

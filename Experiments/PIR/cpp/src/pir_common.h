@@ -104,7 +104,7 @@ extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
 
-typedef struct {
+typedef struct [[gnu::packed]]{
     unsigned char element[NUM_BYTES_PER_PDB_ELEMENT];//Only data, no index
 } plain_db_entry;
 
