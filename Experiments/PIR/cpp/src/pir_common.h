@@ -77,9 +77,7 @@ extern std::string completed_reinit_for_epoch_message;
 #define PLAINTEXT_FHE_BLOCK_SIZE            14//Single encryptable plaintext block size is these many bits. Actually 16-bits, but after experimentation it is found that, homomorphic addition is not working for larger than 14-bit values
 #define NUM_BYTES_PER_PDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + 7) / 8) // Only data, no-index. To ensure ceiling value
 #define NUM_BYTES_PER_SDB_ELEMENT           ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N + 7) / 8) // Data and index. To ensure ceiling value
-#define NUM_FHE_BLOCKS_PER_PIR_BLOCK        ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
-#define NUM_FHE_BLOCKS_PER_PIR_INDEX        ((log_N + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE)
-#define TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT    (NUM_FHE_BLOCKS_PER_PIR_BLOCK + NUM_FHE_BLOCKS_PER_PIR_INDEX)
+#define TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT    ((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N + PLAINTEXT_FHE_BLOCK_SIZE - 1)/PLAINTEXT_FHE_BLOCK_SIZE)
 #define NUM_FHE_BLOCKS_PER_TAG              ((P_BITS + PLAINTEXT_FHE_BLOCK_SIZE - 1) / PLAINTEXT_FHE_BLOCK_SIZE) // To ensure the ceiling value
 
 /* Cuckoo hashing parameters */
