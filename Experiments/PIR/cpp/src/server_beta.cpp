@@ -20,7 +20,7 @@ static std::fstream D_gamma;
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
 std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
-std::string D_K_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_K.bin";
+std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"DK.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
 
@@ -303,7 +303,7 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_gamma_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
 
     pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
-    D_K.open(D_K_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    D_K.open(DK_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
     D_alpha.open(D_alpha_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
     D_gamma.open(D_gamma_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
@@ -488,7 +488,7 @@ static int PerEpochOperations_beta(){
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please manually transfer the shuffled and secret-shared databases to server_alpha and server_gamma.");
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_alpha, which is located at:" + D_alpha_filename);
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_gama, which is located at:" + D_gamma_filename);
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the key-file to both server_alpha and server_gamma, which is located at:" + D_K_filename);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the key-file to both server_alpha and server_gamma, which is located at:" + DK_filename);
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please press enter to continue..!!");
 

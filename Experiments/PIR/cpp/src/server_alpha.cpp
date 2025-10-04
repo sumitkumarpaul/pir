@@ -41,8 +41,6 @@ std::pair<mpz_class, mpz_class> E_T_I;
 std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"L_alpha.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"DK_alpha.bin";//TODO: The key and data are seperated, unlike the description of the paper
 std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
-static std::fstream sdb;
-static std::fstream L;
 
 
 // Function declarations
@@ -374,7 +372,7 @@ static int PerEpochOperations_alpha(){
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
-    // 14.c. Clear the shelter count as well by setting it to zero
+    // 14.a. Clear the shelter count as well by setting it to zero
     K = 0;
 
     //TODO: Store the cuckoo table in the disk

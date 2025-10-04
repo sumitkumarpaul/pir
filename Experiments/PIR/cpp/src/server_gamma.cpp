@@ -37,10 +37,9 @@ static KukuTable *table = nullptr;
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/")
-std::string L_filename = DATABASE_LOCATION_GAMMA+"L_gamma.bin";
-std::string sdb_filename = DATABASE_LOCATION_GAMMA+"ShuffledDB_gamma.bin";
-static std::fstream sdb;
-static std::fstream L;
+std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_GAMMA+"L_gamma.bin";
+std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_GAMMA+"DK_gamma.bin";//TODO: The key and data are seperated, unlike the description of the paper
+std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_GAMMA+"ShuffledDB_gamma.bin";
 
 // Function declarations
 static int InitSrv_gamma();
@@ -209,7 +208,6 @@ static int OneTimeInit_gamma() {
 }
 
 /* TODO: This function, currently does not matches with the diagram of the paper. It has to be updated or the diagram has to be modified. */
-/* TODO: After confirming the operation of Server_alpha, this will be modified */
 static int PerEpochOperations_gamma(){
     int ret = 0;
     size_t received_sz = 0;
@@ -219,7 +217,7 @@ static int PerEpochOperations_gamma(){
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;
+    std::fstream sdb;    
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochOperations sequence");
 
@@ -237,7 +235,6 @@ static int PerEpochOperations_gamma(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
-
 
     /* Wait for receiving the ready message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -265,51 +262,114 @@ static int PerEpochOperations_gamma(){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
         return -1;
     } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Completed re-initialization for new epoch, now ready to process client-requests..!!");
     }
 
-    return ret;
-}
-
-static int SelShuffDBSearchTag_gamma(){
-    int ret = -1;
-    size_t received_sz = 0;    
-
-    // 8.c.1 Receive T_phi.h_{\\beta 0} from the server beta
-    ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive T_phi.h_{\\beta 0} from Server Beta");
-        close(sock_gamma_to_beta);
-        return ret;
+    /* TODO: Unlike the paper. The L file only contains the secret shared data part */
+    /* The file should already contain all the secret shares */
+    L.open(L_filename, std::ios::in | std::ios::binary);
+    if (!L) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
+        return -1;
     }
-    mpz_class T_phi_h_beta_0 = mpz_class(std::string(net_buf, received_sz));
 
-    // 9.c Receive h_{\\alpha 2} from the server alpha
-    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive h_{\\alpha 2} from Server Alpha");
-        close(sock_gamma_to_alpha_con);
-        return ret;
+    /* TODO: Unlike the paper. The K file contains the Kuku keys, generated from the Tags */
+    /* The file should already contain all the keys */
+    DK.open(DK_filename, std::ios::in | std::ios::binary);
+    if (!DK) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open K file at location: " + DK_filename);
+        ret = -1;
+        goto exit;
     }
-    mpz_class h_alpha2 = mpz_class(std::string(net_buf, received_sz));
 
-    /* 10.c.1 Compute T_phi.h_{\alpha 2}.h_{\beta 0} */
-    mpz_class T_phi_h_alpha2_h_beta0 = (T_phi_h_beta_0*h_alpha2) % p;
-
-    /* 10.c.2 FHE Encrypt T_phi.h_{\\alpha 2}.h_{\\beta 0} */
-    Ciphertext<DCRTPoly> FHE_ct_T_phi_h_alpha2_h_beta0 = FHE_Enc_Tag(T_phi_h_alpha2_h_beta0);
-
-    /* 10.c.3 Send the ciphertext to server alpha */
-    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).size());
-
-    // 14.c.1 Receive T_* from the server alpha
-    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Failed to receive T_* from Server Alpha");
-        close(sock_gamma_to_alpha_con);
-        return ret;
+    /* 13.c.1 This file stores the pair: (Kuku key, the share of the element) */
+    sdb.open(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        ret = -1;
+        goto exit;
     }
-    T_star = mpz_class(std::string(net_buf, received_sz));
+
+    // 12.c.1 Allocate a new Cuckoo hash table
+    // Keeping the number of entries, larger than the number of elements to place. The reason is, it will reduce the number of probe during placement and make the per epoch operations faster
+    table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
+    if (table == nullptr) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to allocate memory for Cuckoo hash table");
+        ret = -1;
+        goto exit;
+    }
+
+    /* 12.c.2 Prepare the entire Kuku hash table, based on all the keys */
+    for (uint64_t i = 0; i < M; i++){
+        /* Read the next Kuku key from the DK file */
+        DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
+
+        if (!table->insert(Kuku_key))
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
+
+            /* Delete the already built table */
+            delete table;
+            table = nullptr;
+            ret = -1;
+            goto exit;
+        }
+
+        if (((i+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash table. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+        }
+    }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+
+    //13.c.2 Reset the read pointers to the beginning
+    DK.seekg(0, std::ios::beg);
+    L.seekg(0, std::ios::beg);
+    sdb.seekp(0, std::ios::beg);
+
+    //13.c.3 Now place all the elements from the temporary list(L) to the shuffled database(SDB) according to the Kuku hash table
+    for (uint64_t i = 0; i < M; i++){
+        /* Read the next key */
+        DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
+        /* Read the next secret share */
+        L.read(net_buf, NUM_BYTES_PER_SDB_ELEMENT);
+
+        /* 13.c.4: Prepare them to a tuple of shuffled database */
+        memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type));
+        memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);    
+
+        /* 13.c.5: Query and find the location */
+        res = table->query(Kuku_key);
+        if (!res)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
+            ret = -1;
+            goto exit;
+        }
+        else {
+            /* 13.c.5 Insert at the location of the shuffled database, determined by the query result */
+            insert_sdb_entry(sdb, res.location(), sdb_entry);
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
+        }
+
+        if (((i+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the shuffled database");
+        }
+    }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
+
+    // 14.c. Clear the shelter count as well by setting it to zero
+    K = 0;
+
+    //TODO: Store the cuckoo table in the disk
+
+exit:
+    L.close();
+    DK.close();
+    sdb.close();
 
     return ret;
 }
