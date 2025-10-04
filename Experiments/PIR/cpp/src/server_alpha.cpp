@@ -41,6 +41,12 @@ std::pair<mpz_class, mpz_class> E_T_I;
 std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"L_alpha.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"DK_alpha.bin";//TODO: The key and data are seperated, unlike the description of the paper
 std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
+std::string hashTable_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"H_alpha.bin";
+/*  TODO: How to reuse it
+std::ifstream in("table.bin", std::ios::binary);
+auto table = KukuTable::deserialize(in);
+in.close();
+*/
 
 
 // Function declarations
@@ -228,7 +234,8 @@ static int PerEpochOperations_alpha(){
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;    
+    std::fstream sdb;
+    std::ofstream exportedHFile;    
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochOperations sequence");
 
@@ -376,6 +383,9 @@ static int PerEpochOperations_alpha(){
     K = 0;
 
     //TODO: Store the cuckoo table in the disk
+    exportedHFile.open(hashTable_filename, std::ios::binary);
+    table->serialize(exportedHFile);
+    exportedHFile.close();
 
 exit:
     L.close();
