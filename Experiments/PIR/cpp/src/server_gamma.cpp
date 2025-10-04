@@ -46,7 +46,7 @@ static std::fstream L;
 static int InitSrv_gamma();
 static int OneTimeInit_gamma();
 static int SelShuffDBSearchTag_gamma();
-static int PerEpochReInit_gamma();
+static int PerEpochOperations_gamma();
 static int FinSrv_gamma();
 
 static void TestSrv_gamma();
@@ -208,14 +208,20 @@ static int OneTimeInit_gamma() {
     return 0;
 }
 
-static int PerEpochReInit_gamma(){
+/* TODO: This function, currently does not matches with the diagram of the paper. It has to be updated or the diagram has to be modified. */
+/* TODO: After confirming the operation of Server_alpha, this will be modified */
+static int PerEpochOperations_gamma(){
     int ret = 0;
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
+    item_type Kuku_key;    
     QueryResult res;
+    std::fstream L;
+    std::fstream DK;
+    std::fstream sdb;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochReInit sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochOperations sequence");
 
     /* First of all retrieve all the one-time initialized materials from the saved location */
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin");
@@ -232,19 +238,8 @@ static int PerEpochReInit_gamma(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 
-    std::fstream L(L_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!L) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
-        return -1;
-    }
 
-    std::fstream sdb(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!sdb) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
-        return -1;
-    }
-
-    /* Receive ready message from server-beta */
+    /* Wait for receiving the ready message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
@@ -257,103 +252,21 @@ static int PerEpochReInit_gamma(){
         return -1;
     }
 
-    // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
-    table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
-    if (table == nullptr) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to allocate memory for Cuckoo hash table");
-        ret = -1;
-        goto exit;
-    }
-
-    for (uint64_t i = 0; i < M; i++){
-        /* Receive the tag */
-        ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-
-        if (ret == 0)
-        {
-            convert_buf_to_item_type((const unsigned char*)net_buf, received_sz, sdb_entry.cuckoo_key);
-            if (!table->insert(sdb_entry.cuckoo_key))
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
-    
-                /* Delete the already built table */
-                delete table;
-                table = nullptr;
-                ret = -1;
-                goto exit;
-            }
-        } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
-            goto exit;
-        }
-
-        /* Receive the secret-share */
-        ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-        if (ret == 0)
-        {
-            memset(sdb_entry.element, 0, NUM_BYTES_PER_SDB_ELEMENT);
-            memcpy(sdb_entry.element, net_buf, received_sz);
-            
-            /* 10.a Write the data into temporary list */
-            insert_sdb_entry(L, i, sdb_entry);
-        } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
-            goto exit;
-        }
-
-        if (((i+1) % 100000000) == 0){
-            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash table. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
-        }
-    }
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
-
     /* Receive completed message from server-beta */
     (void)recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-
+    
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
-        goto exit;
+        return -1;
     }
 
     if (std::string(net_buf, received_sz) != completed_reinit_for_epoch_message) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
-        ret = -1;
-        goto exit;
+        return -1;
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
     }
-
-    //Now place all the elements from the temporary list to the shuffled database according to the cuckoo hash table
-    for (uint64_t i = 0; i < M; i++){
-        read_sdb_entry(L, i, sdb_entry);
-
-        res = table->query(sdb_entry.cuckoo_key);
-
-        if (!res)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
-            ret = -1;
-            goto exit;
-        }
-        else {
-            /* 13.a Insert at the location of the shuffled database, determined by the query result */
-            insert_sdb_entry(sdb, res.location(), sdb_entry);
-            if (((i+1) % 100000000) == 0){
-                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the shuffled database");
-            }
-        }
-    }
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
-
-    // 14.c. Clear the shelter count as well by setting it to zero
-    K = 0;
-
-exit:
-    L.close();
 
     return ret;
 }
@@ -586,9 +499,9 @@ int main(int argc, char *argv[])
         if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
             // Perform one-time initialization for server gamma
             ret = OneTimeInit_gamma();
-        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+        } else if (std::string("per_epoch_operations").compare(std::string(argv[1]))==0) {
             // Perform per-epoch initialization for server gamma
-            ret = PerEpochReInit_gamma();
+            ret = PerEpochOperations_gamma();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
             // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
@@ -597,10 +510,10 @@ int main(int argc, char *argv[])
             // TODO: Start from last saved state
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
     }
 
     if (ret != 0) {

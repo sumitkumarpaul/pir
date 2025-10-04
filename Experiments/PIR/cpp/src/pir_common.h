@@ -58,9 +58,9 @@ extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       65536//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       16//65536//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  256//40960//1024//40960 // ceil((sqrt(N)))
+#define sqrt_N  0//256//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -167,4 +167,4 @@ extern void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_e
 extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entry& entry);
 
 extern void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item);
-extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, unsigned char& out_item);
+extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item);

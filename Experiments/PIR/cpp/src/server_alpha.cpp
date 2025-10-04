@@ -39,6 +39,7 @@ std::pair<mpz_class, mpz_class> E_T_I;
 #define PER_EPOCH_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/")
 std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"L_alpha.bin";
+std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"DK_alpha.bin";//TODO: The key and data are seperated, unlike the description of the paper
 std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
 static std::fstream sdb;
 static std::fstream L;
@@ -49,7 +50,7 @@ static int InitSrv_alpha();
 static int OneTimeInit_alpha();
 static int FinSrv_alpha();
 static int SelShuffDBSearchTag_alpha();
-static int PerEpochReInit_alpha();
+static int PerEpochOperations_alpha();
 
 static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
@@ -219,14 +220,19 @@ static int FinSrv_alpha(){
     return ret;
 }
 
-static int PerEpochReInit_alpha(){
+/* TODO: This function, currently does not matches with the diagram of the paper. It has to be updated or the diagram has to be modified. */
+static int PerEpochOperations_alpha(){
     int ret = 0;
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
+    item_type Kuku_key;    
     QueryResult res;
+    std::fstream L;
+    std::fstream DK;
+    std::fstream sdb;    
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochReInit sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochOperations sequence");
 
     /* First of all retrieve all the one-time initialized materials from the saved location */
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin");
@@ -243,19 +249,7 @@ static int PerEpochReInit_alpha(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
-    std::fstream L(L_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!L) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
-        return -1;
-    }
-
-    std::fstream sdb(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!sdb) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
-        return -1;
-    }
-
-    /* Receive ready message from server-beta */
+    /* Wait for receiving the ready message from server-beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
@@ -268,7 +262,49 @@ static int PerEpochReInit_alpha(){
         return -1;
     }
 
-    // Allocate a new Cuckoo hash table, larger than the number of entries, with the hope of less number of probe
+    /* Receive completed message from server-beta */
+    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
+        return -1;
+    }
+
+    if (std::string(net_buf, received_sz) != completed_reinit_for_epoch_message) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
+        return -1;
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+    }
+
+    /* TODO: Unlike the paper. The L file only contains the secret shared data part */
+    /* The file should already contain all the secret shares */
+    L.open(L_filename, std::ios::in | std::ios::binary);
+    if (!L) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open L file at location: " + L_filename);
+        return -1;
+    }
+
+    /* TODO: Unlike the paper. The K file contains the Kuku keys, generated from the Tags */
+    /* The file should already contain all the keys */
+    DK.open(DK_filename, std::ios::in | std::ios::binary);
+    if (!DK) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open K file at location: " + DK_filename);
+        ret = -1;
+        goto exit;
+    }
+
+    /* 13.a.1 This file stores the pair: (Kuku key, the share of the element) */
+    sdb.open(sdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        ret = -1;
+        goto exit;
+    }
+
+    // 12.a.1 Allocate a new Cuckoo hash table
+    // Keeping the number of entries, larger than the number of elements to place. The reason is, it will reduce the number of probe during placement and make the per epoch operations faster
     table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
     if (table == nullptr) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to allocate memory for Cuckoo hash table");
@@ -276,40 +312,20 @@ static int PerEpochReInit_alpha(){
         goto exit;
     }
 
+    /* 12.a.2 Prepare the entire Kuku hash table, based on all the keys */
     for (uint64_t i = 0; i < M; i++){
-        /* Receive the tag */
-        ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-        
-        if (ret == 0)
-        {
-            convert_buf_to_item_type((const unsigned char*)net_buf, received_sz, sdb_entry.cuckoo_key);
-            if (!table->insert(sdb_entry.cuckoo_key))
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
-    
-                /* Delete the already built table */
-                delete table;
-                table = nullptr;
-                ret = -1;
-                goto exit;
-            }
-        } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive tag from Server Beta for entry " + std::to_string(i));
-            goto exit;
-        }
+        /* Read the next Kuku key from the DK file */
+        DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
 
-        /* Receive the secret-share */
-        ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-        if (ret == 0)
+        if (!table->insert(Kuku_key))
         {
-            memset(sdb_entry.element, 0, NUM_BYTES_PER_SDB_ELEMENT);
-            memcpy(sdb_entry.element, net_buf, received_sz);
-            
-            /* 10.a Write the data into temporary list */
-            insert_sdb_entry(L, i, sdb_entry);
-        } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive secret share from Server Beta for entry " + std::to_string(i));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
+
+            /* Delete the already built table */
+            delete table;
+            table = nullptr;
+            ret = -1;
             goto exit;
         }
 
@@ -319,29 +335,25 @@ static int PerEpochReInit_alpha(){
     }
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
-    /* Receive completed message from server-beta */
-    (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
-        goto exit;
-    }
 
-    if (std::string(net_buf, received_sz) != completed_reinit_for_epoch_message) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
-        ret = -1;
-        goto exit;
-    } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Completed re-initialization for new epoch, now ready to process client-requests..!!");
-    }
+    //13.a.2 Reset the read pointers to the beginning
+    DK.seekg(0, std::ios::beg);
+    L.seekg(0, std::ios::beg);
+    sdb.seekp(0, std::ios::beg);
 
-    //Now place all the elements from the temporary list to the shuffled database according to the cuckoo hash table
+    //13.a.3 Now place all the elements from the temporary list(L) to the shuffled database(SDB) according to the Kuku hash table
     for (uint64_t i = 0; i < M; i++){
-        read_sdb_entry(L, i, sdb_entry);
+        /* Read the next key */
+        DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
+        /* Read the next secret share */
+        L.read(net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
-        res = table->query(sdb_entry.cuckoo_key);
+        /* 13.a.4: Prepare them to a tuple of shuffled database */
+        memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type));
+        memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
+        /* 13.a.5: Query and find the location */
+        res = table->query(Kuku_key);
         if (!res)
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
@@ -349,8 +361,9 @@ static int PerEpochReInit_alpha(){
             goto exit;
         }
         else {
-            /* 13.a Insert at the location of the shuffled database, determined by the query result */
+            /* 13.a.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
         }
 
         if (((i+1) % 100000000) == 0){
@@ -359,12 +372,17 @@ static int PerEpochReInit_alpha(){
     }
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
     // 14.c. Clear the shelter count as well by setting it to zero
     K = 0;
 
+    //TODO: Store the cuckoo table in the disk
+
 exit:
     L.close();
+    DK.close();
+    sdb.close();
 
     return ret;
 }
@@ -704,9 +722,9 @@ int main(int argc, char *argv[])
         if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
             // Perform one-time initialization for server alpha
             ret = OneTimeInit_alpha();
-        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+        } else if (std::string("per_epoch_operations").compare(std::string(argv[1]))==0) {
             // Perform per-epoch initialization for server alpha
-            ret = PerEpochReInit_alpha();
+            ret = PerEpochOperations_alpha();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
             // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
@@ -715,10 +733,10 @@ int main(int argc, char *argv[])
             // TODO: Start from last saved state
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_init|clear_epoch_state|continue>");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
     }
 
     if (ret != 0) {

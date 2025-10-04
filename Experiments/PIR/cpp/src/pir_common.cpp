@@ -600,22 +600,19 @@ void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_ty
     return;
 }
 
-void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, unsigned char& out_item) {
-    item_type tmp;
-    unsigned int quotient = (buf_size) / sizeof(item_type);
-    unsigned int remainder = (buf_size) % sizeof(item_type);
-    unsigned char* ptr = (unsigned char*)&out_item;
-    out_item = {0};
+void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item) {
+    out_item.fill(0);
 
-    for(unsigned int i = 0; i < quotient; i++) {
-        for (unsigned int j = 0; j < sizeof(item_type); j++) {
-            ptr[j] ^= buf[(i * sizeof(item_type)) + j];
+    unsigned int quotient = buf_size / out_item.size();
+    unsigned int remainder = buf_size % out_item.size();
+
+    for (unsigned int i = 0; i < quotient; i++) {
+        for (unsigned int j = 0; j < out_item.size(); j++) {
+            out_item[j] ^= buf[(i * out_item.size()) + j];
         }
     }
 
-    for(unsigned int i = 0; i < remainder; i++) {
-        ptr[i] ^= buf[quotient * sizeof(item_type) + i];
+    for (unsigned int i = 0; i < remainder; i++) {
+        out_item[i] ^= buf[quotient * out_item.size() + i];
     }
-
-    return;
 }

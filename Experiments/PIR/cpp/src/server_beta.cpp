@@ -24,8 +24,9 @@ std::string D_K_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_K.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
 
-#define NUM_ITEMS_IN_TMP_BUF 4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
-static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
+#define NUM_ITEMS_IN_TMP_BUF 16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
+//static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
+static std::array<unsigned char, 16> TMP_KEY_BUF[NUM_ITEMS_IN_TMP_BUF] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 static unsigned char TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 
@@ -39,7 +40,7 @@ static int InitSrv_beta();
 static int OneTimeInit_beta();
 static int SendInitializedParamsToAllServers();
 static int SelShuffDBSearchTag_beta();
-static int PerEpochReInit_beta();
+static int PerEpochOperations_beta();
 static int CreateRandomDatabase();
 
 
@@ -269,14 +270,15 @@ static int CreateRandomDatabase(){
 From it, it looks like it will take more than 30hours, even if used 16-cores simultaneously.
 Most expensive operation is exponentiation
 */
-static int PerEpochReInit_beta(){
+/* TODO: This function, currently does not matches with the diagram of the paper. It has to be updated or the diagram has to be modified. */
+static int PerEpochOperations_beta(){
     int ret = 0;
     std::pair<mpz_class, mpz_class> E_q_Rho;
     // RNG: mt19937 seeded from random_device
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting PerEpochReInit sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting PerEpochOperations sequence");
 
     /* First of all retrieve all the one-time initialized materials from the saved location */
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
@@ -399,9 +401,9 @@ static int PerEpochReInit_beta(){
                 //d_alpha = mpz_class(0);//TODO: To estimate the time requirement for the random number generator
             }
 
-                /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
-                mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
-            // convert_buf_to_item_type1((const unsigned char*)net_buf, (P_BITS/8), TMP_KEY_BUF[(sizeof(item_type))*((iter+j) % NUM_ITEMS_IN_TMP_BUF)]);
+            /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
+            mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
+            convert_buf_to_item_type1((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
 
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
             //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
@@ -475,14 +477,28 @@ static int PerEpochReInit_beta(){
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Number of flushed item is: " + std::to_string(iter));
     }
 
+    /* Files are required to close to ensure everything is actually flushed to the disk */
+    pdb.close();
+    D_alpha.close();
+    D_gamma.close();
+    D_K.close();    
+
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed preparing the database shares and key-database");
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please manually transfer the shuffled and secret-shared databases to server_alpha and server_gamma.");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_alpha, which is located at:" + D_alpha_filename);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_gama, which is located at:" + D_gamma_filename);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the key-file to both server_alpha and server_gamma, which is located at:" + D_K_filename);
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please press enter to continue..!!");
+
+    std::cin.get();
 
     /* Send ready message to Server Alpha and Server Gamma */
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed re-initialization for new epoch, now ready to process client-requests..!!");
-
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
 exit:
     //mpz_clear(tmp);
     pdb.close();
@@ -1451,7 +1467,7 @@ static void TestShuffDBFetch_beta(){
 
     #define NUM_FETCH_TEST_CNT 100
     /* First perform the per-epoch initialization */
-    PerEpochReInit_beta();
+    PerEpochOperations_beta();
 
     // RNG: mt19937 seeded from random_device
     std::random_device rd;
@@ -1560,9 +1576,9 @@ int main(int argc, char *argv[]){
         } else if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
             // Perform one-time initialization for server beta
             ret = OneTimeInit_beta();
-        } else if (std::string("per_epoch_init").compare(std::string(argv[1]))==0) {
+        } else if (std::string("per_epoch_operations").compare(std::string(argv[1]))==0) {
             // Perform per-epoch initialization for server beta
-            ret = PerEpochReInit_beta();
+            ret = PerEpochOperations_beta();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
             // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
@@ -1573,14 +1589,10 @@ int main(int argc, char *argv[]){
             TestSrv_beta();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|continue>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_init|clear_epoch_state|continue>");
-    }
-
-    if (ret == 0) {
-        TestSrv_beta();
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|continue>");
     }
 
     FinSrv_beta();
