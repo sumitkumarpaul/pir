@@ -28,7 +28,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
 static uint64_t K = 0; // Current number of entries in the shelter
-static KukuTable *table = nullptr;
+static KukuTable *HTable = nullptr;
 
 std::pair<mpz_class, mpz_class> E_T_I;
 
@@ -41,23 +41,20 @@ std::pair<mpz_class, mpz_class> E_T_I;
 std::string L_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"L_alpha.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"DK_alpha.bin";//TODO: The key and data are seperated, unlike the description of the paper
 std::string sdb_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"ShuffledDB_alpha.bin";
-std::string hashTable_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"H_alpha.bin";
-/*  TODO: How to reuse it
-std::ifstream in("table.bin", std::ios::binary);
-auto table = KukuTable::deserialize(in);
-in.close();
-*/
+std::string HTable_filename = PER_EPOCH_MATERIALS_LOCATION_ALPHA+"H_alpha.bin";
 
 
 // Function declarations
 static int InitSrv_alpha();
 static int OneTimeInit_alpha();
 static int FinSrv_alpha();
-static int SelShuffDBSearchTag_alpha();
 static int PerEpochOperations_alpha();
+static int StartRequestProcessing_alpha();
+static int SelShuffDBSearchTag_alpha();
 
 static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
+static int TestHTableSerDser_alpha();
 static void TestSelShuffDBSearchTag_alpha();
 static int TestShelterDPFSearch_alpha();
 static int TestClientProcessing_alpha();
@@ -310,8 +307,8 @@ static int PerEpochOperations_alpha(){
 
     // 12.a.1 Allocate a new Cuckoo hash table
     // Keeping the number of entries, larger than the number of elements to place. The reason is, it will reduce the number of probe during placement and make the per epoch operations faster
-    table = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
-    if (table == nullptr) {
+    HTable = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
+    if (HTable == nullptr) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to allocate memory for Cuckoo hash table");
         ret = -1;
         goto exit;
@@ -322,24 +319,24 @@ static int PerEpochOperations_alpha(){
         /* Read the next Kuku key from the DK file */
         DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
 
-        if (!table->insert(Kuku_key))
+        if (!HTable->insert(Kuku_key))
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Insertion failed. Before failure, successfully inserted: " + to_string(i) + " out of " + to_string(M) + " items");
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(table->stash().size()) + " and max-probe count is: " + to_string(table->max_probe()));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The size of the stash during failure: " + to_string(HTable->stash().size()) + " and max-probe count is: " + to_string(HTable->max_probe()));
 
             /* Delete the already built table */
-            delete table;
-            table = nullptr;
+            delete HTable;
+            HTable = nullptr;
             ret = -1;
             goto exit;
         }
 
         if (((i+1) % 100000000) == 0){
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash table. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted " + to_string(i+1) + " items into the cuckoo hash HTable. Current stash size: " + to_string(HTable->stash().size()) + " and total probe count is: " + to_string (HTable->total_probe_count_));
         }
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(table->stash().size()) + " and total probe count is: " + to_string (table->total_probe_count_));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash table creation complete. Current stash size: " + to_string(HTable->stash().size()) + " and total probe count is: " + to_string (HTable->total_probe_count_));
 
     //13.a.2 Reset the read pointers to the beginning
     DK.seekg(0, std::ios::beg);
@@ -358,7 +355,7 @@ static int PerEpochOperations_alpha(){
         memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
         /* 13.a.5: Query and find the location */
-        res = table->query(Kuku_key);
+        res = HTable->query(Kuku_key);
         if (!res)
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
@@ -383,8 +380,8 @@ static int PerEpochOperations_alpha(){
     K = 0;
 
     //TODO: Store the cuckoo table in the disk
-    exportedHFile.open(hashTable_filename, std::ios::binary);
-    table->serialize(exportedHFile);
+    exportedHFile.open(HTable_filename, std::ios::binary);
+    HTable->serialize(exportedHFile);
     exportedHFile.close();
 
 exit:
@@ -394,6 +391,59 @@ exit:
 
     return ret;
 }
+
+//TODO static int ResumeRequestProcessing_alpha(){
+static int StartRequestProcessing_alpha(){
+    int ret = 0;
+    size_t received_sz = 0;
+    shuffled_db_entry sdb_entry;
+    uint64_t M = (N + sqrt_N);
+    item_type Kuku_key;    
+    QueryResult res;
+    std::fstream L;
+    std::fstream DK;
+    std::fstream sdb;
+    std::ifstream importedHFile;    
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting Request processing sequence");
+
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
+
+    /* Initialize the variable K to 0 */
+    K=0;
+    importedHFile.open(HTable_filename, std::ios::binary);
+    if (!importedHFile) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open H file at location: " + HTable_filename);
+        ret = -1;
+        goto exit;
+    }
+
+    HTable = KukuTable::deserialize(importedHFile).release();
+    importedHFile.close();
+    if (HTable == nullptr) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot import the hash table");
+        ret = -1;
+        goto exit;
+    }
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded hash table into the RAM");
+
+exit:
+    return ret;
+}
+
 
 static int SelShuffDBSearchTag_alpha(){
     int ret = 0;
@@ -539,7 +589,8 @@ static void TestSrv_alpha()
     //TestPKEOperations_alpha();
     //TestSelShuffDBSearchTag_alpha();
     //TestShelterDPFSearch_alpha();
-    TestClientProcessing_alpha();
+    //TestClientProcessing_alpha();
+    TestHTableSerDser_alpha();
 
     return;
 }
@@ -735,7 +786,7 @@ int main(int argc, char *argv[])
             ret = PerEpochOperations_alpha();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
-            // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
+            ret = StartRequestProcessing_alpha();
         } else if (std::string("continue").compare(std::string(argv[1]))==0) {
             // Start from last saved state
             // TODO: Start from last saved state
@@ -747,7 +798,7 @@ int main(int argc, char *argv[])
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
     }
 
-    if (ret != 0) {
+    if (ret == 0) {
         TestSrv_alpha();
     }
 
@@ -859,6 +910,37 @@ static int TestClientProcessing_alpha(){
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 2 ends here, size of FHE-ciphertext is: " + std::to_string(FHE_ct_sz) + ", while total network transfer size is: " + std::to_string(total_network_bytes));
     /************************************************************************************* */
+
+    return 0;
+}
+
+static int TestHTableSerDser_alpha(){
+    uint64_t M = (N + sqrt_N);
+    QueryResult res;
+    std::fstream DK;
+    item_type Kuku_key;
+
+    DK.open(DK_filename, std::ios::in | std::ios::binary);
+    if (!DK) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open K file at location: " + DK_filename);
+        goto exit;
+    }    
+
+    /* Print all the mappings and verify it with running of the program with last executing with per_epoch_operations */
+    for (uint64_t i = 0; i < M; i++){
+        DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
+        res = HTable->query(Kuku_key);
+        if (!res)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
+        }
+        else {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Item: " + to_string(i) + " of L is mapped to SDB at location: " + std::to_string(res.location()));
+        }
+    }
+
+exit:
+    DK.close();
 
     return 0;
 }
