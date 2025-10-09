@@ -44,15 +44,22 @@ using namespace kuku;
 
 #define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
 
-#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
-#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
+//#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
+//#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
 //#define SERVER_GAMMA_IP "192.168.16.244" // IP address of the server_gamma
-#define SERVER_GAMMA_IP "192.168.16.132" // For the time being
+//#define SERVER_GAMMA_IP "192.168.16.132" // For the time being
+
+#define SERVER_ALPHA_IP "127.0.0.1" // IP address of the server_alpha
+#define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
+#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
 
 #define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
-#define BETA_LISTENING_TO_CLIENT_PORT   1236 // Port of beta to listen to client
-#define GAMMA_LISTENING_TO_ALPHA_PORT   1237 // Port of gamma to listen to alpha
+#define GAMMA_LISTENING_TO_ALPHA_PORT   1236 // Port of gamma to listen to alpha
+
+#define ALPHA_LISTENING_TO_CLIENT_PORT  1237 // Port of alpha to listen to the client
+#define BETA_LISTENING_TO_CLIENT_PORT   1238 // Port of beta to listen to the client
+#define GAMMA_LISTENING_TO_CLIENT_PORT  1239 // Port of gamma to listen to the client
 
 extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
@@ -60,7 +67,7 @@ extern std::string completed_reinit_for_epoch_message;
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       16//65536//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  0//256//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
+#define sqrt_N  4//256//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -145,6 +152,7 @@ extern std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_clas
 extern void FinishAcceptingSocket(int server_fd, int new_socket);
 extern int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket);
 extern void InitConnectingSocket(const std::string& server_ip, int port, int* p_sock);//No corresponding finish function, only call close()
+extern int InitListeningSocket(int port, int* p_server_fd);//No corresponding finish function, only call close()
 extern int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz);
 extern int sendAll(int sock, const char* data, size_t sz);
 

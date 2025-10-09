@@ -23,6 +23,7 @@
 
 
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
+static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
 // The value of N will determine the bitlength during the client initialization
@@ -31,7 +32,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 // And number of bits determine the evalution time drastically
 static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
 mpz_class T_star;
-static uint64_t K = 0; // Current number of entries in the shelter
+static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
 
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
@@ -47,7 +48,7 @@ static int InitSrv_gamma();
 static int OneTimeInit_gamma();
 static int SelShuffDBSearchTag_gamma();
 static int PerEpochOperations_gamma();
-static int StartRequestProcessing_gamma();
+static int ProcessClientRequest_gamma();
 
 static int FinSrv_gamma();
 
@@ -75,15 +76,16 @@ static int InitSrv_gamma(){
     ret = InitAcceptingSocket(GAMMA_LISTENING_TO_ALPHA_PORT, &sock_gamma_to_alpha, &sock_gamma_to_alpha_con);
 
     if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Alpha!!");
-    } else {
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot open Accepting socket for Server Gamma!!");
+        ret = -1;
+        goto exit;
     }
+    
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
 
-    if (ret != 0) {
+exit:
+    if (ret != 0){
         FinSrv_gamma();
-    }else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
     }
 
     return ret;
@@ -207,6 +209,7 @@ static int OneTimeInit_gamma() {
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received all the one-time initialized parameters from Server Beta and exported all of them into file");
 
     return 0;
 }
@@ -384,8 +387,12 @@ exit:
 
 
 //TODO static int ResumeRequestProcessing_gamma(){
-static int StartRequestProcessing_gamma(){
-    int ret = 0;
+static int ProcessClientRequest_gamma(){
+    int ret = -1;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    int accepted_socket = -1;
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
@@ -413,8 +420,6 @@ static int StartRequestProcessing_gamma(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 
-    /* Initialize the variable K to 0 */
-    K=0;
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open H file at location: " + HTable_filename);
@@ -430,6 +435,31 @@ static int StartRequestProcessing_gamma(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded hash table into the RAM");
+
+    /* TODO: Retrieve K from the serialized data */
+
+    /* TODO: Load the shelter into the RAM */
+
+    while (K < sqrt_N){
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
+
+        ret = InitAcceptingSocket(GAMMA_LISTENING_TO_CLIENT_PORT, &sock_gamma_client_srv, &sock_gamma_client_con);
+
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with the client!!");
+            ret = -1;
+            goto exit;
+        }
+
+        /* Close the connection with existing client */
+        close(sock_gamma_client_srv);
+        close(sock_gamma_client_con);
+        K++;
+        /* TODO: Store updated value of K in the disk */
+    }
+
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
 
 exit:
     return ret;
@@ -450,6 +480,14 @@ static int FinSrv_gamma(){
     if (sock_gamma_to_alpha_con != -1) {
         close(sock_gamma_to_alpha_con);
         sock_gamma_to_alpha_con = -1;
+    }
+    if (sock_gamma_client_srv != -1) {
+        close(sock_gamma_client_srv);
+        sock_gamma_client_srv = -1;
+    }
+    if (sock_gamma_client_con != -1) {
+        close(sock_gamma_client_con);
+        sock_gamma_client_con = -1;
     }
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Gamma");
@@ -500,7 +538,7 @@ static void TestSrv_gamma(){
     //TestPKEOperations_gamma();
     //TestSelShuffDBSearchTag_gamma();
     //Nothing is required to be executed during measuring the performance of client(simulated)
-    TestHTableSerDser_gamma();
+    //TestHTableSerDser_gamma();
 }
 
 
@@ -626,10 +664,10 @@ int main(int argc, char *argv[])
             ret = PerEpochOperations_gamma();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
-            ret = StartRequestProcessing_gamma();
-        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+            // Delete shelter content and set K = 0
+        } else if (std::string("process_request").compare(std::string(argv[1]))==0) {
             // Start from last saved state
-            // TODO: Start from last saved state
+            ret = ProcessClientRequest_gamma();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|continue>");

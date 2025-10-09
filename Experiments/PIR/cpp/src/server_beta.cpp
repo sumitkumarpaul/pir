@@ -9,12 +9,14 @@
 static char net_buf[NET_BUF_SZ] = {0};
 static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
+static int sock_beta_client_srv = -1, sock_beta_client_con = -1;
 static mpz_class Rho;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
 static std::fstream D_K;
 static std::fstream D_alpha;
 static std::fstream D_gamma;
+static uint64_t K;/* The number of requests processed till now */
 
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
@@ -34,15 +36,14 @@ static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
-static int shuffle();
-static int FinSrv_beta();
 static int InitSrv_beta();
+static int FinSrv_beta();
 static int OneTimeInit_beta();
 static int SendInitializedParamsToAllServers();
 static int SelShuffDBSearchTag_beta();
 static int PerEpochOperations_beta();
 static int CreateRandomDatabase();
-
+static int ProcessClientRequest_beta();
 
 static void TestSrv_beta();
 
@@ -122,6 +123,7 @@ static int SendInitializedParamsToAllServers(){
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server alpha");
 
     //Send parameters to Server Alpha
     (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
@@ -135,6 +137,8 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server gamma");
 
     //Send parameters to Server Gamma
     (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
@@ -199,16 +203,31 @@ static int InitSrv_beta(){
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Alpha!!");
-        return -1;
+        ret = -1;
+        goto exit;
     }
 
     ret = InitAcceptingSocket(BETA_LISTENING_TO_GAMMA_PORT, &sock_beta_gamma_srv, &sock_beta_gamma_con);
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Gamma!!");
+        ret = -1;
+        goto exit;
+    }
+    
+    #if 0
+    ret = InitListeningSocket(BETA_LISTENING_TO_CLIENT_PORT, &sock_beta_client_srv);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot open listening socket for client!!");
+        ret = -1;
+        goto exit;
+    }
+    #endif
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
+exit:
+    if (ret != 0){
         FinSrv_beta();
-    } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
     }
 
     return ret;
@@ -527,39 +546,77 @@ static int FinSrv_beta(){
     return ret;
 }
 
-static int shuffle() {
-    int ret = 0;
-    // compute size M = N + ceil(sqrt(N))
-    unsigned int M = N + sqrt_N;
+static int ProcessClientRequest_beta(){
+    int ret = -1;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    int accepted_socket = -1;
 
-    // build SS = {1, 2, ..., (N + sqrt_N))}
-    std::vector<unsigned int> SS;
-    SS.reserve(M);
-    for (unsigned int i = 1; i <= M; ++i) SS.push_back(i);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting Processing client request");
 
-    if (SS.empty()) return -1; // nothing to do for N == 0
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
+    sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
+    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
-    // RNG: mt19937 seeded from random_device
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
+    
+    /* TODO: Retrieve K from the serialized data */
 
-    // repeatedly pick a random index in [0, SS.size()-1], print element,
-    // then remove it by swapping with the last element and pop_back()
-    for (unsigned int iter = 0; iter < M; ++iter) {
-        std::uniform_int_distribution<std::size_t> dist(0, SS.size() - 1);
-        std::size_t idx = dist(gen);
-        unsigned int chosen = SS[idx];
+    while (K < sqrt_N){
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
 
-        std::cout << chosen;
-        if (iter + 1 < M) std::cout << ' ';
+        ret = InitAcceptingSocket(BETA_LISTENING_TO_CLIENT_PORT, &sock_beta_client_srv, &sock_beta_client_con);
 
-        // remove chosen element (order not preserved)
-        std::swap(SS[idx], SS.back());
-        SS.pop_back();
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with the client!!");
+            ret = -1;
+            goto exit;
+        }
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending all the required, publicly known, parameters to the client");
+
+        // Send the required parameters to the client
+        (void)sendAll(sock_beta_client_con, p.get_str().c_str(), p.get_str().size());
+        (void)sendAll(sock_beta_client_con, q.get_str().c_str(), q.get_str().size());
+        (void)sendAll(sock_beta_client_con, g.get_str().c_str(), g.get_str().size());
+        (void)sendAll(sock_beta_client_con, g_q.get_str().c_str(), g_q.get_str().size());
+        (void)sendAll(sock_beta_client_con, r.get_str().c_str(), r.get_str().size());
+        (void)sendAll(sock_beta_client_con, pk_E.get_str().c_str(), pk_E.get_str().size());
+        (void)sendAll(sock_beta_client_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+        (void)sendAll(sock_beta_client_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+        (void)sendAll(sock_beta_client_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+        
+        /* Close the connection with existing client */
+        close(sock_beta_client_srv);
+        close(sock_beta_client_con);
+
+        K++;
+        /* TODO: Store updated value of K in the disk */
     }
-    std::cout << '\n';
 
-    return 0;
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
+
+exit:
+    if(ret != 0){
+        close(sock_beta_client_srv);
+        close(sock_beta_client_con);
+    }
+
+    return ret;
 }
 
 static int SelShuffDBSearchTag_beta(){
@@ -1582,9 +1639,9 @@ int main(int argc, char *argv[]){
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
             // TODO: Clear the existing state of current epoch, start as if this is the first request of the epoch
-        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+        } else if (std::string("process_request").compare(std::string(argv[1]))==0) {
             // Start from last saved state
-            // TODO: Start from last saved state
+            ret = ProcessClientRequest_beta();
         } else if (std::string("test").compare(std::string(argv[1]))==0) {
             TestSrv_beta();
         } else {

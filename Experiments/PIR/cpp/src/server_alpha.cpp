@@ -20,6 +20,7 @@
 #include "pir_common.h"
 
 static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
+static int sock_alpha_client_srv = -1, sock_alpha_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
 // The value of N will determine the bitlength during the client initialization
@@ -27,7 +28,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
 static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
-static uint64_t K = 0; // Current number of entries in the shelter
+static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
 
 std::pair<mpz_class, mpz_class> E_T_I;
@@ -49,7 +50,7 @@ static int InitSrv_alpha();
 static int OneTimeInit_alpha();
 static int FinSrv_alpha();
 static int PerEpochOperations_alpha();
-static int StartRequestProcessing_alpha();
+static int ProcessClientRequest_alpha();
 static int SelShuffDBSearchTag_alpha();
 
 static void TestSrv_alpha();
@@ -67,8 +68,9 @@ static int InitSrv_alpha(){
     unsigned long seed = (static_cast<unsigned long>(rd()) << 1) ^ rd();
     rng.seed(seed); // seed() seeds the gmp_randclass    
     
-    // Server_alpha only connects to other servers, it does not listen
+    // Server_alpha only connects to other servers, it does not listen to other servers
     InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_beta);
+
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
     InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
@@ -78,6 +80,11 @@ static int InitSrv_alpha(){
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
 
     ret = 0;
+
+exit:
+    if (ret != 0){
+        FinSrv_alpha();
+    }
 
     return ret;
 }
@@ -200,6 +207,8 @@ static int OneTimeInit_alpha() {
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received all the one-time initialized parameters from Server Beta and exported all of them into file");
+    
     return 0;
 }
 
@@ -214,6 +223,14 @@ static int FinSrv_alpha(){
     if (sock_alpha_to_gamma != -1) {
         close(sock_alpha_to_gamma);
         sock_alpha_to_gamma = -1;
+    }
+    if (sock_alpha_client_srv != -1) {
+        close(sock_alpha_client_srv);
+        sock_alpha_client_srv = -1;
+    }
+    if (sock_alpha_client_con != -1) {
+        close(sock_alpha_client_con);
+        sock_alpha_client_con = -1;
     }
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Alpha");
@@ -393,8 +410,12 @@ exit:
 }
 
 //TODO static int ResumeRequestProcessing_alpha(){
-static int StartRequestProcessing_alpha(){
-    int ret = 0;
+static int ProcessClientRequest_alpha(){
+    int ret = -1;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    int accepted_socket = -1;
     size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
@@ -422,8 +443,6 @@ static int StartRequestProcessing_alpha(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
-    /* Initialize the variable K to 0 */
-    K=0;
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open H file at location: " + HTable_filename);
@@ -439,6 +458,32 @@ static int StartRequestProcessing_alpha(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded hash table into the RAM");
+
+    /* TODO: Retrieve K from the serialized data */
+
+    /* TODO: Load the shelter into the RAM */
+
+    while (K < sqrt_N){
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
+
+        ret = InitAcceptingSocket(ALPHA_LISTENING_TO_CLIENT_PORT, &sock_alpha_client_srv, &sock_alpha_client_con);
+
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with the client!!");
+            ret = -1;
+            goto exit;
+        }
+
+        /* Close the connection with existing client */
+        close(sock_alpha_client_srv);
+        close(sock_alpha_client_con);  
+        K++;
+        /* TODO: Store updated value of K in the disk */
+    }
+
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
+
 
 exit:
     return ret;
@@ -590,7 +635,7 @@ static void TestSrv_alpha()
     //TestSelShuffDBSearchTag_alpha();
     //TestShelterDPFSearch_alpha();
     //TestClientProcessing_alpha();
-    TestHTableSerDser_alpha();
+    //TestHTableSerDser_alpha();
 
     return;
 }
@@ -786,10 +831,10 @@ int main(int argc, char *argv[])
             ret = PerEpochOperations_alpha();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
-            ret = StartRequestProcessing_alpha();
-        } else if (std::string("continue").compare(std::string(argv[1]))==0) {
+            // Delete shelter content and set K = 0
+        } else if (std::string("process_request").compare(std::string(argv[1]))==0) {
             // Start from last saved state
-            // TODO: Start from last saved state
+            ret = ProcessClientRequest_alpha();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");

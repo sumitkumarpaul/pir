@@ -108,6 +108,7 @@ add_executable(sumit-experiment sumit-experiment.cpp)
 add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(server_beta fss/aesni-x86_64.S fss/aesni_wrapper.c server_beta.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(server_gamma fss/aesni-x86_64.S fss/aesni_wrapper.c server_gamma.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
+add_executable(pir_client pir_client.cpp pir_common.cpp)
 
 # Link libraries for sumit-experiment
 target_link_libraries(sumit-experiment
@@ -173,6 +174,19 @@ target_link_libraries(server_gamma
     OPENFHEcore
     OpenMP::OpenMP_CXX
     Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    crypto
+    Kuku::kuku
+    ${EXTRA_LIBS}
+)
+
+# Link libraries for pir_client
+target_link_libraries(pir_client
+    ${GMPXX_LIBRARIES}
+    ${GMP_LIBRARIES}
+    OPENFHEpke
+    OPENFHEcore
     OpenSSL::SSL
     OpenSSL::Crypto
     crypto

@@ -160,7 +160,47 @@ std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_
     return std::make_pair(c1, c2);
 #endif
 }
+
 // Networking related functions
+int InitListeningSocket(int port, int* p_server_fd) {
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    *p_server_fd = -1;
+    int ret = -1;
+
+    *p_server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (*p_server_fd < 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "socket() returned: " + std::to_string(*p_server_fd));
+        return ret;
+    }
+    if (setsockopt(*p_server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "setsockopt() failed!!");
+        close(*p_server_fd);
+        *p_server_fd = -1;
+        return ret;
+    }
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    if (bind(*p_server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "bind() failed!!");
+        close(*p_server_fd);
+        *p_server_fd = -1;
+        return ret;
+    }
+    if (listen(*p_server_fd, 1) < 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "listen() returned error..!!");
+        close(*p_server_fd);
+        *p_server_fd = -1;
+        return ret;
+    }
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Listening on port: " + std::to_string(port));
+
+    return 0;
+}
+
 int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
     struct sockaddr_in address;
     int opt = 1;
@@ -190,7 +230,7 @@ int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
         return ret;
     }
     if (listen(*p_server_fd, 1) < 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "listen() returned: " + std::to_string(*p_new_socket));
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "listen() returned error");
         close(*p_server_fd);
         *p_server_fd = -1;
         return ret;
@@ -208,7 +248,7 @@ int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(address.sin_addr), client_ip, INET_ADDRSTRLEN);
         int client_port = ntohs(address.sin_port);
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Accepted connection from IP: " + std::string(client_ip) + ", Port: " + std::to_string(client_port));
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Accepted connection on listening port:" + std::to_string(port) + " from remote IP: " + std::string(client_ip) + ", remote port: " + std::to_string(client_port));
     }
 
     return 0;
