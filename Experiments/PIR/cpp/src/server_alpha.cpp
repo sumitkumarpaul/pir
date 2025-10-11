@@ -416,7 +416,6 @@ static int ProcessClientRequest_alpha(){
     int opt = 1;
     int addrlen = sizeof(address);
     int accepted_socket = -1;
-    size_t received_sz = 0;
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
     item_type Kuku_key;    
@@ -424,7 +423,20 @@ static int ProcessClientRequest_alpha(){
     std::fstream L;
     std::fstream DK;
     std::fstream sdb;
-    std::ifstream importedHFile;    
+    std::ifstream importedHFile;
+    size_t received_sz = 0;
+    int ret_recv = 0;    
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C;
+    mpz_class Rho_pow_I__mul__h_C;
+    mpz_class g_pow_Rho_pow_I__mul__h_C;
+    mpz_class h_alpha0, h_alpha0_1;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C_h_alpha0;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_h_alpha0;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I;
+    std::pair<mpz_class, mpz_class> E_a;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
+    //TODO Load it from the disk
+    mpz_class a = mpz_class(0);
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting Request processing sequence");
 
@@ -474,6 +486,77 @@ static int ProcessClientRequest_alpha(){
             ret = -1;
             goto exit;
         }
+
+        /* Step 4.3.1 of the sequence diagram */
+        // Receive the first component of E_g_pow_Rho_pow_I__mul__h_C
+        ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C.first from the Server Beta");
+            return -1;
+        }
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha starts client request processing from this point");
+
+        E_g_pow_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
+
+        // Step 4.3.2 Receive the second component of E_g_pow_Rho_pow_I__mul__h_C
+        ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C.second from the Server Beta");
+            return -1;
+        }
+
+        E_g_pow_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
+
+        // Step 5.1 Choose h_{\alpha 0} and its inverse
+        h_alpha0 = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+        mpz_invert(h_alpha0_1.get_mpz_t(), h_alpha0.get_mpz_t(), q.get_mpz_t());
+
+        // Step 5.2 Semi-homomorphically raises that to the received ciphertext (under ElGamal encryption in GG)
+        E_g_pow_Rho_pow_I__mul__h_C_h_alpha0 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul__h_C, h_alpha0, pk_E);
+
+        // Step 6.1 Send the first part to the client
+        (void)sendAll(sock_alpha_client_con, E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first.get_str().size());
+
+        // Step 6.2 Send the second part to the client
+        (void)sendAll(sock_alpha_client_con, E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second.get_str().size());
+       
+        // Step 7.3.1 Receive the first component of E_g_pow_Rho_pow_I__mul_h_alpha0
+        ret_recv = recvAll(sock_alpha_client_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_h_alpha0.first from the Client");
+            return -1;
+        }
+
+        E_g_pow_Rho_pow_I__mul_h_alpha0.first = mpz_class(std::string(net_buf, received_sz));
+        
+        // Step 7.3.2 Receive the second component of E_g_pow_Rho_pow_I__mul_h_alpha0
+        ret_recv = recvAll(sock_alpha_client_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_h_alpha0.second from the Client");
+            return -1;
+        }
+
+        E_g_pow_Rho_pow_I__mul_h_alpha0.second = mpz_class(std::string(net_buf, received_sz));
+
+        // Step 8. Semi-homomorphically raises that to h_alpha0_1 under ElGamal encryption in GG to remove h_alpha0
+        E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul_h_alpha0, h_alpha0_1, pk_E);
+
+        // Step 9.1. Compute the ciphertext of a 
+        E_a = ElGamal_encrypt(a, pk_E);
+
+        // Step 9.2. Multiply homomorphically
+        E_g_pow_Rho_pow_I__mul_a = ElGamal_mult_ct(E_g_pow_Rho_pow_I, E_a);
+
+        // Step 9.3.1 Send the first part of the ciphertext to the Server Gamma
+        (void)sendAll(sock_alpha_to_gamma, E_g_pow_Rho_pow_I__mul_a.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a.first.get_str().size());
+
+        // Step 9.4.1 Send the second part of the ciphertext to the Server Gamma
+        (void)sendAll(sock_alpha_to_gamma, E_g_pow_Rho_pow_I__mul_a.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a.second.get_str().size());
+
 
         /* Close the connection with existing client */
         close(sock_alpha_client_srv);
@@ -837,10 +920,10 @@ int main(int argc, char *argv[])
             ret = ProcessClientRequest_alpha();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
     }
 
     if (ret == 0) {

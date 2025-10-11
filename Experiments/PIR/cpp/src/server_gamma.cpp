@@ -394,6 +394,7 @@ static int ProcessClientRequest_gamma(){
     int addrlen = sizeof(address);
     int accepted_socket = -1;
     size_t received_sz = 0;
+    int ret_recv = 0;    
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
     item_type Kuku_key;    
@@ -401,7 +402,14 @@ static int ProcessClientRequest_gamma(){
     std::fstream L;
     std::fstream DK;
     std::fstream sdb;
-    std::ifstream importedHFile;    
+    std::ifstream importedHFile;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
+    std::pair<mpz_class, mpz_class> E_c;
+
+    //TODO Load it from the disk
+    mpz_class c = mpz_class(0);    
+      
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting Request processing sequence");
 
@@ -451,6 +459,41 @@ static int ProcessClientRequest_gamma(){
             ret = -1;
             goto exit;
         }
+
+        // Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha));
+        ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.first from the Server Alpha");
+            return -1;
+        }
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma starts client request processing from this point");
+
+        E_g_pow_Rho_pow_I__mul_a.first = mpz_class(std::string(net_buf, received_sz));
+
+        // Step 9.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a
+        ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.second from the Server Alpha");
+            return -1;
+        }
+        E_g_pow_Rho_pow_I__mul_a.second = mpz_class(std::string(net_buf, received_sz));
+
+        // Step 10.1 Compute the ciphertext of c
+        E_c = ElGamal_encrypt(c, pk_E);
+
+        // Step 10.2. Multiply homomorphically
+        E_g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_mult_ct(E_g_pow_Rho_pow_I__mul_a, E_c);
+
+        // Step 10.3.1 Send the first part to the server Beta
+        (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().size());
+
+        // Step 10.4.1 Send the second part to the server Beta
+        (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().size());
+
+
 
         /* Close the connection with existing client */
         close(sock_gamma_client_srv);
@@ -545,7 +588,7 @@ static void TestSrv_gamma(){
 static void TestSelShuffDBSearchTag_gamma(){
     int ret = -1;
 
-    ret = SelShuffDBSearchTag_gamma();
+    //ret = SelShuffDBSearchTag_gamma();
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Ended SelShuffDBSearchTag sequence");
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Retrieved tag T_*: " + T_star.get_str());   
@@ -670,10 +713,10 @@ int main(int argc, char *argv[])
             ret = ProcessClientRequest_gamma();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
         }
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|continue>");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
     }
 
     if (ret == 0) {

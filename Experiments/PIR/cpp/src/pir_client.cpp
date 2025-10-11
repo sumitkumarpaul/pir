@@ -13,8 +13,7 @@
 #include <unistd.h>
 #include "pir_common.h"
 
-#define ONE_TIME_MATERIALS_LOCATION_CLIENT std::string("/mnt/sumit/PIR_CLIENT/ONE_TIME_MATERIALS/")
-#define PER_EPOCH_MATERIALS_LOCATION_CLIENT std::string("/mnt/sumit/PIR_CLIENT/PER_EPOCH_MATERIALS/")
+#define MATERIALS_LOCATION_CLIENT std::string("/mnt/sumit/PIR_CLIENT/")
 
 static int sock_client_to_alpha = -1, sock_client_to_beta = -1, sock_client_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
@@ -22,6 +21,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 // Function declarations
 static int InitClient();
 static int OneTimeInit_client();
+static int ShelterTagDetermination_Client(uint64_t I);
 static int FinClient();
 
 static void TestClient();
@@ -139,17 +139,37 @@ static int OneTimeInit_client() {
     }
     Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
 
-    //Save parameters to local files
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "p.bin", p);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "q.bin", q);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "g.bin", g);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "g_q.bin", g_q);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "r.bin", r);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "pk_E.bin", pk_E);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_CLIENT + "pk_E_q.bin", pk_E_q);
+    // Receive E_q_Rho.first
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho.first from Server Beta");
+        return -1;
+    }
+    E_q_Rho.first = mpz_class(std::string(net_buf, received_sz));
 
-    //TODO Segmentation fault Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_CLIENT + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
-    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_CLIENT + "pk_F.bin", pk_F, SerType::BINARY);
+    // Receive E_q_Rho.second
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho.second from Server Beta");
+        return -1;
+    }
+    E_q_Rho.second = mpz_class(std::string(net_buf, received_sz));
+
+    //Save parameters to local files
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "p.bin", p);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "q.bin", q);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g.bin", g);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "r.bin", r);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E.bin", pk_E);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E_q.bin", pk_E_q);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_1.bin", E_q_Rho.first);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_2.bin", E_q_Rho.second);
+
+    Serial::SerializeToFile(MATERIALS_LOCATION_CLIENT + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::SerializeToFile(MATERIALS_LOCATION_CLIENT + "pk_F.bin", pk_F, SerType::BINARY);
 
     return 0;
 }
@@ -172,6 +192,67 @@ static int FinClient(){
     }    
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized the client");
+
+    return ret;
+}
+
+
+static int ShelterTagDetermination_Client(uint64_t I){
+    int ret = -1;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C_h_alpha0;
+    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I;
+    mpz_class h_C, h_C_1;
+    std::pair<mpz_class, mpz_class> E_q_h_C;
+    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I__mul__h_C;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_h_alpha0;
+
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    
+    /* Step 1 */
+    E_q_Rho_pow_I = ElGamal_q_exp_ct(E_q_Rho, mpz_class(I), pk_E_q);
+
+    /* Step 2.1 */
+    h_C = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    /* Step 2.1.1 figure out its inverse */
+    mpz_invert(h_C_1.get_mpz_t(), h_C.get_mpz_t(), q.get_mpz_t());
+
+    /* Step 2.2.1 */
+    E_q_h_C = ElGamal_q_encrypt(h_C, pk_E_q);
+
+    /* Step 2.2.2 */
+    E_q_Rho_pow_I__mul__h_C = ElGamal_q_mult_ct(E_q_Rho_pow_I, E_q_h_C);
+
+    /* Step 2.3.1 */
+    (void)sendAll(sock_client_to_beta, E_q_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_q_Rho_pow_I__mul__h_C.first.get_str().size());
+    (void)sendAll(sock_client_to_beta, E_q_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_q_Rho_pow_I__mul__h_C.second.get_str().size());
+
+    // Step 6.1 Receive the first component of E_g_pow_Rho_pow_I__mul__h_C_h_alpha0
+    ret_recv = recvAll(sock_client_to_alpha, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first from the Server Alpha");
+        return -1;
+    }
+    E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first = mpz_class(std::string(net_buf, received_sz));
+
+    // Step 6.2 Receive the second component of E_g_pow_Rho_pow_I__mul__h_C_h_alpha0
+    ret_recv = recvAll(sock_client_to_alpha, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second from the Server Alpha");
+        return -1;
+    }
+    E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second = mpz_class(std::string(net_buf, received_sz));
+
+    // Step 7.1 Semi-homomorphically raises that to h_C_1 under ElGamal encryption in GG to remove h_C
+    E_g_pow_Rho_pow_I__mul_h_alpha0 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul__h_C_h_alpha0, h_C_1, pk_E);
+
+    /* Step 7.2 Send Both the components of the resulting ciphtext to server Alpha */
+    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I__mul_h_alpha0.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_h_alpha0.first.get_str().size());
+    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I__mul_h_alpha0.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_h_alpha0.second.get_str().size());
+
+
 
     return ret;
 }
@@ -203,6 +284,9 @@ int main(int argc, char *argv[])
 
         /* Perform the basic initialization */
         InitClient();
+
+        /* Shelter-tag determination */
+        ShelterTagDetermination_Client(I);
     }
     else
     {

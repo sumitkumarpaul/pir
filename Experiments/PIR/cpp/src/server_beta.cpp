@@ -292,7 +292,6 @@ Most expensive operation is exponentiation
 /* TODO: This function, currently does not matches with the diagram of the paper. It has to be updated or the diagram has to be modified. */
 static int PerEpochOperations_beta(){
     int ret = 0;
-    std::pair<mpz_class, mpz_class> E_q_Rho;
     // RNG: mt19937 seeded from random_device
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -552,6 +551,17 @@ static int ProcessClientRequest_beta(){
     int opt = 1;
     int addrlen = sizeof(address);
     int accepted_socket = -1;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I__mul__h_C;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
+    mpz_class Rho_pow_I__mul__h_C;
+    mpz_class g_pow_Rho_pow_I__mul__h_C;
+    mpz_class g_pow_Rho_pow_I__mul_a_mul_c;
+    mpz_class widehat_T_I, widehat_t_I;
+    //TODO Load it from the disk
+    mpz_class b = mpz_class(0);    
+
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting Processing client request");
 
@@ -565,6 +575,9 @@ static int ProcessClientRequest_beta(){
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
     pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
     sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
+    E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
+
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
@@ -575,7 +588,7 @@ static int ProcessClientRequest_beta(){
     
     /* TODO: Retrieve K from the serialized data */
 
-    while (K < sqrt_N){
+    while (K < sqrt_N){        
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
 
         ret = InitAcceptingSocket(BETA_LISTENING_TO_CLIENT_PORT, &sock_beta_client_srv, &sock_beta_client_con);
@@ -599,7 +612,71 @@ static int ProcessClientRequest_beta(){
         (void)sendAll(sock_beta_client_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
         (void)sendAll(sock_beta_client_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
         (void)sendAll(sock_beta_client_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
-        
+        (void)sendAll(sock_beta_client_con, E_q_Rho.first.get_str().c_str(), E_q_Rho.first.get_str().size());
+        (void)sendAll(sock_beta_client_con, E_q_Rho.second.get_str().c_str(), E_q_Rho.second.get_str().size());
+
+        /* Step 2.3.2.1 of the sequence diagram */
+        // Receive E_q_Rho_pow_I__mul__h_C.first
+        ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho_pow_I__mul__h_C.first from the client");
+            return -1;
+        }
+        /* From now on, starting client request processing */
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta starts client request processing from this point");
+
+        E_q_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
+
+        /* Step 2.3.2.1 of the sequence diagram */
+        // Receive E_q_Rho_pow_I__mul__h_C.second
+        ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho_pow_I__mul__h_C.second from the client");
+            return -1;
+        }
+        E_q_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
+
+        /* Step 3 */
+        Rho_pow_I__mul__h_C = ElGamal_q_decrypt(E_q_Rho_pow_I__mul__h_C, sk_E_q);
+
+        /* Step 4.1 perform g^{Rho_pow_I__mul__h_C} mod p */
+        mpz_powm(g_pow_Rho_pow_I__mul__h_C.get_mpz_t(), g.get_mpz_t(), Rho_pow_I__mul__h_C.get_mpz_t(), p.get_mpz_t());
+        /* Step 4.2 Encrypts under ElGamal encryption in GG */
+        std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C = ElGamal_encrypt(g_pow_Rho_pow_I__mul__h_C, pk_E);
+        /* Step 4.3 Send both the coponents of the ciphtertext to Server alpha */
+        (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.first.get_str().size());
+        (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.second.get_str().size());
+
+        /* Step 10.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
+        ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a_mul_c.first from the Server Gamma");
+            return -1;
+        }
+        E_g_pow_Rho_pow_I__mul_a_mul_c.first = mpz_class(std::string(net_buf, received_sz));
+
+        /* Step 10.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
+        ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret_recv != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a_mul_c.second from the Server Gamma");
+            return -1;
+        }
+        E_g_pow_Rho_pow_I__mul_a_mul_c.second = mpz_class(std::string(net_buf, received_sz));
+
+        /* Step 11.1 Decrypt E_g_pow_Rho_pow_I__mul_a_mul_c  */
+        g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_decrypt(E_g_pow_Rho_pow_I__mul_a_mul_c, sk_E);
+
+        /* Step 11.2 Determine the shelter tag, \widehat{T_I}  */
+        widehat_T_I = (g_pow_Rho_pow_I__mul_a_mul_c * b) % p;
+
+        /* Step 11.3 Determine \widehat{t_I} */
+        widehat_t_I = g_pow_Rho_pow_I__mul_a_mul_c % r;
+
+
         /* Close the connection with existing client */
         close(sock_beta_client_srv);
         close(sock_beta_client_con);
@@ -1646,7 +1723,7 @@ int main(int argc, char *argv[]){
             TestSrv_beta();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|continue>");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
         }
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|continue>");

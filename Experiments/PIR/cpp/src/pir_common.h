@@ -67,7 +67,7 @@ extern std::string completed_reinit_for_epoch_message;
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       16//65536//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  4//256//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
+#define sqrt_N  16//256//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -100,6 +100,7 @@ extern gmp_randclass rng;
 
 // Global ElGamal parameters
 extern mpz_class p, q, r, g, g_q;
+extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
 

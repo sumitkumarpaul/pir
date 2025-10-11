@@ -9,6 +9,7 @@ gmp_randclass rng(gmp_randinit_default);
 
 // Global ElGamal parameters
 mpz_class p, q, r, g, g_q;
+std::pair<mpz_class, mpz_class> E_q_Rho;
 
 // El-Gamal encryption keys
 mpz_class pk_E, pk_E_q;
@@ -313,6 +314,7 @@ int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz) {
     // Step 1: Receive the size
     ssize_t sz_len = recv(sock, buf, sizeof(buf), 0);
     if (sz_len <= 0) {
+        fprintf(stderr, "recv error: %s (%d)\n", strerror(errno), errno);
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive data size");
         return -1;
     }
