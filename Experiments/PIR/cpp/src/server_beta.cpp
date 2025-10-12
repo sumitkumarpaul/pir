@@ -10,7 +10,6 @@ static char net_buf[NET_BUF_SZ] = {0};
 static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
 static int sock_beta_client_srv = -1, sock_beta_client_con = -1;
-static mpz_class Rho;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
 static std::fstream D_K;
@@ -559,9 +558,6 @@ static int ProcessClientRequest_beta(){
     mpz_class g_pow_Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul_a_mul_c;
     mpz_class widehat_T_I, widehat_t_I;
-    //TODO Load it from the disk
-    mpz_class b = mpz_class(0);    
-
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Starting Processing client request");
 
@@ -577,6 +573,7 @@ static int ProcessClientRequest_beta(){
     sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
     E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
     E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
+    Rho = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin");
 
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
@@ -585,6 +582,9 @@ static int ProcessClientRequest_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
+
+    //TODO Load it from the disk
+    mpz_class b = rng.get_z_range(p);    
     
     /* TODO: Retrieve K from the serialized data */
 
@@ -676,6 +676,36 @@ static int ProcessClientRequest_beta(){
         /* Step 11.3 Determine \widehat{t_I} */
         widehat_t_I = g_pow_Rho_pow_I__mul_a_mul_c % r;
 
+        /* TODO: This step is only for verification */
+        mpz_class RhoExpI, gExp_RhoExpI;
+        /* It is known that the client will issue I = 1, a = 1 and c = 3 */
+        mpz_class I = mpz_class(1);
+        mpz_class a = mpz_class(1);
+        mpz_class c = mpz_class(3);
+
+        printf("Enter the value of I (base 10): ");
+        mpz_inp_str(I.get_mpz_t(), stdin, 10);
+        printf("Enter the value of a (base 10): ");
+        mpz_inp_str(a.get_mpz_t(), stdin, 10);
+        printf("Enter the value of c (base 10): ");
+        mpz_inp_str(c.get_mpz_t(), stdin, 10);
+
+        mpz_powm(RhoExpI.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());//Since this is an exponenet
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated expected RhoExpI: " + RhoExpI.get_str());
+
+        mpz_powm(gExp_RhoExpI.get_mpz_t(), g.get_mpz_t(), RhoExpI.get_mpz_t(), p.get_mpz_t());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated expected RhoExpI: " + gExp_RhoExpI.get_str());
+
+        mpz_class expected_widehat_T_I = (gExp_RhoExpI * a * b * c) % p;
+        if (expected_widehat_T_I != widehat_T_I)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated widehat_T_I does not match: expected " + expected_widehat_T_I.get_str() + ", got " + widehat_T_I.get_str());
+        }
+        else
+        {
+            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "widehat_T_I matched with expected value. Haha..Thank you..:) :) ");
+        }
+        /* Upto this point, for the verification of shelter_tag_determination flow */
 
         /* Close the connection with existing client */
         close(sock_beta_client_srv);

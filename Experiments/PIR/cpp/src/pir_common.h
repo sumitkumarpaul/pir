@@ -99,7 +99,7 @@ extern std::string completed_reinit_for_epoch_message;
 extern gmp_randclass rng;
 
 // Global ElGamal parameters
-extern mpz_class p, q, r, g, g_q;
+extern mpz_class p, q, r, g, g_q, Rho;
 extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;

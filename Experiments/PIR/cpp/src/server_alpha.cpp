@@ -435,8 +435,6 @@ static int ProcessClientRequest_alpha(){
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I;
     std::pair<mpz_class, mpz_class> E_a;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
-    //TODO Load it from the disk
-    mpz_class a = mpz_class(0);
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting Request processing sequence");
 
@@ -454,6 +452,9 @@ static int ProcessClientRequest_alpha(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
+
+    //TODO Load it from the disk
+    mpz_class a = rng.get_z_range(p);
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -557,6 +558,8 @@ static int ProcessClientRequest_alpha(){
         // Step 9.4.1 Send the second part of the ciphertext to the Server Gamma
         (void)sendAll(sock_alpha_to_gamma, E_g_pow_Rho_pow_I__mul_a.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a.second.get_str().size());
 
+        /* This is only for experimentation purpose */
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen a is: " + a.get_str());
 
         /* Close the connection with existing client */
         close(sock_alpha_client_srv);

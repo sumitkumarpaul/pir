@@ -405,11 +405,7 @@ static int ProcessClientRequest_gamma(){
     std::ifstream importedHFile;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
-    std::pair<mpz_class, mpz_class> E_c;
-
-    //TODO Load it from the disk
-    mpz_class c = mpz_class(0);    
-      
+    std::pair<mpz_class, mpz_class> E_c;      
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting Request processing sequence");
 
@@ -427,6 +423,9 @@ static int ProcessClientRequest_gamma(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
+    
+    //TODO Load it from the disk
+    mpz_class c = rng.get_z_range(p);
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -493,6 +492,8 @@ static int ProcessClientRequest_gamma(){
         // Step 10.4.1 Send the second part to the server Beta
         (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().size());
 
+        /* This is only for experimentation purpose */
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen c is: " + c.get_str());
 
 
         /* Close the connection with existing client */
