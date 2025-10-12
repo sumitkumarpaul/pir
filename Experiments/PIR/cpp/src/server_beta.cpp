@@ -16,6 +16,7 @@ static std::fstream D_K;
 static std::fstream D_alpha;
 static std::fstream D_gamma;
 static uint64_t K;/* The number of requests processed till now */
+static mpz_class b;
 
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
@@ -214,15 +215,6 @@ static int InitSrv_beta(){
         goto exit;
     }
     
-    #if 0
-    ret = InitListeningSocket(BETA_LISTENING_TO_CLIENT_PORT, &sock_beta_client_srv);
-    if (ret != 0) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot open listening socket for client!!");
-        ret = -1;
-        goto exit;
-    }
-    #endif
-
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
 exit:
     if (ret != 0){
@@ -515,6 +507,12 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
 
+    K = 0;
+    b = 1;/* Additional step, not mentioned in the flow diagram */
+    /* Store them into the disk */
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin", K);
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "b.bin", b);
+
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
 exit:
     //mpz_clear(tmp);
@@ -554,6 +552,7 @@ static int ProcessClientRequest_beta(){
     int ret_recv = 0;
     std::pair<mpz_class, mpz_class> E_q_Rho_pow_I__mul__h_C;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C;
     mpz_class Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul_a_mul_c;
@@ -583,10 +582,9 @@ static int ProcessClientRequest_beta(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
-    //TODO Load it from the disk
-    mpz_class b = rng.get_z_range(p);    
-    
-    /* TODO: Retrieve K from the serialized data */
+    //Load K and b from the disk
+    K = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin").get_ui();
+    b = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "b.bin");
 
     while (K < sqrt_N){        
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
@@ -644,7 +642,7 @@ static int ProcessClientRequest_beta(){
         /* Step 4.1 perform g^{Rho_pow_I__mul__h_C} mod p */
         mpz_powm(g_pow_Rho_pow_I__mul__h_C.get_mpz_t(), g.get_mpz_t(), Rho_pow_I__mul__h_C.get_mpz_t(), p.get_mpz_t());
         /* Step 4.2 Encrypts under ElGamal encryption in GG */
-        std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C = ElGamal_encrypt(g_pow_Rho_pow_I__mul__h_C, pk_E);
+        E_g_pow_Rho_pow_I__mul__h_C = ElGamal_encrypt(g_pow_Rho_pow_I__mul__h_C, pk_E);
         /* Step 4.3 Send both the coponents of the ciphtertext to Server alpha */
         (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.first.get_str().size());
         (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.second.get_str().size());
@@ -677,11 +675,7 @@ static int ProcessClientRequest_beta(){
         widehat_t_I = g_pow_Rho_pow_I__mul_a_mul_c % r;
 
         /* TODO: This step is only for verification */
-        mpz_class RhoExpI, gExp_RhoExpI;
-        /* It is known that the client will issue I = 1, a = 1 and c = 3 */
-        mpz_class I = mpz_class(1);
-        mpz_class a = mpz_class(1);
-        mpz_class c = mpz_class(3);
+        mpz_class RhoExpI, gExp_RhoExpI, I, a, c;
 
         printf("Enter the value of I (base 10): ");
         mpz_inp_str(I.get_mpz_t(), stdin, 10);
@@ -707,12 +701,23 @@ static int ProcessClientRequest_beta(){
         }
         /* Upto this point, for the verification of shelter_tag_determination flow */
 
+
+
+        /* Other sequences */
+        a = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+
+
+
+
+
         /* Close the connection with existing client */
         close(sock_beta_client_srv);
         close(sock_beta_client_con);
 
         K++;
-        /* TODO: Store updated value of K in the disk */
+        /* Store updated values of K and b in the disk */
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin", mpz_class(K));
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "a.bin", mpz_class(a));
     }
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");

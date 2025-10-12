@@ -32,6 +32,7 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 static KukuTable *HTable = nullptr;
 
 std::pair<mpz_class, mpz_class> E_T_I;
+static mpz_class a;
 
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 #define NUM_CPU_CORES 16
@@ -395,8 +396,12 @@ static int PerEpochOperations_alpha(){
 
     // 14.a. Clear the shelter count as well by setting it to zero
     K = 0;
+    a = 1;/* Additional step, not mentioned in the flow diagram */
+    /* Store them into the disk */
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "K.bin", mpz_class(K));
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "a.bin", a);
 
-    //TODO: Store the cuckoo table in the disk
+    //Store the cuckoo table in the disk
     exportedHFile.open(HTable_filename, std::ios::binary);
     HTable->serialize(exportedHFile);
     exportedHFile.close();
@@ -453,8 +458,9 @@ static int ProcessClientRequest_alpha(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
-    //TODO Load it from the disk
-    mpz_class a = rng.get_z_range(p);
+    //Load K and a from the disk
+    K = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "K.bin").get_ui();
+    a = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "a.bin");
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -471,8 +477,6 @@ static int ProcessClientRequest_alpha(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded hash table into the RAM");
-
-    /* TODO: Retrieve K from the serialized data */
 
     /* TODO: Load the shelter into the RAM */
 
@@ -561,11 +565,20 @@ static int ProcessClientRequest_alpha(){
         /* This is only for experimentation purpose */
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen a is: " + a.get_str());
 
+
+        /* Other sequences */
+        a = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+
+
+
+
         /* Close the connection with existing client */
         close(sock_alpha_client_srv);
         close(sock_alpha_client_con);  
         K++;
-        /* TODO: Store updated value of K in the disk */
+
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "K.bin", mpz_class(K));
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_ALPHA + "a.bin", mpz_class(a));
     }
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");

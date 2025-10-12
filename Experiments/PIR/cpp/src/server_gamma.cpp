@@ -35,6 +35,8 @@ mpz_class T_star;
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
 
+static mpz_class c;
+
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/")
@@ -371,8 +373,12 @@ static int PerEpochOperations_gamma(){
 
     // 14.c. Clear the shelter count as well by setting it to zero
     K = 0;
+    c = 1;/* Additional step, not mentioned in the flow diagram */
+    /* Store them into the disk */
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin", mpz_class(K));
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin", c);
 
-    //TODO: Store the cuckoo table in the disk
+    //Store the cuckoo table in the disk
     exportedHFile.open(HTable_filename, std::ios::binary);
     HTable->serialize(exportedHFile);
     exportedHFile.close();   
@@ -424,8 +430,9 @@ static int ProcessClientRequest_gamma(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
     
-    //TODO Load it from the disk
-    mpz_class c = rng.get_z_range(p);
+    //Load K and c from the disk
+    K = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin").get_ui();
+    c = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin");
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -442,8 +449,6 @@ static int ProcessClientRequest_gamma(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded hash table into the RAM");
-
-    /* TODO: Retrieve K from the serialized data */
 
     /* TODO: Load the shelter into the RAM */
 
@@ -496,11 +501,21 @@ static int ProcessClientRequest_gamma(){
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen c is: " + c.get_str());
 
 
+        /* Other sequences */
+        c = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+
+
+
+
+
+
         /* Close the connection with existing client */
         close(sock_gamma_client_srv);
         close(sock_gamma_client_con);
         K++;
-        /* TODO: Store updated value of K in the disk */
+
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin", mpz_class(K));
+        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin", mpz_class(c));
     }
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
