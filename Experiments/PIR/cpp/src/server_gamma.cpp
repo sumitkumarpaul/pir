@@ -51,6 +51,7 @@ static int OneTimeInit_gamma();
 static int SelShuffDBSearchTag_gamma();
 static int PerEpochOperations_gamma();
 static int ProcessClientRequest_gamma();
+static int ShelterTagDetermination_gamma();
 
 static int FinSrv_gamma();
 
@@ -391,16 +392,56 @@ exit:
     return ret;
 }
 
+static int ShelterTagDetermination_gamma(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;    
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
+    std::pair<mpz_class, mpz_class> E_c;
+
+    // Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha));
+    ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.first from the Server Alpha");
+        return -1;
+    }
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma starts client request processing from this point");
+
+    E_g_pow_Rho_pow_I__mul_a.first = mpz_class(std::string(net_buf, received_sz));
+
+    // Step 9.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a
+    ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.second from the Server Alpha");
+        return -1;
+    }
+    E_g_pow_Rho_pow_I__mul_a.second = mpz_class(std::string(net_buf, received_sz));
+
+    // Step 10.1 Compute the ciphertext of c
+    E_c = ElGamal_encrypt(c, pk_E);
+
+    // Step 10.2. Multiply homomorphically
+    E_g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_mult_ct(E_g_pow_Rho_pow_I__mul_a, E_c);
+
+    // Step 10.3.1 Send the first part to the server Beta
+    (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().size());
+
+    // Step 10.4.1 Send the second part to the server Beta
+    (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().size());
+
+    /* This is only for experimentation purpose */
+    //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen c is: " + c.get_str());
+
+    return ret;
+}
 
 //TODO static int ResumeRequestProcessing_gamma(){
 static int ProcessClientRequest_gamma(){
     int ret = -1;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-    int accepted_socket = -1;
-    size_t received_sz = 0;
-    int ret_recv = 0;    
     shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
     item_type Kuku_key;    
@@ -409,9 +450,6 @@ static int ProcessClientRequest_gamma(){
     std::fstream DK;
     std::fstream sdb;
     std::ifstream importedHFile;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
-    std::pair<mpz_class, mpz_class> E_c;      
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting Request processing sequence");
 
@@ -453,7 +491,7 @@ static int ProcessClientRequest_gamma(){
     /* TODO: Load the shelter into the RAM */
 
     while (K < sqrt_N){
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for a connection from the client..!!");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for processing the PIR request number: "+ std::to_string(K+1) +" from the client..!!");
 
         ret = InitAcceptingSocket(GAMMA_LISTENING_TO_CLIENT_PORT, &sock_gamma_client_srv, &sock_gamma_client_con);
 
@@ -464,41 +502,14 @@ static int ProcessClientRequest_gamma(){
             goto exit;
         }
 
-        // Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha));
-        ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret_recv != 0)
+        ret = ShelterTagDetermination_gamma();
+        if (ret != 0)
         {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.first from the Server Alpha");
-            return -1;
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem while determining the shelter tag..!!");
+            ret = -1;
+            goto exit;
         }
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma starts client request processing from this point");
 
-        E_g_pow_Rho_pow_I__mul_a.first = mpz_class(std::string(net_buf, received_sz));
-
-        // Step 9.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a
-        ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret_recv != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.second from the Server Alpha");
-            return -1;
-        }
-        E_g_pow_Rho_pow_I__mul_a.second = mpz_class(std::string(net_buf, received_sz));
-
-        // Step 10.1 Compute the ciphertext of c
-        E_c = ElGamal_encrypt(c, pk_E);
-
-        // Step 10.2. Multiply homomorphically
-        E_g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_mult_ct(E_g_pow_Rho_pow_I__mul_a, E_c);
-
-        // Step 10.3.1 Send the first part to the server Beta
-        (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().size());
-
-        // Step 10.4.1 Send the second part to the server Beta
-        (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().size());
-
-        /* This is only for experimentation purpose */
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen c is: " + c.get_str());
 
 
         /* Other sequences */
