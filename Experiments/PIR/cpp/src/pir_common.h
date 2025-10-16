@@ -24,6 +24,9 @@
 #include <openfhe.h>
 #include <kuku/kuku.h>
 
+#include "fss/fss-common.h"
+#include "fss/fss-server.h"
+#include "fss/fss-client.h"
 
 #include "ciphertext-ser.h"
 #include "cryptocontext-ser.h"
@@ -177,3 +180,7 @@ extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entr
 
 extern void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item);
 extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item);
+
+// FSS helper functions
+extern size_t deserializeFssAndServerKeyEq(const char* buff, size_t buff_size, Fss& fss, ServerKeyEq& key);
+extern size_t serializeFssAndServerKeyEq(const Fss& fss, const ServerKeyEq& key, char* buff, size_t buff_size);

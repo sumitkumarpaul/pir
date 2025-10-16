@@ -658,3 +658,183 @@ void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::a
         out_item[i] ^= buf[quotient * out_item.size() + i];
     }
 }
+
+// Serialize Fss and ServerKeyEq into a buffer
+size_t serializeFssAndServerKeyEq(const Fss& fss, const ServerKeyEq& key, char* buff, size_t buff_size) {
+    size_t offset = 0;
+
+    // --- Serialize Fss ---
+    // numBits
+    if (offset + sizeof(fss.numBits) > buff_size) return 0;
+    memcpy(buff + offset, &fss.numBits, sizeof(fss.numBits));
+    offset += sizeof(fss.numBits);
+
+    // prime as string
+    std::string prime_str = fss.prime.get_str();
+    uint32_t prime_len = prime_str.size();
+    if (offset + sizeof(prime_len) + prime_len > buff_size) return 0;
+    memcpy(buff + offset, &prime_len, sizeof(prime_len));
+    offset += sizeof(prime_len);
+    memcpy(buff + offset, prime_str.data(), prime_len);
+    offset += prime_len;
+
+    // numParties
+    if (offset + sizeof(fss.numParties) > buff_size) return 0;
+    memcpy(buff + offset, &fss.numParties, sizeof(fss.numParties));
+    offset += sizeof(fss.numParties);
+
+    // numKeys
+    if (offset + sizeof(fss.numKeys) > buff_size) return 0;
+    memcpy(buff + offset, &fss.numKeys, sizeof(fss.numKeys));
+    offset += sizeof(fss.numKeys);
+
+    // AES_KEYs (field-wise)
+    for (uint32_t i = 0; i < fss.numKeys; ++i) {
+        // AES_KEY is typically a struct with an array and ints
+        // Serialize each field individually for portability
+        for (size_t k = 0; k < sizeof(fss.aes_keys[i].rd_key)/sizeof(fss.aes_keys[i].rd_key[0]); ++k) {
+            if (offset + sizeof(fss.aes_keys[i].rd_key[0]) > buff_size) return 0;
+            memcpy(buff + offset, &fss.aes_keys[i].rd_key[k], sizeof(fss.aes_keys[i].rd_key[0]));
+            offset += sizeof(fss.aes_keys[i].rd_key[0]);
+        }
+        if (offset + sizeof(fss.aes_keys[i].rounds) > buff_size) return 0;
+        memcpy(buff + offset, &fss.aes_keys[i].rounds, sizeof(fss.aes_keys[i].rounds));
+        offset += sizeof(fss.aes_keys[i].rounds);
+    }
+
+    // --- Serialize ServerKeyEq ---
+    // s (unsigned char s[2][16])
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 16; ++j) {
+            if (offset + sizeof(key.s[i][j]) > buff_size) return 0;
+            memcpy(buff + offset, &key.s[i][j], sizeof(key.s[i][j]));
+            offset += sizeof(key.s[i][j]);
+        }
+    }
+    // t (unsigned char t[2])
+    for (int i = 0; i < 2; ++i) {
+        if (offset + sizeof(key.t[i]) > buff_size) return 0;
+        memcpy(buff + offset, &key.t[i], sizeof(key.t[i]));
+        offset += sizeof(key.t[i]);
+    }
+
+    // cw[2][n-1] (CWEq* arrays)
+    uint32_t cw_array_size = fss.numBits - 1;
+    for (int i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < cw_array_size; ++j) {
+            // CWEq field-wise: cs[2][16], ct[2]
+            for (int cs_i = 0; cs_i < 2; ++cs_i) {
+                for (int cs_j = 0; cs_j < 16; ++cs_j) {
+                    if (offset + sizeof(key.cw[i][j].cs[cs_i][cs_j]) > buff_size) return 0;
+                    memcpy(buff + offset, &key.cw[i][j].cs[cs_i][cs_j], sizeof(key.cw[i][j].cs[cs_i][cs_j]));
+                    offset += sizeof(key.cw[i][j].cs[cs_i][cs_j]);
+                }
+            }
+            for (int ct_i = 0; ct_i < 2; ++ct_i) {
+                if (offset + sizeof(key.cw[i][j].ct[ct_i]) > buff_size) return 0;
+                memcpy(buff + offset, &key.cw[i][j].ct[ct_i], sizeof(key.cw[i][j].ct[ct_i]));
+                offset += sizeof(key.cw[i][j].ct[ct_i]);
+            }
+        }
+    }
+
+    // w as string
+    std::string w_str = key.w.get_str();
+    uint32_t w_len = w_str.size();
+    if (offset + sizeof(w_len) + w_len > buff_size) return 0;
+    memcpy(buff + offset, &w_len, sizeof(w_len));
+    offset += sizeof(w_len);
+    memcpy(buff + offset, w_str.data(), w_len);
+    offset += w_len;
+
+    return offset; // total bytes written
+}
+
+// Deserialize Fss and ServerKeyEq from a buffer
+size_t deserializeFssAndServerKeyEq(const char* buff, size_t buff_size, Fss& fss, ServerKeyEq& key) {
+    size_t offset = 0;
+
+    // --- Deserialize Fss ---
+    if (offset + sizeof(fss.numBits) > buff_size) return 0;
+    memcpy(&fss.numBits, buff + offset, sizeof(fss.numBits));
+    offset += sizeof(fss.numBits);
+
+    uint32_t prime_len;
+    if (offset + sizeof(prime_len) > buff_size) return 0;
+    memcpy(&prime_len, buff + offset, sizeof(prime_len));
+    offset += sizeof(prime_len);
+
+    if (offset + prime_len > buff_size) return 0;
+    std::string prime_str(buff + offset, prime_len);
+    fss.prime = mpz_class(prime_str);
+    offset += prime_len;
+
+    if (offset + sizeof(fss.numParties) > buff_size) return 0;
+    memcpy(&fss.numParties, buff + offset, sizeof(fss.numParties));
+    offset += sizeof(fss.numParties);
+
+    if (offset + sizeof(fss.numKeys) > buff_size) return 0;
+    memcpy(&fss.numKeys, buff + offset, sizeof(fss.numKeys));
+    offset += sizeof(fss.numKeys);
+
+    fss.aes_keys = new AES_KEY[fss.numKeys];
+    for (uint32_t i = 0; i < fss.numKeys; ++i) {
+        for (size_t k = 0; k < sizeof(fss.aes_keys[i].rd_key)/sizeof(fss.aes_keys[i].rd_key[0]); ++k) {
+            if (offset + sizeof(fss.aes_keys[i].rd_key[0]) > buff_size) return 0;
+            memcpy(&fss.aes_keys[i].rd_key[k], buff + offset, sizeof(fss.aes_keys[i].rd_key[0]));
+            offset += sizeof(fss.aes_keys[i].rd_key[0]);
+        }
+        if (offset + sizeof(fss.aes_keys[i].rounds) > buff_size) return 0;
+        memcpy(&fss.aes_keys[i].rounds, buff + offset, sizeof(fss.aes_keys[i].rounds));
+        offset += sizeof(fss.aes_keys[i].rounds);
+    }
+
+    // --- Deserialize ServerKeyEq ---
+    // s (unsigned char s[2][16])
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 16; ++j) {
+            if (offset + sizeof(key.s[i][j]) > buff_size) return 0;
+            memcpy(&key.s[i][j], buff + offset, sizeof(key.s[i][j]));
+            offset += sizeof(key.s[i][j]);
+        }
+    }
+    // t (unsigned char t[2])
+    for (int i = 0; i < 2; ++i) {
+        if (offset + sizeof(key.t[i]) > buff_size) return 0;
+        memcpy(&key.t[i], buff + offset, sizeof(key.t[i]));
+        offset += sizeof(key.t[i]);
+    }
+
+    // cw[2][n-1] (CWEq* arrays)
+    uint32_t cw_array_size = fss.numBits - 1;
+    for (int i = 0; i < 2; ++i) {
+        key.cw[i] = (CWEq*) malloc(sizeof(CWEq) * cw_array_size);//TODO: Free memory after usage
+        for (uint32_t j = 0; j < cw_array_size; ++j) {
+            // CWEq field-wise: cs[2][16], ct[2]
+            for (int cs_i = 0; cs_i < 2; ++cs_i) {
+                for (int cs_j = 0; cs_j < 16; ++cs_j) {
+                    if (offset + sizeof(key.cw[i][j].cs[cs_i][cs_j]) > buff_size) return 0;
+                    memcpy(&key.cw[i][j].cs[cs_i][cs_j], buff + offset, sizeof(key.cw[i][j].cs[cs_i][cs_j]));
+                    offset += sizeof(key.cw[i][j].cs[cs_i][cs_j]);
+                }
+            }
+            for (int ct_i = 0; ct_i < 2; ++ct_i) {
+                if (offset + sizeof(key.cw[i][j].ct[ct_i]) > buff_size) return 0;
+                memcpy(&key.cw[i][j].ct[ct_i], buff + offset, sizeof(key.cw[i][j].ct[ct_i]));
+                offset += sizeof(key.cw[i][j].ct[ct_i]);
+            }
+        }
+    }
+
+    uint32_t w_len;
+    if (offset + sizeof(w_len) > buff_size) return 0;
+    memcpy(&w_len, buff + offset, sizeof(w_len));
+    offset += sizeof(w_len);
+
+    if (offset + w_len > buff_size) return 0;
+    std::string w_str(buff + offset, w_len);
+    key.w = mpz_class(w_str);
+    offset += w_len;
+
+    return offset; // total bytes read
+}

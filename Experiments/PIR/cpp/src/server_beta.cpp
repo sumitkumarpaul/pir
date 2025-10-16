@@ -17,6 +17,11 @@ static std::fstream D_alpha;
 static std::fstream D_gamma;
 static uint64_t K;/* The number of requests processed till now */
 static mpz_class b;
+static mpz_class widehat_t_I;
+
+static shelter_element sh[sqrt_N]; /* TODO For debugging only */
+#define NUM_CPU_CORES 16 /* TODO For debugging only */
+#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/") /* TODO For debugging only */
 
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
@@ -45,6 +50,7 @@ static int PerEpochOperations_beta();
 static int CreateRandomDatabase();
 static int ProcessClientRequest_beta();
 static int ShelterTagDetermination_beta();
+static int ObliviouslySearchShelter_beta();
 
 static void TestSrv_beta();
 
@@ -508,12 +514,6 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
 
-    K = 0;
-    b = 1;/* Additional step, not mentioned in the flow diagram */
-    /* Store them into the disk */
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin", K);
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "b.bin", b);
-
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
 exit:
     //mpz_clear(tmp);
@@ -553,7 +553,7 @@ static int ShelterTagDetermination_beta(){
     mpz_class Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul_a_mul_c;
-    mpz_class widehat_T_I, widehat_t_I;    
+    mpz_class widehat_T_I;    
 
     /* Step 2.3.2.1 of the sequence diagram */
     // Receive E_q_Rho_pow_I__mul__h_C.first
@@ -648,6 +648,148 @@ static int ShelterTagDetermination_beta(){
     return ret;
 }
 
+static int ObliviouslySearchShelter_beta() {
+    // Set up variables
+    Fss fClient, fServer;
+    ServerKeyEq K_alpha;
+    ServerKeyEq K_gamma;
+    size_t serializedFssSize;
+    int ret = 0;
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generating DPF keys");
+
+    // Step 1.1 Initialize client, use 64 bits in domain as example
+    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+
+    // Step 1.2 Generate keys for equality FSS test
+    generateTreeEq(&fClient, &K_alpha, &K_gamma, widehat_t_I, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+
+    // Step 1.3 Initialize server structure
+    initializeServer(&fServer, &fClient);
+    serializedFssSize = serializeFssAndServerKeyEq(fServer, K_alpha, net_buf, sizeof(net_buf));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the serialized data: " + std::to_string(serializedFssSize));
+
+    /* TODO Dummy print to verify the gmp_class is actually got transferred */
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending values from server Beta is: ");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_alpha.w: " + (K_alpha.w).get_str());
+
+    /* 2.a.1 Send the server structure */
+    (void)sendAll(sock_beta_alpha_con, net_buf, serializedFssSize);
+
+    serializedFssSize = serializeFssAndServerKeyEq(fServer, K_gamma, net_buf, sizeof(net_buf));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the serialized data: " + std::to_string(serializedFssSize));
+
+    /* TODO Dummy print to verify the gmp_class is actually got transferred */
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending values from server Beta is: ");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_gamma.w: " + (K_gamma.w).get_str());
+
+
+    (void)sendAll(sock_beta_gamma_con, net_buf, serializedFssSize);
+
+    /* This line is only for testing purpose  */
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The search tag is widehat_t_I: " + widehat_t_I.get_str());
+
+    /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
+#if 1
+    sh[1].tag_short = widehat_t_I;
+
+    {
+        mpz_class d_alpha = 0;
+        std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
+        bool fnd_alpha = false;
+        std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+        for (size_t k = 0; k < K; k += NUM_CPU_CORES)
+        {
+            for (int t = 0; t < NUM_CPU_CORES; ++t)
+                thread_sums[t] = 0;
+
+            #pragma omp parallel for
+            for (int j = 0; j < NUM_CPU_CORES; ++j)
+            {
+                if ((k + j) < K)
+                {
+                    // mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
+                    // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+                    if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short))
+                    {
+                        // import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                        mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
+                        // thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                        // thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+
+                        /* Same as XORing */
+                        thread_fnd[j] = !thread_fnd[j];
+                        printf("1 ");
+                    }else{
+                        printf("0 ");
+                    }
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            // ans0 += thread_sums[t];
+            mpz_xor(d_alpha.get_mpz_t(), d_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
+            fnd_alpha ^= thread_fnd[t];
+        }
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_alpha: " + std::to_string(fnd_alpha));
+    }
+
+    {
+        mpz_class d_gamma = 0;
+        std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
+        bool fnd_gamma = false;
+        std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+        for (size_t k = 0; k < K; k += NUM_CPU_CORES)
+        {
+            for (int t = 0; t < NUM_CPU_CORES; ++t)
+                thread_sums[t] = 0;
+
+            #pragma omp parallel for
+            for (int j = 0; j < NUM_CPU_CORES; ++j)
+            {
+                if ((k + j) < K)
+                {
+                    // mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
+                    // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+                    if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short))
+                    {
+                        // import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                        mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
+                        // thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                        // thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+
+                        /* Same as XORing */
+                        thread_fnd[j] = !thread_fnd[j];
+                        printf("1 ");
+                    }else{
+                        printf("0 ");
+                    }
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            // ans0 += thread_sums[t];
+            mpz_xor(d_gamma.get_mpz_t(), d_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
+            fnd_gamma ^= thread_fnd[t];
+        }
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_gamma: " + std::to_string(fnd_gamma));
+    }
+#endif
+
+    return ret;
+}
+
 static int ProcessClientRequest_beta(){
     int ret = -1;
     struct sockaddr_in address;
@@ -676,9 +818,50 @@ static int ProcessClientRequest_beta(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
-    //Load K and b from the disk
-    K = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin").get_ui();
-    b = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "b.bin");
+    //Always initialize them
+    K = 0;
+    b = 1;
+
+    /* For debugging only */
+#if 1
+    /* Populate the shelter, with random elements */
+    for(size_t k = 0; k < sqrt_N; k++) {
+        //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
+        if (1) {
+            // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
+            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+            /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
+            if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
+            {
+#if 0 /* Already performed this error checking, while doing experimentation for serveral times. Hence ommited */
+            Ciphertext<DCRTPoly> deserialized_tmp_ct;
+            if (Serial::DeserializeFromFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", deserialized_tmp_ct, SerType::BINARY) == false) {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to deserialize element FHE ciphertext from file");
+            } else {
+                if (*(tmp_ct) != *(deserialized_tmp_ct)) {
+                    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Deserialized element FHE ciphertext does not match original");
+                }
+            }
+#endif
+            }
+            else
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
+            }
+        }
+
+        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat", ElGamal_randomGroupElement()%r);
+    }
+    
+    /* Load the shelter into the RAM */
+    for(size_t k = 0; k < sqrt_N; k++) {
+        sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
+
+        /* Generate the tags and keep them in the variable, which will be used for DPF search */
+        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
+    }
+#endif    
 
     while (K < sqrt_N){        
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for processing the PIR request number: "+ std::to_string(K+1) +" from the client..!!");
@@ -715,6 +898,13 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
+        ret = ObliviouslySearchShelter_beta();
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
+            ret = -1;
+            goto exit;
+        }
 
 
 
@@ -730,9 +920,6 @@ static int ProcessClientRequest_beta(){
         close(sock_beta_client_con);
 
         K++;
-        /* Store updated values of K and b in the disk */
-        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "K.bin", mpz_class(K));
-        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "b.bin", mpz_class(b));
     }
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");

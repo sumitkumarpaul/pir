@@ -25,12 +25,14 @@
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
 static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
+#define NUM_CPU_CORES 16
+#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
 
 // The value of N will determine the bitlength during the client initialization
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
-static mpz_class sh[sqrt_N][2]; // Database to store values, each entry is a pair, {Tag, Block-content}.
+static shelter_element sh[sqrt_N];
 mpz_class T_star;
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
@@ -52,6 +54,7 @@ static int SelShuffDBSearchTag_gamma();
 static int PerEpochOperations_gamma();
 static int ProcessClientRequest_gamma();
 static int ShelterTagDetermination_gamma();
+static int ObliviouslySearchShelter_gamma();
 
 static int FinSrv_gamma();
 
@@ -372,12 +375,7 @@ static int PerEpochOperations_gamma(){
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
-    // 14.c. Clear the shelter count as well by setting it to zero
-    K = 0;
-    c = 1;/* Additional step, not mentioned in the flow diagram */
-    /* Store them into the disk */
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin", mpz_class(K));
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin", c);
+    // 14.c. Nothing is required to be done for clearing the shelter content
 
     //Store the cuckoo table in the disk
     exportedHFile.open(HTable_filename, std::ios::binary);
@@ -439,6 +437,164 @@ static int ShelterTagDetermination_gamma(){
     return ret;
 }
 
+
+static int ObliviouslySearchShelter_gamma() {
+    // Set up variables
+    Fss fServer;
+    ServerKeyEq K_gamma;
+    int ret = 0;
+    size_t received_sz = 0;
+    size_t dserializedFssSize;
+
+    // First, receive sk_F from the server Beta
+    ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
+        return -1;
+    }
+
+    dserializedFssSize = deserializeFssAndServerKeyEq(net_buf, received_sz, fServer, K_gamma);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the dserialized data: " + std::to_string(dserializedFssSize));
+
+    /* TODO Dummy print to verify the gmp_class is actually got transferred */
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received values from server Beta is: ");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_gamma.w: " + (K_gamma.w).get_str());
+
+#if 1
+    mpz_class special_tag;
+
+    printf("Enter the value of the set search tag (base 10): ");
+    mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
+
+    sh[1].tag_short = special_tag;
+#endif
+
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+
+#if 0
+    /* Suppose we want to search for k = 2864, a random location */
+    mpz_class T_sh_short = sh[DPF_SEARCH_INDEX_K].tag_short;
+
+    // Initialize client, use 64 bits in domain as example
+    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+
+    // Equality FSS test
+    generateTreeEq(&fClient, &k0, &k1, T_sh_short, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+
+    // Initialize server
+    initializeServer(&fServer, &fClient);
+#endif
+
+    mpz_class d_gamma = 0;
+    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
+    bool fnd_gamma = false;
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    for (size_t k = 0; k < K; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < K)
+            {
+                //mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
+                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+                if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short)) {
+                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
+                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+
+                    /* Same as XORing */
+                    thread_fnd[j] = !thread_fnd[j];
+                    printf("1 ");
+                }
+                else{
+                    printf("0 ");
+                }
+            }
+        }
+    }
+    for (int t = 0; t < NUM_CPU_CORES; ++t)
+    {
+        // ans0 += thread_sums[t];
+        mpz_xor(d_gamma.get_mpz_t(), d_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
+        fnd_gamma ^= thread_fnd[t];
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_gamma: " + std::to_string(fnd_gamma));
+
+#if 0
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < average_shelter_size)
+            {
+                //mpz_class y = (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
+                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
+
+                if (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) {
+                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
+                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
+                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            //ans1 += thread_sums[t];
+            mpz_xor(ans1.get_mpz_t(), ans1.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
+    }
+
+    //fin = ans0 - ans1;
+    mpz_xor(fin.get_mpz_t(), ans1.get_mpz_t(), ans0.get_mpz_t());
+
+    mpz_class expected_result = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(DPF_SEARCH_INDEX_K) + "].ct");
+    //mpz_class expected_result = 0;
+
+    if (fin != expected_result) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot reform the FHE-ciphertext after DPF-search and combination");
+    } else {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
+
+        export_to_file_from_mpz_class("/dev/shm/fin.ct", fin);
+        // Deserialize the crypto context
+        mpz_class dec_block_content, dec_block_index, dec_content_and_index;
+        Ciphertext<DCRTPoly> fin_ct;
+        if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", fin_ct, SerType::BINARY)) {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot read serialization from " + std::string("/dev/shm/fin.ct"));
+        }
+
+        FHE_Dec_SDBElement(fin_ct, dec_content_and_index);
+        dec_block_content = (dec_content_and_index >> log_N);
+        dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+
+        if (dec_block_index != mpz_class(DPF_SEARCH_INDEX_K)) {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Decrypted block index does not match the expected index. Expected: " + std::to_string(DPF_SEARCH_INDEX_K) + ", but got: " + dec_block_index.get_str());
+        } else {
+            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted block index matches the expected index");
+        }
+
+    }
+    #endif
+
+    return 0;
+}
+
 //TODO static int ResumeRequestProcessing_gamma(){
 static int ProcessClientRequest_gamma(){
     int ret = -1;
@@ -468,9 +624,9 @@ static int ProcessClientRequest_gamma(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
     
-    //Load K and c from the disk
-    K = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin").get_ui();
-    c = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin");
+    //Always initialize them
+    K = 0;
+    c = 1;
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -488,7 +644,14 @@ static int ProcessClientRequest_gamma(){
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded hash table into the RAM");
 
-    /* TODO: Load the shelter into the RAM */
+    /* For debugging loading the shelter into the RAM, in real situation the shelter will always remain in the RAM */
+    for(size_t k = 0; k < sqrt_N; k++) {
+        sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
+
+        /* Generate the tags and keep them in the variable, which will be used for DPF search */
+        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
+    }
 
     while (K < sqrt_N){
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for processing the PIR request number: "+ std::to_string(K+1) +" from the client..!!");
@@ -510,6 +673,13 @@ static int ProcessClientRequest_gamma(){
             goto exit;
         }
 
+        ret = ObliviouslySearchShelter_gamma();
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
+            ret = -1;
+            goto exit;
+        }
 
 
         /* Other sequences */
@@ -524,9 +694,6 @@ static int ProcessClientRequest_gamma(){
         close(sock_gamma_client_srv);
         close(sock_gamma_client_con);
         K++;
-
-        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "K.bin", mpz_class(K));
-        export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_GAMMA + "c.bin", mpz_class(c));
     }
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
