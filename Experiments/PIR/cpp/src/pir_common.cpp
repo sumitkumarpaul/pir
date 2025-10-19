@@ -542,6 +542,59 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     return;
 }
 
+void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPoly>& ZerosforTag_ct){
+    std::vector<int64_t> vectorOfZeros;
+    Plaintext plaintextZeros;
+
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
+        vectorOfZeros.push_back(0);
+    }
+    plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
+    ZerosforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+
+    vectorOfZeros.clear();
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
+        vectorOfZeros.push_back(0);
+    }
+    
+    plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
+    ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+
+    return;
+}
+
+void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforTag_ct){
+    std::vector<int64_t> vectorOfOnes;
+    Plaintext plaintextOnes;
+
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
+        vectorOfOnes.push_back(1);
+    }
+    
+    plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
+    OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+
+    return;
+}
+
+void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforTag_ct){
+    std::vector<int64_t> vectorOfZeros;
+    Plaintext plaintextZeros;
+
+    // Use a for loop to add elements to the vector
+    for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
+        vectorOfZeros.push_back(0);
+    }
+    
+    plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
+    ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+
+    return;
+}
+
 // bytes: most-significant byte first (big-endian)
 mpz_class import_from_bytes(const std::string &bytes) {
     PrintLog(LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Size of the serialized ciphertext: " + std::to_string(bytes.size()) + " bytes");

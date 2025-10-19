@@ -666,6 +666,107 @@ static int ObliviouslySearchShelter_beta() {
 
     // Step 1.3 Initialize server structure
     initializeServer(&fServer, &fClient);
+
+    /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
+#if 1
+    sh[0].tag_short = widehat_t_I;
+    mpz_class d_alpha, d_gamma, d_ct;
+    d_alpha = mpz_class(0);
+    d_gamma = mpz_class(0);
+    Ciphertext<DCRTPoly> d_ct_FHE;
+    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
+    bool fnd_alpha = false;
+
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    
+    for (size_t k = 0; k < K; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < K)
+            {
+                if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short))
+                {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
+
+                    /* Same as XORing */
+                    thread_fnd[j] = !thread_fnd[j];
+                    printf("1 ");
+                }
+                else
+                {
+                    printf("0 ");
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            mpz_xor(d_alpha.get_mpz_t(), d_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
+    }
+    for (int t = 0; t < NUM_CPU_CORES; ++t)
+    {
+        fnd_alpha ^= thread_fnd[t];
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_alpha: " + std::to_string(fnd_alpha));
+
+    thread_fnd.assign(thread_fnd.size(), false);
+    bool fnd_gamma = false;
+
+    for (size_t k = 0; k < K; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < K)
+            {
+                if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short))
+                {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
+
+                    /* Same as XORing */
+                    thread_fnd[j] = !thread_fnd[j];
+                    printf("1 ");
+                }
+                else
+                {
+                    printf("0 ");
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            mpz_xor(d_gamma.get_mpz_t(), d_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
+    }
+    for (int t = 0; t < NUM_CPU_CORES; ++t)
+    {
+        fnd_gamma ^= thread_fnd[t];
+    }
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_gamma: " + std::to_string(fnd_gamma));
+
+    /* Step 8.2.1 Compute d_ct in mpz_class */
+    mpz_xor(d_ct.get_mpz_t(), d_gamma.get_mpz_t(), d_alpha.get_mpz_t());
+
+    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
+    export_to_file_from_mpz_class("/dev/shm/fin.ct", d_ct);
+    Ciphertext<DCRTPoly> fin_ct;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
+
+    if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", d_ct_FHE, SerType::BINARY)) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
+    }
+    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
+#endif
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_alpha, net_buf, sizeof(net_buf));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the serialized data: " + std::to_string(serializedFssSize));
 
@@ -696,96 +797,6 @@ static int ObliviouslySearchShelter_beta() {
 
     /* This line is only for testing purpose  */
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The search tag is widehat_t_I: " + widehat_t_I.get_str());
-
-    /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
-#if 1
-    sh[1].tag_short = widehat_t_I;
-
-    {
-        mpz_class d_alpha = 0;
-        std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-        bool fnd_alpha = false;
-        std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
-        for (size_t k = 0; k < K; k += NUM_CPU_CORES)
-        {
-            for (int t = 0; t < NUM_CPU_CORES; ++t)
-                thread_sums[t] = 0;
-
-            #pragma omp parallel for
-            for (int j = 0; j < NUM_CPU_CORES; ++j)
-            {
-                if ((k + j) < K)
-                {
-                    // mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
-                    // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
-                    if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short))
-                    {
-                        // import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                        mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
-                        // thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                        // thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
-
-                        /* Same as XORing */
-                        thread_fnd[j] = !thread_fnd[j];
-                        printf("1 ");
-                    }else{
-                        printf("0 ");
-                    }
-                }
-            }
-        }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-        {
-            // ans0 += thread_sums[t];
-            mpz_xor(d_alpha.get_mpz_t(), d_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
-            fnd_alpha ^= thread_fnd[t];
-        }
-
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_alpha: " + std::to_string(fnd_alpha));
-    }
-
-    {
-        mpz_class d_gamma = 0;
-        std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-        bool fnd_gamma = false;
-        std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
-        for (size_t k = 0; k < K; k += NUM_CPU_CORES)
-        {
-            for (int t = 0; t < NUM_CPU_CORES; ++t)
-                thread_sums[t] = 0;
-
-            #pragma omp parallel for
-            for (int j = 0; j < NUM_CPU_CORES; ++j)
-            {
-                if ((k + j) < K)
-                {
-                    // mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
-                    // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
-                    if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short))
-                    {
-                        // import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                        mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
-                        // thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                        // thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
-
-                        /* Same as XORing */
-                        thread_fnd[j] = !thread_fnd[j];
-                        printf("1 ");
-                    }else{
-                        printf("0 ");
-                    }
-                }
-            }
-        }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-        {
-            // ans0 += thread_sums[t];
-            mpz_xor(d_gamma.get_mpz_t(), d_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
-            fnd_gamma ^= thread_fnd[t];
-        }
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_gamma: " + std::to_string(fnd_gamma));
-    }
-#endif
 
     return ret;
 }
@@ -850,7 +861,9 @@ static int ProcessClientRequest_beta(){
             }
         }
 
-        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat", ElGamal_randomGroupElement()%r);
+        mpz_class T_hat = ElGamal_randomGroupElement();
+        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat", T_hat);
+        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat", (T_hat % r));
     }
     
     /* Load the shelter into the RAM */
@@ -858,7 +871,7 @@ static int ProcessClientRequest_beta(){
         sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
 
         /* Generate the tags and keep them in the variable, which will be used for DPF search */
-        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat");
         sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
     }
 #endif    
@@ -898,19 +911,17 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-        ret = ObliviouslySearchShelter_beta();
-        if (ret != 0)
+        /* For the first request, the shelter is not required to be searched */
+        if (K > 0)
         {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
-            ret = -1;
-            goto exit;
+            ret = ObliviouslySearchShelter_beta();
+            if (ret != 0)
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
+                ret = -1;
+                goto exit;
+            }
         }
-
-
-
-
-
-
 
         /* Other sequences and then */
         b = rng.get_z_range(p); /* TODO, this will be part of shelter update */
@@ -1823,9 +1834,9 @@ static void TestSrv_beta()
 {
     //TestPKEOperations_beta();
     //TestSelShuffDBSearchTag_beta();
-    //TestShelterDPFSearch_beta();
+    TestShelterDPFSearch_beta();
     //TestClientProcessing_beta();
-    TestShuffDBFetch_beta();
+    //TestShuffDBFetch_beta();
     //Test_FHE_DBElement();
 }
 

@@ -169,6 +169,9 @@ extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
 extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct);
+extern void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPoly>& ZerosforTag_ct);
+extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforTag_ct);
+extern void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforTag_ct);
 extern mpz_class import_from_file_to_mpz_class(const std::string& filename);
 extern void export_to_file_from_mpz_class(const std::string& filename, const mpz_class& value);
 

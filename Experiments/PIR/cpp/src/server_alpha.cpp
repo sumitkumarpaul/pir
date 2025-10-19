@@ -37,7 +37,7 @@ static mpz_class a;
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 #define NUM_CPU_CORES 16
 
-#define DPF_SEARCH_INDEX_K 6
+#define DPF_SEARCH_INDEX_K 1
 //#define SHELTER_STORING_LOCATION std::string("./")
 #define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
 
@@ -511,7 +511,15 @@ static int ObliviouslySearchShelter_alpha() {
     ServerKeyEq K_alpha;
     int ret = 0;
     size_t received_sz = 0;
+    int ret_recv;
     size_t dserializedFssSize;
+    Ciphertext<DCRTPoly> fnd_gamma_ct;
+    mpz_class d_ct_alpha = 0;
+    mpz_class d_ct_gamma, d_ct;
+    Ciphertext<DCRTPoly> d_ct_FHE;
+    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
+    bool fnd_alpha = false;
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
 
     // First, receive sk_F from the server Beta
     ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -539,30 +547,12 @@ static int ObliviouslySearchShelter_alpha() {
     printf("Enter the value of the set search tag (base 10): ");
     mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
 
-    sh[1].tag_short = special_tag;
+    sh[0].tag_short = special_tag;
 #endif
 
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
 
-#if 0
-    /* Suppose we want to search for k = 2864, a random location */
-    mpz_class T_sh_short = sh[DPF_SEARCH_INDEX_K].tag_short;
-
-    // Initialize client, use 64 bits in domain as example
-    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
-
-    // Equality FSS test
-    generateTreeEq(&fClient, &k0, &k1, T_sh_short, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
-
-    // Initialize server
-    initializeServer(&fServer, &fClient);
-#endif
-
-    mpz_class d_alpha = 0;
-    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-    bool fnd_alpha = false;
-    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t)
@@ -573,92 +563,63 @@ static int ObliviouslySearchShelter_alpha() {
         {
             if ((k + j) < K)
             {
-                //mpz_class y = (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
-                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 0, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
                 if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short)) {
-                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
                     mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
-                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
 
                     /* Same as XORing */
                     thread_fnd[j] = !thread_fnd[j];
                     printf("1 ");
                 }
                 else{
-                        printf("0 ");
+                    printf("0 ");
                 }
             }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            mpz_xor(d_ct_alpha.get_mpz_t(), d_ct_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
         }
     }
     for (int t = 0; t < NUM_CPU_CORES; ++t)
     {
-        // ans0 += thread_sums[t];
-        mpz_xor(d_alpha.get_mpz_t(), d_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
         fnd_alpha ^= thread_fnd[t];
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_alpha: " + std::to_string(fnd_alpha));
 
-#if 0
-    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
+    // 7.2.2 Receive fnd_gamma_ct
+    ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
     {
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            thread_sums[t] = 0;
-
-#pragma omp parallel for
-        for (int j = 0; j < NUM_CPU_CORES; ++j)
-        {
-            if ((k + j) < average_shelter_size)
-            {
-                //mpz_class y = (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) % mpz_class(2);// Evaluate the FSS on the short tag
-                //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For party 1, DP.Eval at: " + to_string(k + j)+ " is: " + y.get_str());
-
-                if (evaluateEq(&fServer, &k1, sh[k + j].tag_short)) {
-                    //import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
-                    //thread_sums[j] += import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k + j) + "].ct");
-                    //thread_sums[j] += sh[k + j].serialized_element_ct; // Multiply the result with the block content
-                }
-            }
-        }
-        for (int t = 0; t < NUM_CPU_CORES; ++t){
-            //ans1 += thread_sums[t];
-            mpz_xor(ans1.get_mpz_t(), ans1.get_mpz_t(), thread_sums[t].get_mpz_t());
-        }
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_gamma_ct from Server Gamma");
+        return -1;
     }
+    Serial::DeserializeFromString(fnd_gamma_ct, std::string(net_buf, received_sz));
 
-    //fin = ans0 - ans1;
-    mpz_xor(fin.get_mpz_t(), ans1.get_mpz_t(), ans0.get_mpz_t());
-
-    mpz_class expected_result = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(DPF_SEARCH_INDEX_K) + "].ct");
-    //mpz_class expected_result = 0;
-
-    if (fin != expected_result) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot reform the FHE-ciphertext after DPF-search and combination");
-    } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Exact same ciphertext is formed");
-
-        export_to_file_from_mpz_class("/dev/shm/fin.ct", fin);
-        // Deserialize the crypto context
-        mpz_class dec_block_content, dec_block_index, dec_content_and_index;
-        Ciphertext<DCRTPoly> fin_ct;
-        if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", fin_ct, SerType::BINARY)) {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot read serialization from " + std::string("/dev/shm/fin.ct"));
-        }
-
-        FHE_Dec_SDBElement(fin_ct, dec_content_and_index);
-        dec_block_content = (dec_content_and_index >> log_N);
-        dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
-
-        if (dec_block_index != mpz_class(DPF_SEARCH_INDEX_K)) {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Decrypted block index does not match the expected index. Expected: " + std::to_string(DPF_SEARCH_INDEX_K) + ", but got: " + dec_block_index.get_str());
-        } else {
-            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted block index matches the expected index");
-        }
-
+    // 7.3.2 Receive d_ct_gamma
+    ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive d_ct_gamma from Server Gamma");
+        return -1;
     }
-    #endif
+    d_ct_gamma = mpz_class(std::string(net_buf, received_sz));
+
+    /* Step 8.1 */
+    //TODO: How to XOR the FHE ciphertexts
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "How to XOR two ciphertexts???????????????");
+
+    /* Step 8.2.1 Compute d_ct in mpz_class */
+    mpz_xor(d_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
+
+    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
+    export_to_file_from_mpz_class("/dev/shm/d.ct", d_ct);
+
+#if 1 //TODO: This is causing exception
+    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", d_ct_FHE, SerType::BINARY)) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
+    }
+#endif
 
     return 0;
 }
@@ -721,7 +682,7 @@ static int ProcessClientRequest_alpha(){
         sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
 
         /* Generate the tags and keep them in the variable, which will be used for DPF search */
-        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat");
         sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
     }
 
@@ -745,14 +706,16 @@ static int ProcessClientRequest_alpha(){
             goto exit;
         }
 
-        ret = ObliviouslySearchShelter_alpha();
-        if (ret != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
-            ret = -1;
-            goto exit;
+        /* For the first request, the shelter is not required to be searched */
+        if (K > 0){
+            ret = ObliviouslySearchShelter_alpha();
+            if (ret != 0)
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
+                ret = -1;
+                goto exit;
+            }
         }
-
 
         /* Other sequences */
         a = rng.get_z_range(p); /* TODO, this will be part of shelter update */
@@ -914,7 +877,7 @@ static void TestSrv_alpha()
 {
     //TestPKEOperations_alpha();
     //TestSelShuffDBSearchTag_alpha();
-    //TestShelterDPFSearch_alpha();
+    TestShelterDPFSearch_alpha();
     //TestClientProcessing_alpha();
     //TestHTableSerDser_alpha();
 
@@ -937,6 +900,18 @@ static int TestShelterDPFSearch_alpha() {
     /* On average half of the shelter elements will be populated */
     int average_shelter_size = (sqrt_N/2);
 
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g.bin");
+    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_q.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
+    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
 
     // First, receive sk_F from the server Beta
     ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -1075,8 +1050,11 @@ static int TestShelterDPFSearch_alpha() {
         if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", fin_ct, SerType::BINARY)) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot read serialization from " + std::string("/dev/shm/fin.ct"));
         }
-
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
+        
         FHE_Dec_SDBElement(fin_ct, dec_content_and_index);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Here");
+        
         dec_block_content = (dec_content_and_index >> log_N);
         dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
 
@@ -1113,6 +1091,8 @@ int main(int argc, char *argv[])
         } else if (std::string("process_request").compare(std::string(argv[1]))==0) {
             // Start from last saved state
             ret = ProcessClientRequest_alpha();
+        } else if (std::string("test").compare(std::string(argv[1]))==0) {
+            TestSrv_alpha();
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_alpha <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
