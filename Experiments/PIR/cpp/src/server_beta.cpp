@@ -798,6 +798,9 @@ static int ObliviouslySearchShelter_beta() {
     /* This line is only for testing purpose  */
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The search tag is widehat_t_I: " + widehat_t_I.get_str());
 
+    /* Send the private key for verification. It is only for testing */
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
+
     return ret;
 }
 
@@ -840,7 +843,15 @@ static int ProcessClientRequest_beta(){
         //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
         if (1) {
             // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+            mpz_class data = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
+            mpz_class index = rng.get_z_bits(log_N);
+            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement(( data << log_N) | index);
+
+            /* Printing, so that afer the DPF search it can be verified */
+            if (k == 0){
+                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of data: " + data.get_str()+ " index: " + index.get_str());
+            }
+
             /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
             if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
             {

@@ -513,7 +513,7 @@ static int ObliviouslySearchShelter_alpha() {
     size_t received_sz = 0;
     int ret_recv;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_gamma_ct;
+    Ciphertext<DCRTPoly> fnd_alpha_ct, fnd_gamma_ct;
     mpz_class d_ct_alpha = 0;
     mpz_class d_ct_gamma, d_ct;
     Ciphertext<DCRTPoly> d_ct_FHE;
@@ -521,11 +521,11 @@ static int ObliviouslySearchShelter_alpha() {
     bool fnd_alpha = false;
     std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
 
-    // First, receive sk_F from the server Beta
+    // First, receive FSS parameters from the server Beta
     ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FSS parameters from Server Beta");
         return -1;
     }
 
@@ -605,12 +605,46 @@ static int ObliviouslySearchShelter_alpha() {
     }
     d_ct_gamma = mpz_class(std::string(net_buf, received_sz));
 
-    /* Step 8.1 */
-    //TODO: How to XOR the FHE ciphertexts
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "How to XOR two ciphertexts???????????????");
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+    /* Step 8.1 Determine fnd_alpha_ct */
+    if (fnd_alpha == true){
+        FHE_EncOfOnes(fnd_alpha_ct);
+    }else{
+        FHE_EncOfZeros(fnd_alpha_ct);
+    }
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+
+    /* Step 8.2 Homomorphically compute fnd_ct = fnd_alpha_ct XOR fnd_alpha_ct = (fnd_alpha_ct + fnd_alpha_ct) - 2*(fnd_alpha_ct*fnd_alpha_ct) */
+    //fnd_ct = (fnd_alpha_ct+fnd_gamma_ct) - (vectorOnesforTag_ct+vectorOnesforTag_ct)*(fnd_alpha_ct*fnd_gamma_ct);
+    //fnd_ct = (fnd_alpha_ct+fnd_gamma_ct) + (fnd_alpha_ct*fnd_gamma_ct);
+    auto fnd_alpha_plus_gamma_ct = FHEcryptoContext->EvalAdd(fnd_alpha_ct, fnd_gamma_ct);
+    FHEcryptoContext->ModReduceInPlace(fnd_alpha_plus_gamma_ct);
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+    
+    auto fnd_alpha_mul_gamma_ct = FHEcryptoContext->EvalMultNoRelin(fnd_alpha_ct, fnd_gamma_ct);
+    FHEcryptoContext->ModReduceInPlace(fnd_alpha_mul_gamma_ct);
+
+    auto two_fnd_alpha_plus_gamma_ct = FHEcryptoContext->EvalAdd(fnd_alpha_mul_gamma_ct, fnd_alpha_mul_gamma_ct);
+    FHEcryptoContext->ModReduceInPlace(two_fnd_alpha_plus_gamma_ct);
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+
+    auto fnd_alpha_xor_gamma_ct = FHEcryptoContext->EvalSub(fnd_alpha_plus_gamma_ct, two_fnd_alpha_plus_gamma_ct);
+    FHEcryptoContext->ModReduceInPlace(fnd_alpha_xor_gamma_ct);
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+
+#if 0
+
+    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selElementBits_ct, B_ct);
+    FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
+
+    auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
+    FHEcryptoContext->ModReduceInPlace(C_ct);
+#endif
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
     /* Step 8.2.1 Compute d_ct in mpz_class */
     mpz_xor(d_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
     /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
     export_to_file_from_mpz_class("/dev/shm/d.ct", d_ct);
@@ -620,6 +654,28 @@ static int ObliviouslySearchShelter_alpha() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
     }
 #endif
+    
+    /* This one only for experimentation purpose */
+    mpz_class dec_block_content, dec_block_index, dec_content_and_index;
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+    
+    ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(sk_F, std::string(net_buf, received_sz));
+
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Here");
+    FHE_Dec_SDBElement(d_ct_FHE, dec_content_and_index);
+    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Here");
+
+    dec_block_content = (dec_content_and_index >> log_N);
+    dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U));
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted data: " + dec_block_content.get_str()+ " index: " + dec_block_index.get_str());
+
 
     return 0;
 }
