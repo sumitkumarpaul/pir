@@ -163,6 +163,7 @@ extern int sendAll(int sock, const char* data, size_t sz);
 // FHE related functions
 extern int FHE_keyGen();
 extern Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index);
+extern Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
 extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
 extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);

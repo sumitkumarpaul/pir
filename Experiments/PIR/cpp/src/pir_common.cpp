@@ -496,6 +496,26 @@ Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& selElementBit
     return C_ct;
 }
 
+// Performs bitwise XOR operation between two ciphertexts.
+// Note: Both the ciphertexts must be from the plaintext of same vector length
+Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
+    mpz_class tmp;
+
+    auto A_add_B_ct = FHEcryptoContext->EvalAdd(A_ct, B_ct);
+    FHEcryptoContext->ModReduceInPlace(A_add_B_ct);
+    
+    auto A_mul_B_ct = FHEcryptoContext->EvalMultNoRelin(A_ct, B_ct);
+    FHEcryptoContext->ModReduceInPlace(A_mul_B_ct);
+
+    auto two_A_mul_B_ct = FHEcryptoContext->EvalAdd(A_mul_B_ct, A_mul_B_ct);
+    FHEcryptoContext->ModReduceInPlace(two_A_mul_B_ct);
+
+    auto A_XOR_B_ct = FHEcryptoContext->EvalSub(A_add_B_ct, two_A_mul_B_ct);
+    FHEcryptoContext->ModReduceInPlace(A_XOR_B_ct);
+
+    return A_XOR_B_ct;
+}
+
 // selectTagBits_ct must be encryption of select bit but extended over NUM_FHE_BLOCKS_PER_TAG
 Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& selectTagBits_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
     ////////////////////////////////////////////////////////////

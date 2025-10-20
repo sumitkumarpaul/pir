@@ -445,7 +445,7 @@ static int ObliviouslySearchShelter_gamma() {
     int ret = 0;
     size_t received_sz = 0;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_gamma_ct;
+    Ciphertext<DCRTPoly> fnd_gamma_ct_element, fnd_gamma_ct_tag;
     mpz_class d_ct_gamma = 0;
     std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
     bool fnd_gamma = false;
@@ -518,15 +518,18 @@ static int ObliviouslySearchShelter_gamma() {
 
     // Step 7.1 Compute
     if (fnd_gamma == true){
-        FHE_EncOfOnes(fnd_gamma_ct);
+        FHE_EncOfOnes(fnd_gamma_ct_element, fnd_gamma_ct_tag);
     }else{
-        FHE_EncOfZeros(fnd_gamma_ct);
+        FHE_EncOfZeros(fnd_gamma_ct_element, fnd_gamma_ct_tag);
     }
 
-    // Step 7.2.1 Send ciphertext of fnd_gamma_ct
-    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct).c_str(), Serial::SerializeToString(fnd_gamma_ct).size());
+    // Step 7.2.1 Send ciphertext of fnd_gamma_ct_element
+    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct_element).c_str(), Serial::SerializeToString(fnd_gamma_ct_element).size());
+    
+    // Step 7.3.1 Send ciphertext of fnd_gamma_ct_tag
+    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct_tag).c_str(), Serial::SerializeToString(fnd_gamma_ct_tag).size());
 
-    // Step 7.3.1 Send the computed share of the search result
+    // Step 7.4.1 Send the computed share of the search result
     (void)sendAll(sock_gamma_to_alpha_con, d_ct_gamma.get_str().c_str(), d_ct_gamma.get_str().size());
 
     return 0;
