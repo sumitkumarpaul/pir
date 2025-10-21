@@ -65,6 +65,8 @@ static int TestClientProcessing_beta();
 static void TestShuffDBFetch_beta();
 
 
+static void Perf_avg_online_server_time_beta();
+
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
     mpz_class sg_prime;
 
@@ -1980,6 +1982,14 @@ int main(int argc, char *argv[]){
             ret = ProcessClientRequest_beta();
         } else if (std::string("test").compare(std::string(argv[1]))==0) {
             TestSrv_beta();
+        } else if (std::string("perf").compare(std::string(argv[1]))==0) {
+            if (argc < 3){
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Performance measurement option requires at least three command line parameters. Usage: server_beta perf [srv_avg_online_time]");
+            }else{
+                if (std::string("srv_avg_online_time").compare(std::string(argv[2]))==0){
+                    (void)Perf_avg_online_server_time_beta();
+                }
+            }
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_beta <gen_db|one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
@@ -1994,6 +2004,7 @@ int main(int argc, char *argv[]){
 }
 
 static int TestShelterDPFSearch_beta() {
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     // Sending the decryption key to the server alpha, so that it can verify the operation of the DPF
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
 
@@ -2053,4 +2064,10 @@ static int TestClientProcessing_beta(){
 
     /* End of simulation of client communication */
     return ret;
+}
+
+static void Perf_avg_online_server_time_beta() {
+
+    /* Nothing is required for server beta */
+    return;
 }

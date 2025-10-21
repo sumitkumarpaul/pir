@@ -825,6 +825,97 @@ static int Test_CuckooHash(table_size_type table_size, table_size_type stash_siz
     return 0;
 }
 
+static int Perf_avg_online_server_time_gamma() {
+    // Set up variables
+    Fss fClient, fServer;
+    ServerKeyEq k0;
+    ServerKeyEq k1;
+    int ret = 0;
+    size_t received_sz = 0;
+    /* On average half of the shelter elements will be populated */
+    int average_shelter_size = (sqrt_N/2);
+    std::string DPF_search_test_shelter_location = std::string("/dev/shm/");
+    /* Generate a dummy delta value to update the shelter tags */
+    mpz_class Del_abc = rng.get_z_bits(P_BITS);
+    /* Suppose we want to search for a random tag */
+    mpz_class tmp = rng.get_z_range(average_shelter_size);
+    uint64_t dpf_random_test_index = tmp.get_ui();
+    mpz_class T_sh_short = sh[dpf_random_test_index].tag_short;
+
+
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of average size: " + to_string(average_shelter_size));
+
+    /* Populate the shelter, with random elements */
+    for(size_t k = 0; k < average_shelter_size; k++) {
+        // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
+        Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+        /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
+        if (Serial::SerializeToFile(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) != true)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
+        }
+
+        sh[k].element_FHE_ct = import_from_file_to_mpz_class(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct");
+
+        /* Generate the tags and keep them in the variable, which will be used for DPF search */
+        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh[k].tag_short = sh[k].tag % r; // Create a random short tag
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+
+    // Initialize client, use 64 bits in domain as example
+    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+
+    // Equality FSS test
+    generateTreeEq(&fClient, &k0, &k1, T_sh_short, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+
+    // Initialize server
+    initializeServer(&fServer, &fClient);
+
+    mpz_class ans0, ans1, fin;
+    ans0 = 0;
+    ans1 = 0;
+
+    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+            thread_sums[t] = 0;
+
+#pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < average_shelter_size)
+            {
+                if (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
+                }
+                /* Simulate the time required for shelter tag update operation */
+                sh[k + j].tag = (sh[k + j].tag * Del_abc) % p;
+                sh[k + j].tag_short = sh[k + j].tag % r;                
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            mpz_xor(ans0.get_mpz_t(), ans0.get_mpz_t(), thread_sums[t].get_mpz_t());
+        }
+
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation over average number of shelter elements");
+
+
+    return 1;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -849,6 +940,14 @@ int main(int argc, char *argv[])
             ret = ProcessClientRequest_gamma();
         } else if (std::string("test").compare(std::string(argv[1]))==0) {
             TestSrv_gamma();
+        } else if (std::string("perf").compare(std::string(argv[1]))==0) {
+            if (argc < 3){
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Performance measurement option requires at least three command line parameters. Usage: server_gamma perf [srv_avg_online_time]");
+            }else{
+                if (std::string("srv_avg_online_time").compare(std::string(argv[2]))==0){
+                    (void)Perf_avg_online_server_time_gamma();
+                }
+            }
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Unknown command line argument:"+ std::string(argv[1]));
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Improper command line arguments. Usage: server_gamma <one_time_init|per_epoch_operations|clear_epoch_state|process_request>");
