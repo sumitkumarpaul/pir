@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 set(CMAKE_CXX_COMPILER "g++")
 project(pir_experiments LANGUAGES C CXX ASM)
+add_subdirectory(Kuku)
 
 set(CMAKE_CXX_STANDARD 17)
 enable_language(ASM OPTIONAL)
@@ -48,8 +49,6 @@ endif()
 find_path(GMP_INCLUDE_DIR gmp.h)
 find_library(GMP_LIBRARY NAMES gmp)
 find_library(GMPXX_LIBRARY NAMES gmpxx)
-
-find_package(Kuku 2.1 REQUIRED)
 
 # Extract GMP version from gmp.h
 if(GMP_INCLUDE_DIR)
