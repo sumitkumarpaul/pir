@@ -543,6 +543,8 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     std::vector<int64_t> vectorOfOnes;
     Plaintext plaintextOnes;
 
+    #warning This function is not working. After decryption, it is giving garbage.
+
     // Use a for loop to add elements to the vector
     for (int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
         vectorOfOnes.push_back(1);
@@ -730,6 +732,97 @@ void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::a
     for (unsigned int i = 0; i < remainder; i++) {
         out_item[i] ^= buf[quotient * out_item.size() + i];
     }
+}
+
+void convert_buf_to_item_type2(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item) {
+#if defined(__AVX2__)
+    // Process 32-byte chunks with AVX2, reduce to 128-bit result
+    __m256i acc256 = _mm256_setzero_si256();
+    const unsigned char* p = buf;
+    size_t blocks32 = buf_size / 32;
+    for (size_t i = 0; i < blocks32; ++i) {
+        __m256i v = _mm256_loadu_si256((const __m256i*)p);
+        acc256 = _mm256_xor_si256(acc256, v);
+        p += 32;
+    }
+
+    // Reduce 256->128 by xoring the two 128-bit lanes
+    __m128i lo = _mm256_castsi256_si128(acc256);
+    __m128i hi = _mm256_extracti128_si256(acc256, 1);
+    __m128i acc128 = _mm_xor_si128(lo, hi);
+
+    // Handle remaining 16-byte chunk if present
+    size_t rem = buf_size - blocks32 * 32;
+    if (rem >= 16) {
+        __m128i v16 = _mm_loadu_si128((const __m128i*)p);
+        acc128 = _mm_xor_si128(acc128, v16);
+        p += 16;
+        rem -= 16;
+    }
+
+    // Tail bytes (<16)
+    if (rem > 0) {
+        alignas(16) unsigned char tail[16] = {0};
+        for (size_t i = 0; i < rem; ++i) tail[i] = p[i];
+        __m128i tailv = _mm_loadu_si128((const __m128i*)tail);
+        acc128 = _mm_xor_si128(acc128, tailv);
+    }
+
+    // Store 16-byte result into out_item
+    _mm_storeu_si128((__m128i*)out_item.data(), acc128);
+
+#elif defined(__AVX512F__)
+    // If you prefer AVX-512 path, switch to 64-byte loads and reduce similarly.
+    // For now, fall back to AVX2-like behavior if only AVX-512 is present.
+    __m128i acc128 = _mm_setzero_si128();
+    const unsigned char* p = buf;
+    size_t blocks64 = buf_size / 64;
+    __m512i acc512 = _mm512_setzero_si512();
+    for (size_t i = 0; i < blocks64; ++i) {
+        __m512i v = _mm512_loadu_si512((const void*)p);
+        acc512 = _mm512_xor_si512(acc512, v);
+        p += 64;
+    }
+    // Reduce 512 -> 128: xor the four 128-bit lanes
+    __m128i lane0 = _mm512_extracti64x2_epi64(acc512, 0);
+    __m128i lane1 = _mm512_extracti64x2_epi64(acc512, 1);
+    __m128i lane2 = _mm512_extracti64x2_epi64(acc512, 2);
+    __m128i lane3 = _mm512_extracti64x2_epi64(acc512, 3);
+    acc128 = _mm_xor_si128(_mm_xor_si128(lane0, lane1), _mm_xor_si128(lane2, lane3));
+
+    // Remaining bytes: process 16-byte chunks then tail
+    size_t rem = buf_size - blocks64 * 64;
+    if (rem >= 16) {
+        __m128i v16 = _mm_loadu_si128((const __m128i*)p);
+        acc128 = _mm_xor_si128(acc128, v16);
+        p += 16;
+        rem -= 16;
+    }
+    if (rem > 0) {
+        alignas(16) unsigned char tail[16] = {0};
+        for (size_t i = 0; i < rem; ++i) tail[i] = p[i];
+        __m128i tailv = _mm_loadu_si128((const __m128i*)tail);
+        acc128 = _mm_xor_si128(acc128, tailv);
+    }
+    _mm_storeu_si128((__m128i*)out_item.data(), acc128);
+
+#else
+    // Scalar fallback (original logic)
+    out_item.fill(0);
+
+    unsigned int quotient = buf_size / out_item.size();
+    unsigned int remainder = buf_size % out_item.size();
+
+    for (unsigned int i = 0; i < quotient; i++) {
+        for (unsigned int j = 0; j < out_item.size(); j++) {
+            out_item[j] ^= buf[(i * out_item.size()) + j];
+        }
+    }
+
+    for (unsigned int i = 0; i < remainder; i++) {
+        out_item[i] ^= buf[quotient * out_item.size() + i];
+    }
+#endif
 }
 
 // Serialize Fss and ServerKeyEq into a buffer

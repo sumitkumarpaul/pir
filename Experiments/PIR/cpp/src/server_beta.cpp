@@ -31,13 +31,13 @@ std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"DK.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
 
-#define NUM_ITEMS_IN_TMP_BUF 16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
+#define NUM_ITEMS_IN_TMP_BUF 100000//((sqrt_N) * (NUM_CPU_CORES)) //100000//16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
 //static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
 static std::array<unsigned char, 16> TMP_KEY_BUF[NUM_ITEMS_IN_TMP_BUF] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 static unsigned char TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 
-static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
+//static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
@@ -375,27 +375,28 @@ static int PerEpochOperations_beta(){
             mpz_class d_part, d_alpha_part, d_gamma_part;
             mpz_class mask;
             uint64_t I;
+            mpz_class mpz_I  = mpz_class(I);
             unsigned char net_buf_local[(P_BITS/8)];
 
-            // 4. Randomly choose an index I from SS
+            // 4. Instead of randomly choose an index I from SS, choose unique index from an already shuffled SS[]
             I = SS[(iter+j)];
 
             /* TODO: Temporarily store the index-location mapping. For the purpose of testing */
-            TMP_IDX_LOC_MAP[(I - 1)] = (iter+j); // Since I = 0, is not a valid index
-
+            //TMP_IDX_LOC_MAP[(I - 1)] = (iter+j); // Since I = 0, is not a valid index
             // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string((iter+j)));
 
             // 5. Compute T_I = g^{Rho^I mod p}
-            mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t());
+            // These two exponentiations takes a long time
+            mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_I.get_mpz_t(), q.get_mpz_t());
             mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
             if (I <= N)
             {
-                /* TODO: Issue bulk read, in that case number of read entries will not be same as number of write entries due to the existance of the dummies */
-
                 // 6. Compute d = (block_I || I)
                 #pragma omp critical
                 {
+                    /* Index D[I] is located as location (I-1) */
+                    // Accessing the disk, randomly takes a long time
                     read_pdb_entry(pdb, (I - 1), read_entry);
                 }
 
@@ -403,25 +404,27 @@ static int PerEpochOperations_beta(){
                 d = mpz_class(tmp);
 
                 mpz_mul_2exp(d.get_mpz_t(), d.get_mpz_t(), log_N);               // Left shift log_N-bits, so that index can be appended next
-                mpz_ior(d.get_mpz_t(), d.get_mpz_t(), mpz_class(I).get_mpz_t()); // Attach the index at the end
+                mpz_ior(d.get_mpz_t(), d.get_mpz_t(), mpz_I.get_mpz_t()); // Attach the index at the end
             }
             else
             {
                 // 7. Choose d as {0}^{B+log_N} and append T_I to SetPhi
                 d = mpz_class(0);
-                SetPhi.push_back(T_I);
+                #pragma omp critical
+                {
+                    SetPhi.push_back(T_I);
+                }
             }
             
             /* 8.1 First create a random number as the secret-share for server_alpha */
-            //TODO put critical section here #pragma omp critical
+            #pragma omp critical
             {
                 d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
-                //d_alpha = mpz_class(0);//TODO: To estimate the time requirement for the random number generator
             }
 
             /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
             mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
-            convert_buf_to_item_type1((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
+            convert_buf_to_item_type2((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
 
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
             //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
@@ -448,11 +451,11 @@ static int PerEpochOperations_beta(){
 
             for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
             {
-                /* Extract least significant 15-bits of d and d_alpha */
+                /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
                 d_alpha_part = (d_alpha & mask);
                 d_part = (d & mask);
 
-                /* Compute the difference between two parts. And take only 15-bits */
+                /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
                 d_gamma_part = (d_part - d_alpha_part) & mask;
 
                 /* Append the part at the proper location */
@@ -478,8 +481,8 @@ static int PerEpochOperations_beta(){
         //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
         // 11. Remove chosen element from SS (order not preserved)
-        //std::swap(SS[idx], SS.back());
-        //SS.pop_back();
+        // This step is not required, since SS[] is already shuffled and we are choosing all the indices only once, one by one
+
         iter += NUM_ITEMS_IN_TMP_BUF;
 
         /* Flush into the disk */
@@ -851,7 +854,7 @@ static int ProcessClientRequest_beta(){
 
             /* Printing, so that afer the DPF search it can be verified */
             if (k == 0){
-                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of data: " + data.get_str()+ " index: " + index.get_str());
+                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of data, which should be found during DPF search experiment is: " + data.get_str()+ " index: " + index.get_str());
             }
 
             /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
@@ -1882,7 +1885,7 @@ static void TestShuffDBFetch_beta(){
     for (unsigned int fetch_trial; fetch_trial < NUM_FETCH_TEST_CNT; fetch_trial++){
         I = dist(gen);
 
-        loc = TMP_IDX_LOC_MAP[(I - 1)]; // Location for item I is stored at index (i-1)
+        //loc = TMP_IDX_LOC_MAP[(I - 1)]; // Location for item I is stored at index (i-1)
         #warning this function will not work, due to the absense of this large global array
 
         /* Fetch the share from that location of D_alpha */

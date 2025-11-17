@@ -104,18 +104,18 @@ First, the one-time initialization of the system is required. To do that, please
 ### On $\mathsf{S_{\alpha}}$:
 
 ```
-server_alpha one_time_init
+./server_alpha one_time_init
 ```
 
 ### On $\mathsf{S_{\beta}}$:
 
 ```
-server_beta one_time_init
+./server_beta one_time_init
 ```
 ### On $\mathsf{S_{\gamma}}$:
 
 ```
-server_gamma one_time_init
+./server_gamma one_time_init
 ```
 
 ## Perform Per-Epoch Initialization
@@ -123,18 +123,18 @@ Then per-epoch operations are required to be performed. To do that, please execu
 ### On $\mathsf{S_{\alpha}}$:
 
 ```
-server_alpha per_epoch_operations
+./server_alpha per_epoch_operations
 ```
 
 ### On $\mathsf{S_{\beta}}$:
 
 ```
-server_beta per_epoch_operations
+./server_beta per_epoch_operations
 ```
 ### On $\mathsf{S_{\gamma}}$:
 
 ```
-server_gamma per_epoch_operations
+./server_gamma per_epoch_operations
 ```
 
 ## Process PIR-request
@@ -142,18 +142,18 @@ The servers must now be entered into PIR-request processing state. To do that, p
 ### On $\mathsf{S_{\alpha}}$:
 
 ```
-server_alpha process_request
+./server_alpha process_request
 ```
 
 ### On $\mathsf{S_{\beta}}$:
 
 ```
-server_beta process_request
+./server_beta process_request
 ```
 ### On $\mathsf{S_{\gamma}}$:
 
 ```
-server_gamma process_request
+./server_gamma process_request
 ```
 After these steps, the servers will stay active for an entire epoch. In other words, the servers can handle up to $\mathsf{\sqrt{N}}$ PIR requests from *any* PIR client.
 
@@ -161,7 +161,7 @@ After these steps, the servers will stay active for an entire epoch. In other wo
 Now the PIR client can issue the request. To do that issue the following command:
 
 ```
-pir_client <index of the requested item>
+./pir_client <index of the requested item>
 ```
 **Note:** Upto $\mathsf{\sqrt{N}}$ PIR requests can be issued.
 After that, [Per-Epoch Initialization](#Perform-Per-Epoch-Initialization) is required to be performed again.

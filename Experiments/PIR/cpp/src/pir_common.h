@@ -23,6 +23,10 @@
 #include <openssl/sha.h>
 #include <openfhe.h>
 #include <kuku/kuku.h>
+#if defined(__AVX2__) || defined(__AVX512F__)
+  #include <immintrin.h>
+#endif
+#include <omp.h>
 
 #include "fss/fss-common.h"
 #include "fss/fss-server.h"
@@ -47,13 +51,13 @@ using namespace kuku;
 
 #define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
 
-#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
-#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
-#define SERVER_GAMMA_IP "192.168.16.132" // IP address of the server_gamma
+//#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
+//#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
+//#define SERVER_GAMMA_IP "192.168.16.132" // IP address of the server_gamma
 
-//#define SERVER_ALPHA_IP "127.0.0.1" // IP address of the server_alpha
-//#define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
-//#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
+#define SERVER_ALPHA_IP "127.0.0.1" // IP address of the server_alpha
+#define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
+#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
 
 #define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
 #define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
@@ -69,7 +73,7 @@ extern std::string completed_reinit_for_epoch_message;
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
+#define sqrt_N  1024//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -96,6 +100,10 @@ extern std::string completed_reinit_for_epoch_message;
 #define CUCKOO_EMPTY_ITEM       make_item(0, 0)
 #define CUCKOO_MAX_PROBE        1000000 // TODO, may be we can reduce it by noting down the maximum probe required during insertion
 #define CUCKOO_STASH_SIZE       100 // It actually does not matter, since observed that it is not used
+
+
+#define START_TIME_MEASUREMENT(t)    t = std::chrono::high_resolution_clock::now()
+#define STOP_TIME_MEASUREMENT(t)    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t).count()
 
 // Randoms
 extern gmp_randclass rng;
@@ -183,6 +191,7 @@ extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entr
 
 extern void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item);
 extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item);
+extern void convert_buf_to_item_type2(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item);
 
 // FSS helper functions
 extern size_t deserializeFssAndServerKeyEq(const char* buff, size_t buff_size, Fss& fss, ServerKeyEq& key);

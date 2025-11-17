@@ -655,27 +655,40 @@ static int ObliviouslySearchShelter_alpha() {
     
     /* This one only for experimentation purpose */
     mpz_class dec_block_content, dec_block_index, dec_content_and_index;
-    mpz_class dec_fnd_ct_element, dec_fnd_ct_tag;
-
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+    mpz_class dec_fnd_ct_element, dec_fnd_ct_tag, dec_fnd_alpha_ct_element, dec_fnd_gamma_ct_element, dec_vectorOnesforTag_ct, dec_vectorOnesforElement_ct;
     
     FHE_Dec_SDBElement(d_ct_FHE, dec_content_and_index);
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
     dec_block_content = (dec_content_and_index >> log_N);
     dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U));
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted data: " + dec_block_content.get_str()+ " index: " + dec_block_index.get_str());
 
-    FHE_Dec_SDBElement(fnd_ct_element, dec_fnd_ct_element);
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+    {
+        /* Already it is found that the DPF search is working. Now it is to be figured out why decrypted value of the fnd_ct is not working */
+        FHE_Dec_SDBElement(fnd_ct_element, dec_fnd_ct_element);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted fnd_ct_element: " + dec_fnd_ct_element.get_str());
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted fnd_ct_element (in binary): " + dec_fnd_ct_element.get_str(2));
 
-    FHE_Dec_Tag(fnd_ct_tag, dec_fnd_ct_tag);
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+        FHE_Dec_Tag(fnd_ct_tag, dec_fnd_ct_tag);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_fnd_ct_tag: " + dec_fnd_ct_tag.get_str());    
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_fnd_ct_tag (in binary): " + dec_fnd_ct_tag.get_str(2));
+
+        FHE_Dec_Tag(vectorOnesforTag_ct, dec_vectorOnesforTag_ct);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforTag_ct (in binary): " + dec_vectorOnesforTag_ct.get_str(2));
+
+        FHE_Dec_SDBElement(vectorOnesforElement_ct, dec_vectorOnesforElement_ct);
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
+
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforElement_ct (in binary): " + dec_vectorOnesforElement_ct.get_str(2));
+
+    }
+
+    /* It is verified that, at the end of this function, server_alpha can properly generate the FHE ciphertext of the fnd bit and d. As per step 8 of Figure 8. */
 
     return 0;
 }
@@ -1125,6 +1138,12 @@ static int TestShelterDPFSearch_alpha() {
     return 1;
 }
 
+/*******************************************************************************************************
+    On average, the shelter will be half-full. So its performance can be measured by observing the
+    required time for (\sqrt{N}/2)st request processing. Or this function can be called, which 
+    simulates the same situation by pre-populating the shelter with (\sqrt{N}/2)-random elements
+    and then measure the performance.
+********************************************************************************************************/
 static int Perf_avg_online_server_time_alpha() {
     // Set up variables
     Fss fClient, fServer;
@@ -1141,6 +1160,8 @@ static int Perf_avg_online_server_time_alpha() {
     mpz_class tmp = rng.get_z_range(average_shelter_size);
     uint64_t dpf_random_test_index = tmp.get_ui();
     mpz_class T_sh_short = sh[dpf_random_test_index].tag_short;
+    std::chrono::high_resolution_clock::time_point t0;
+    double processingTime_us = 0.0;    
 
 
     /* First of all retrieve all the one-time initialized materials from the saved location */
@@ -1152,7 +1173,7 @@ static int Perf_avg_online_server_time_alpha() {
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
 
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter of average size: " + to_string(average_shelter_size));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter");
 
     /* Populate the shelter, with random elements */
     for(size_t k = 0; k < average_shelter_size; k++) {
@@ -1171,7 +1192,16 @@ static int Perf_avg_online_server_time_alpha() {
         sh[k].tag_short = sh[k].tag % r; // Create a random short tag
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter of size: "  + to_string(average_shelter_size));
+
+    t0 = std::chrono::high_resolution_clock::now();
+
+    /*******************************************************************************************************
+        In this experiment, only considering the required time for two expensive operations.
+        Executing DPF search on large number of shelter elements and updating all the existing shelter tags.
+        In comparison, other operations takes very less amount of time and does not depend on N.
+        Approximate the time required for those operations from other experiments.
+    ********************************************************************************************************/
 
     // Initialize client, use 64 bits in domain as example
     initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
@@ -1211,7 +1241,16 @@ static int Perf_avg_online_server_time_alpha() {
 
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation over average number of shelter elements");
+    {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+        processingTime_us = static_cast<double>(elapsed_us); // microseconds
+    }
+
+    /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
+
+    std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 
 
     return 1;
