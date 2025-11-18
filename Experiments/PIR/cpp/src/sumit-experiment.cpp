@@ -232,7 +232,7 @@ int OpenFHEBGVrns_select(int select_bit){
     keyPair = cryptoContext->KeyGen();
 
     processingTime = TOC1(t);
-    std::cout << "Key generation time: " << processingTime << "us" << std::endl;
+    std::cout << "Key generation time: " << processingTime << " us" << std::endl;
 
     if (!keyPair.good()) {
         std::cout << "Key generation failed!" << std::endl;
@@ -242,7 +242,7 @@ int OpenFHEBGVrns_select(int select_bit){
     ////////////////////////////////////////////////////////////
     // Encode source data
     ////////////////////////////////////////////////////////////
-    int vector_sz = 314; // Size of the vector to be generated. TODO: Maximum usable is: 16384
+    int vector_sz = 5000;//314; // Size of the vector to be generated. TODO: Maximum usable is: 16384. Each FHE block is 14-bits. So 51200-bit size data block will take 3657 vector elements. Increased that to 5000.
 
     std::vector<int64_t> vectorOfPt1;
     // Use a for loop to add elements to the vector
@@ -291,6 +291,8 @@ int OpenFHEBGVrns_select(int select_bit){
 
     processingTime = TOC1(t);
 
+    std::cout << "Encryption time: " << (processingTime/4) << " us" << std::endl;
+
     ////////////////////////////////////////////////////////////
     // Homomorphic selection between two ciphertexts w/o any relinearization
     // Select(a,b, select_bit) = select_bit ? a : b
@@ -300,38 +302,41 @@ int OpenFHEBGVrns_select(int select_bit){
     TIC1(t);
     
     auto ciphertextSelNot = cryptoContext->EvalSub(ctOnes, ctSel);
-    cryptoContext->ModReduceInPlace(ciphertextSelNot);
+    //cryptoContext->ModReduceInPlace(ciphertextSelNot);
 
-    processingTime = TOC1(t);
-    std::cout << "Time for first sub between two ciphertexts: " << processingTime << "us" << std::endl;
+    //processingTime = TOC1(t);
+    //std::cout << "Time for first sub between two ciphertexts: " << processingTime << "us" << std::endl;
 
-    TIC1(t);
+    //TIC1(t);
 
     auto ciphertextSelNota = cryptoContext->EvalMultNoRelin(ciphertextSelNot, ct1);
-    cryptoContext->ModReduceInPlace(ciphertextSelNota);
+    //cryptoContext->ModReduceInPlace(ciphertextSelNota);
 
-    processingTime = TOC1(t);
-    std::cout << "Time for first mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+    //processingTime = TOC1(t);
+    //std::cout << "Time for first mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
 
-    TIC1(t);
+    //TIC1(t);
 
     auto ciphertextSelb = cryptoContext->EvalMultNoRelin(ctSel, ct2);
-    cryptoContext->ModReduceInPlace(ciphertextSelb);
+    //cryptoContext->ModReduceInPlace(ciphertextSelb);
 
-    processingTime = TOC1(t);
-    std::cout << "Time for sencond mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
+    //processingTime = TOC1(t);
+    //std::cout << "Time for sencond mult. between two ciphertexts w/o relin: " << processingTime << "us" << std::endl;
 
-    TIC1(t);
+    //TIC1(t);
 
     auto ciphertextSel = cryptoContext->EvalAdd(ciphertextSelNota, ciphertextSelb);
-    cryptoContext->ModReduceInPlace(ciphertextSel);
+    //cryptoContext->ModReduceInPlace(ciphertextSel);
+
+    //processingTime = TOC1(t);
+    //std::cout << "Time for addition: " << processingTime << "us" << std::endl;
 
     processingTime = TOC1(t);
-    std::cout << "Time for addition: " << processingTime << "us" << std::endl;
+    std::cout << "Time for homomorphic selection: " << processingTime << " us" << std::endl;
 
     Plaintext plaintextDecSel;
 
-    TOC1(t);
+    TIC1(t);
     cryptoContext->Decrypt(keyPair.secretKey, ciphertextSel, &plaintextDecSel);
     processingTime = TOC1(t);
     std::cout << "Decryption time: " << processingTime << "us" << std::endl;
