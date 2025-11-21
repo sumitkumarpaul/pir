@@ -49,7 +49,7 @@ using namespace kuku;
 
 #define SET_LOG_LEVEL LOG_LEVEL_TRACE
 
-#define NET_BUF_SZ  8388608 //Size of the buffer used during transferring data over network
+#define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
 
 //#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
 //#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
@@ -71,9 +71,9 @@ extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       256//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  1024//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
+#define sqrt_N  16//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
@@ -120,6 +120,8 @@ extern CryptoContext<DCRTPoly> FHEcryptoContext;
 extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
+extern Ciphertext<DCRTPoly> fnd_ct_element;
+extern Ciphertext<DCRTPoly> fnd_ct_tag;
 
 typedef struct [[gnu::packed]]{
     unsigned char element[NUM_BYTES_PER_PDB_ELEMENT];//Only data, no index
@@ -196,3 +198,6 @@ extern void convert_buf_to_item_type2(const unsigned char* buf, size_t buf_size,
 // FSS helper functions
 extern size_t deserializeFssAndServerKeyEq(const char* buff, size_t buff_size, Fss& fss, ServerKeyEq& key);
 extern size_t serializeFssAndServerKeyEq(const Fss& fss, const ServerKeyEq& key, char* buff, size_t buff_size);
+
+extern bool save_mpz_vector(const std::vector<mpz_class>& vec, const std::string& path);
+extern bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path);

@@ -515,11 +515,11 @@ static int ObliviouslySearchShelter_alpha() {
     size_t received_sz = 0;
     int ret_recv;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_ct_element, fnd_alpha_ct_element, fnd_gamma_ct_element;
-    Ciphertext<DCRTPoly> fnd_ct_tag, fnd_alpha_ct_tag, fnd_gamma_ct_tag;
+    Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_gamma_ct_element;
+    Ciphertext<DCRTPoly> fnd_alpha_ct_tag, fnd_gamma_ct_tag;
     mpz_class d_ct_alpha = 0;
-    mpz_class d_ct_gamma, d_ct;
-    Ciphertext<DCRTPoly> d_ct_FHE;
+    mpz_class d_ct_gamma, SR_sh_ct;
+    Ciphertext<DCRTPoly> SR_sh_ct_FHE;
     std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
     bool fnd_alpha = false;
     std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
@@ -550,7 +550,7 @@ static int ObliviouslySearchShelter_alpha() {
     printf("Enter the value of the set search tag (base 10): ");
     mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
 
-    sh[0].tag_short = special_tag;
+    sh[2].tag_short = special_tag;/* There will be a match while processing the 4th request */
 #endif
 
 
@@ -643,13 +643,24 @@ static int ObliviouslySearchShelter_alpha() {
     fnd_ct_tag = FHE_bitwise_XOR(fnd_alpha_ct_tag, fnd_gamma_ct_tag);
 
     /* Step 8.2.1 Compute d_ct in mpz_class */
-    mpz_xor(d_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
+    mpz_xor(SR_sh_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
-    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
-    export_to_file_from_mpz_class("/dev/shm/d.ct", d_ct);
+    /* Hack */
+    #if 1
+    if (SR_sh_ct == 0){
+        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorOnesforElement_ct, SerType::BINARY) == true){
+            SR_sh_ct = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
+        }else{
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorOnesforTag ciphertext");
+        }
+    }
+    #endif
 
-    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", d_ct_FHE, SerType::BINARY)) {
+    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
+    export_to_file_from_mpz_class("/dev/shm/d.ct", SR_sh_ct);
+
+    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", SR_sh_ct_FHE, SerType::BINARY)) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
     }
     
@@ -657,7 +668,7 @@ static int ObliviouslySearchShelter_alpha() {
     mpz_class dec_block_content, dec_block_index, dec_content_and_index;
     mpz_class dec_fnd_ct_element, dec_fnd_ct_tag, dec_fnd_alpha_ct_element, dec_fnd_gamma_ct_element, dec_vectorOnesforTag_ct, dec_vectorOnesforElement_ct;
     
-    FHE_Dec_SDBElement(d_ct_FHE, dec_content_and_index);
+    FHE_Dec_SDBElement(SR_sh_ct_FHE, dec_content_and_index);
 
     dec_block_content = (dec_content_and_index >> log_N);
     dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U));
@@ -666,25 +677,9 @@ static int ObliviouslySearchShelter_alpha() {
 
     {
         /* Already it is found that the DPF search is working. Now it is to be figured out why decrypted value of the fnd_ct is not working */
-        FHE_Dec_SDBElement(fnd_ct_element, dec_fnd_ct_element);
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
-
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted fnd_ct_element (in binary): " + dec_fnd_ct_element.get_str(2));
-
-        FHE_Dec_Tag(fnd_ct_tag, dec_fnd_ct_tag);
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
-
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_fnd_ct_tag (in binary): " + dec_fnd_ct_tag.get_str(2));
-
         FHE_Dec_Tag(vectorOnesforTag_ct, dec_vectorOnesforTag_ct);
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforTag_ct (in binary): " + dec_vectorOnesforTag_ct.get_str(2));
-
-        FHE_Dec_SDBElement(vectorOnesforElement_ct, dec_vectorOnesforElement_ct);
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
-
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforElement_ct (in binary): " + dec_vectorOnesforElement_ct.get_str(2));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforTag_ct: " + dec_vectorOnesforTag_ct.get_str());
 
     }
 
@@ -784,7 +779,12 @@ static int ProcessClientRequest_alpha(){
                 ret = -1;
                 goto exit;
             }
+        } else {
+            /* For the first request set the fnd_ct to encryption of Zeros */
+            FHE_EncOfZeros(fnd_ct_element, fnd_ct_tag);
         }
+
+        ret = SelShuffDBSearchTag_alpha();
 
         /* Other sequences */
         a = rng.get_z_range(p); /* TODO, this will be part of shelter update */
@@ -862,7 +862,7 @@ static int SelShuffDBSearchTag_alpha(){
     Serial::DeserializeFromString(FHE_ct_T_phi_h_alpha2_h_beta0, std::string(net_buf, received_sz));
 
     /* 11.a.1 Homomorphically select T_*h_{\\alpha 2}h_{\\beta 0} */
-    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_SelectTag(fnd_ct, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
+    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_SelectTag(fnd_ct_tag, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
 
     /* 11.a.2 Send FHE_ct_T_star_h_alpha2_h_beta0 to server beta for decryption */
     (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).size());
@@ -881,6 +881,8 @@ static int SelShuffDBSearchTag_alpha(){
 
     /* 14.a.2 Send T_* to server gamma */
     (void)sendAll(sock_alpha_to_gamma, T_star.get_str().c_str(), T_star.get_str().size());
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
 
     return ret;
 }
@@ -1296,7 +1298,7 @@ int main(int argc, char *argv[])
     }
 
     if (ret == 0) {
-        TestSrv_alpha();
+        //TestSrv_alpha();
     }
 
     FinSrv_alpha();

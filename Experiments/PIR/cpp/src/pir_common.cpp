@@ -22,6 +22,8 @@ CryptoContext<DCRTPoly> FHEcryptoContext;
 Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 Ciphertext<DCRTPoly> fnd_ct;
+Ciphertext<DCRTPoly> fnd_ct_element;
+Ciphertext<DCRTPoly> fnd_ct_tag;
 
 std::string start_reinit_for_epoch_message = "START_REINIT_FOR_EPOCH";
 std::string completed_reinit_for_epoch_message = "COMPLETED_REINIT_FOR_EPOCH";
@@ -362,7 +364,7 @@ int FHE_keyGen(){
     // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
     // generate homomorphic evaluation multiplication keys for s^2 and s^3
     CCParams<CryptoContextBGVRNS> parameters;
-    parameters.SetMultiplicativeDepth(1);
+    parameters.SetMultiplicativeDepth(2);//TODO: Changed it from 1 to 2
     parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
 
     /*****************************************************************
@@ -542,8 +544,6 @@ Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& selectTagBits_ct,
 void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct){
     std::vector<int64_t> vectorOfOnes;
     Plaintext plaintextOnes;
-
-    #warning This function is not working. After decryption, it is giving garbage.
 
     // Use a for loop to add elements to the vector
     for (int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
@@ -1003,4 +1003,50 @@ size_t deserializeFssAndServerKeyEq(const char* buff, size_t buff_size, Fss& fss
     offset += w_len;
 
     return offset; // total bytes read
+}
+
+// Serialize a vector<mpz_class> to a binary file.
+// Format:
+//   uint64_t count
+//   for each element:
+//     uint64_t len   (length of decimal string in bytes)
+//     byte[len]      (decimal string, base 10, no NUL)
+bool save_mpz_vector(const std::vector<mpz_class>& vec, const std::string& path) {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs) return false;
+    uint64_t count = static_cast<uint64_t>(vec.size());
+    ofs.write(reinterpret_cast<const char*>(&count), sizeof(count));
+    for (const auto &el : vec) {
+        std::string s = el.get_str(10);
+        uint64_t len = static_cast<uint64_t>(s.size());
+        ofs.write(reinterpret_cast<const char*>(&len), sizeof(len));
+        if (len) ofs.write(s.data(), static_cast<std::streamsize>(len));
+    }
+    return ofs.good();
+}
+
+// Load vector<mpz_class> saved by save_mpz_vector.
+bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) return false;
+    uint64_t count = 0;
+    ifs.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!ifs) return false;
+    vec.clear();
+    vec.reserve(static_cast<size_t>(count));
+    for (uint64_t i = 0; i < count; ++i) {
+        uint64_t len = 0;
+        ifs.read(reinterpret_cast<char*>(&len), sizeof(len));
+        if (!ifs) return false;
+        std::string s;
+        s.resize(static_cast<size_t>(len));
+        if (len) {
+            ifs.read(&s[0], static_cast<std::streamsize>(len));
+            if (!ifs) return false;
+        }
+        // mpz_class ctor from decimal string
+        mpz_class el(s, 10);
+        vec.push_back(el);
+    }
+    return true;
 }

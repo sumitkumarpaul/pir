@@ -30,8 +30,9 @@ std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"DK.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
+std::string SetPhi_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"SetPhi.bin";
 
-#define NUM_ITEMS_IN_TMP_BUF 100000//((sqrt_N) * (NUM_CPU_CORES)) //100000//16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
+#define NUM_ITEMS_IN_TMP_BUF 16//((sqrt_N) * (NUM_CPU_CORES)) //100000//16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
 //static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
 static std::array<unsigned char, 16> TMP_KEY_BUF[NUM_ITEMS_IN_TMP_BUF] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
@@ -502,7 +503,13 @@ static int PerEpochOperations_beta(){
     pdb.close();
     D_alpha.close();
     D_gamma.close();
-    D_K.close();    
+    D_K.close();
+
+    if (!save_mpz_vector(SetPhi, SetPhi_filename))
+    { 
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Error while exporting the SetPhi");
+        goto exit;
+    }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed preparing the database shares and key-database");
 
@@ -674,7 +681,7 @@ static int ObliviouslySearchShelter_beta() {
 
     /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
 #if 1
-    sh[0].tag_short = widehat_t_I;
+    sh[2].tag_short = widehat_t_I;/* There will be a match while processing the 4th request */
     mpz_class d_alpha, d_gamma, d_ct;
     d_alpha = mpz_class(0);
     d_gamma = mpz_class(0);
@@ -761,6 +768,17 @@ static int ObliviouslySearchShelter_beta() {
     /* Step 8.2.1 Compute d_ct in mpz_class */
     mpz_xor(d_ct.get_mpz_t(), d_gamma.get_mpz_t(), d_alpha.get_mpz_t());
 
+    /* Hack */
+    #if 1
+    if (d_ct == 0){
+        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorOnesforElement_ct, SerType::BINARY) == true){
+            d_ct = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
+        }else{
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorOnesforTag ciphertext");
+        }
+    }
+    #endif
+
     /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
     export_to_file_from_mpz_class("/dev/shm/fin.ct", d_ct);
     Ciphertext<DCRTPoly> fin_ct;
@@ -834,6 +852,12 @@ static int ProcessClientRequest_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+
+    if (!load_mpz_vector(SetPhi, SetPhi_filename))
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Error while loding the SetPhi");
+        goto exit;
+    }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
@@ -939,6 +963,8 @@ static int ProcessClientRequest_beta(){
             }
         }
 
+        ret = SelShuffDBSearchTag_beta();
+
         /* Other sequences and then */
         b = rng.get_z_range(p); /* TODO, this will be part of shelter update */
 
@@ -963,6 +989,8 @@ exit:
 static int SelShuffDBSearchTag_beta(){
     int ret = -1;
     size_t received_sz = 0;
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Starting SelShuffDBSearchTag sequence");
 
     /* 1.b.1 Select random h_{\beta 0} */
     mpz_class h_beta0 = ElGamal_randomGroupElement();
