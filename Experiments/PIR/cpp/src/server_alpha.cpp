@@ -9,6 +9,7 @@
 #include <gmp.h>
 #include <gmpxx.h>
 #include <random>
+#include <filesystem> // Required for std::filesystem
 
 #include <iomanip>
 #include <iostream>
@@ -39,7 +40,7 @@ static mpz_class a;
 
 #define DPF_SEARCH_INDEX_K 1
 //#define SHELTER_STORING_LOCATION std::string("./")
-#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
+#define SHELTER_STORING_LOCATION std::string("/dev/shm/")
 
 #define ONE_TIME_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/PER_EPOCH_MATERIALS/")
@@ -1004,16 +1005,10 @@ static int TestShelterDPFSearch_alpha() {
             /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
             if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
             {
-#if 0 /* Already performed this error checking, while doing experimentation for serveral times. Hence ommited */
-            Ciphertext<DCRTPoly> deserialized_tmp_ct;
-            if (Serial::DeserializeFromFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", deserialized_tmp_ct, SerType::BINARY) == false) {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to deserialize element FHE ciphertext from file");
-            } else {
-                if (*(tmp_ct) != *(deserialized_tmp_ct)) {
-                    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Deserialized element FHE ciphertext does not match original");
+                /* Just note down the ciphertext size */
+                if (k == 0){
+                    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")));
                 }
-            }
-#endif
             }
             else
             {
@@ -1186,6 +1181,11 @@ static int Perf_avg_online_server_time_alpha() {
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
         }
+        /* Just notedown the ciphertext size */
+        if (k == 0){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct")));
+        }
+
 
         sh[k].element_FHE_ct = import_from_file_to_mpz_class(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct");
 

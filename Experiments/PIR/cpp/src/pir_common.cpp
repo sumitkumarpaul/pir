@@ -364,7 +364,7 @@ int FHE_keyGen(){
     // ciphertexts, i.e., ceiling{log2{7}} Max depth is set to 3 (second 3) to
     // generate homomorphic evaluation multiplication keys for s^2 and s^3
     CCParams<CryptoContextBGVRNS> parameters;
-    parameters.SetMultiplicativeDepth(2);//TODO: Changed it from 1 to 2
+    parameters.SetMultiplicativeDepth(1);//TODO: Changed it from 1 to 2
     parameters.SetPlaintextModulus(65537);//TODO, 65537, 536903681 these values must have special properties.
 
     /*****************************************************************
@@ -484,16 +484,16 @@ Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& selElementBit
     ////////////////////////////////////////////////////////////
     
     auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforElement_ct, selElementBits_ct);
-    FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
+    //FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
 
     auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
-    FHEcryptoContext->ModReduceInPlace(A_not_ct);
+    //FHEcryptoContext->ModReduceInPlace(A_not_ct);
 
     auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selElementBits_ct, B_ct);
-    FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
+    //FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
 
     auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
-    FHEcryptoContext->ModReduceInPlace(C_ct);
+    //FHEcryptoContext->ModReduceInPlace(C_ct);
 
     return C_ct;
 }
@@ -504,16 +504,16 @@ Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Cip
     mpz_class tmp;
 
     auto A_add_B_ct = FHEcryptoContext->EvalAdd(A_ct, B_ct);
-    FHEcryptoContext->ModReduceInPlace(A_add_B_ct);
+    //FHEcryptoContext->ModReduceInPlace(A_add_B_ct);
     
     auto A_mul_B_ct = FHEcryptoContext->EvalMultNoRelin(A_ct, B_ct);
-    FHEcryptoContext->ModReduceInPlace(A_mul_B_ct);
+    //FHEcryptoContext->ModReduceInPlace(A_mul_B_ct);
 
     auto two_A_mul_B_ct = FHEcryptoContext->EvalAdd(A_mul_B_ct, A_mul_B_ct);
-    FHEcryptoContext->ModReduceInPlace(two_A_mul_B_ct);
+    //FHEcryptoContext->ModReduceInPlace(two_A_mul_B_ct);
 
     auto A_XOR_B_ct = FHEcryptoContext->EvalSub(A_add_B_ct, two_A_mul_B_ct);
-    FHEcryptoContext->ModReduceInPlace(A_XOR_B_ct);
+    //FHEcryptoContext->ModReduceInPlace(A_XOR_B_ct);
 
     return A_XOR_B_ct;
 }
@@ -527,16 +527,16 @@ Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& selectTagBits_ct,
     ////////////////////////////////////////////////////////////
     
     auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforTag_ct, selectTagBits_ct);
-    FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
+    
 
     auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
-    FHEcryptoContext->ModReduceInPlace(A_not_ct);
+    
 
     auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selectTagBits_ct, B_ct);
-    FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
+    
 
     auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
-    FHEcryptoContext->ModReduceInPlace(C_ct);
+    //FHEcryptoContext->ModReduceInPlace(C_ct);
 
     return C_ct;
 }
@@ -552,6 +552,8 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
 
+    //FHEcryptoContext->ModReduceInPlace(OnesforElement_ct);
+
     vectorOfOnes.clear();
     // Use a for loop to add elements to the vector
     for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
@@ -560,6 +562,8 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+
+    //FHEcryptoContext->ModReduceInPlace(OnesforTag_ct);
 
     return;
 }
@@ -575,6 +579,8 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPol
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
 
+    //FHEcryptoContext->ModReduceInPlace(ZerosforElement_ct);
+
     vectorOfZeros.clear();
     // Use a for loop to add elements to the vector
     for (int i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
@@ -583,6 +589,8 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPol
     
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+
+    //FHEcryptoContext->ModReduceInPlace(ZerosforTag_ct);
 
     return;
 }
@@ -598,6 +606,8 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforTag_ct){
     
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+    
+    //FHEcryptoContext->ModReduceInPlace(OnesforTag_ct);
 
     return;
 }
@@ -613,6 +623,8 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforTag_ct){
     
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+
+    //FHEcryptoContext->ModReduceInPlace(ZerosforTag_ct);
 
     return;
 }
