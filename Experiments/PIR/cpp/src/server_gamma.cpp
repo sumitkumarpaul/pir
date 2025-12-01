@@ -26,7 +26,8 @@ static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alph
 static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 #define NUM_CPU_CORES 16
-#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
+//#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
+#define SHELTER_STORING_LOCATION std::string("/dev/shm/")
 
 // The value of N will determine the bitlength during the client initialization
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000

@@ -41,6 +41,7 @@ static mpz_class a;
 #define DPF_SEARCH_INDEX_K 1
 //#define SHELTER_STORING_LOCATION std::string("./")
 #define SHELTER_STORING_LOCATION std::string("/dev/shm/")
+//#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
 
 #define ONE_TIME_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_ALPHA std::string("/mnt/sumit/PIR_ALPHA/PER_EPOCH_MATERIALS/")
@@ -518,7 +519,8 @@ static int ObliviouslySearchShelter_alpha() {
     size_t dserializedFssSize;
     Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_gamma_ct_element;
     Ciphertext<DCRTPoly> fnd_alpha_ct_tag, fnd_gamma_ct_tag;
-    mpz_class d_ct_alpha = 0;
+    Ciphertext<DCRTPoly> random_ct, tmp_ct;
+    mpz_class d_ct_alpha = 0, random_pt, tmp_pt;
     mpz_class d_ct_gamma, SR_sh_ct;
     Ciphertext<DCRTPoly> SR_sh_ct_FHE;
     std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
@@ -685,6 +687,50 @@ static int ObliviouslySearchShelter_alpha() {
     }
 
     /* It is verified that, at the end of this function, server_alpha can properly generate the FHE ciphertext of the fnd bit and d. As per step 8 of Figure 8. */
+
+    /****************** Refresh fnd_ct_element ******************/
+    /* Create a random SDBElement having PLAINTEXT_PIR_BLOCK_DATA_SIZE-bit data and log_N bit index */
+    random_pt = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
+    random_ct = FHE_Enc_SDBElement(random_pt);
+
+    /* Mask the actual ciphertext using the random */
+    fnd_ct_element = (fnd_ct_element + random_ct);
+
+    /* Send to server beta for a refresh operation */
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
+
+    /* Receive the refreshed ciphertext */
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed fnd_ct_element from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(fnd_ct_element, std::string(net_buf, received_sz));
+
+    /* Remove the random to get back the usable ciphertext */
+    fnd_ct_element = (fnd_ct_element - random_ct); 
+
+    /****************** Refresh fnd_ct_element ******************/
+    /* Generate random tag and encrypt that */
+    random_pt = rng.get_z_bits(P_BITS);
+    random_ct = FHE_Enc_Tag(random_pt);
+    
+    /* Homomorphically mask the ciphertext  */
+    fnd_ct_tag = (fnd_ct_tag + random_ct);
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_tag).c_str(), Serial::SerializeToString(fnd_ct_tag).size());
+    
+    /* Receive refreshed fnd_ct_tag */
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed fnd_ct_tag from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(fnd_ct_tag, std::string(net_buf, received_sz));
+
+    /* Remove the random to get back the usable ciphertext */
+    fnd_ct_tag = (fnd_ct_tag - random_ct); 
 
     return 0;
 }

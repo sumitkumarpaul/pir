@@ -21,7 +21,8 @@ static mpz_class widehat_t_I;
 
 static shelter_element sh[sqrt_N]; /* TODO For debugging only */
 #define NUM_CPU_CORES 16 /* TODO For debugging only */
-#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/") /* TODO For debugging only */
+//#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/") /* TODO For debugging only */
+#define SHELTER_STORING_LOCATION std::string("/dev/shm/") /* TODO For debugging only */
 
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
@@ -666,6 +667,9 @@ static int ObliviouslySearchShelter_beta() {
     ServerKeyEq K_alpha;
     ServerKeyEq K_gamma;
     size_t serializedFssSize;
+    size_t received_sz = 0;
+    Ciphertext<DCRTPoly> tmp_ct;
+    mpz_class tmp_pt;
     int ret = 0;
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generating DPF keys");
@@ -823,6 +827,40 @@ static int ObliviouslySearchShelter_beta() {
 
     /* Send the private key for verification. It is only for testing */
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
+
+    /************************ Refresh fnd_ct_element ciphertext ***********************/
+
+    /* Receive the ciphertext fnd_ct_element */
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_ct_element from Server Alpha");
+        return -1;
+    }
+    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
+
+    /* Decrypt then re-encrypt and send */
+    FHE_Dec_SDBElement(tmp_ct, tmp_pt);
+    tmp_ct = FHE_Enc_SDBElement(tmp_pt);
+
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
+
+    /************************ Refresh fnd_ct_tag ciphertext ***********************/
+
+    /* Receive the ciphertext fnd_ct_tag */
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_ct_tag from Server Alpha");
+        return -1;
+    }
+    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
+    
+    /* Decrypt then re-encrypt and send */
+    FHE_Dec_Tag(tmp_ct, tmp_pt);
+    tmp_ct = FHE_Enc_Tag(tmp_pt);
+
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
 
     return ret;
 }
