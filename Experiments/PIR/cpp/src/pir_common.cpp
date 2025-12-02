@@ -419,7 +419,11 @@ Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index)
     Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(SDBElementVector);
 
     /* Let's not compress at this moment, since it might take extra time, as well as can break functionality */
+#if REDUCE_CT_SIZE
+    return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 1);/* Size is reduced, but effect is not verified */
+#else
     return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
+#endif
 }
 
 // Decrypts a ciphertext, unpacks the packed vector, and reconstructs the concatenation of block_content and block_index as mpz_class
@@ -457,7 +461,11 @@ Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag) {
 
     Plaintext FHEPackedPlaintext = FHEcryptoContext->MakePackedPlaintext(TagVector);
 
+#if REDUCE_CT_SIZE
+    return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 2);/* Compression with value 1 is not working */
+#else
     return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
+#endif
 }
 
 // Decrypt the tag
@@ -551,6 +559,10 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     }
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+#if REDUCE_CT_SIZE
+    OnesforElement_ct = FHEcryptoContext->Compress(OnesforElement_ct, 2);/* Compression with value 1 is not working */
+#endif
+
 
     //FHEcryptoContext->ModReduceInPlace(OnesforElement_ct);
 
@@ -562,6 +574,9 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+#if REDUCE_CT_SIZE
+    OnesforTag_ct = FHEcryptoContext->Compress(OnesforTag_ct, 2);/* Compression with value 1 is not working */
+#endif
 
     //FHEcryptoContext->ModReduceInPlace(OnesforTag_ct);
 
@@ -578,6 +593,9 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPol
     }
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforElement_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+#if REDUCE_CT_SIZE
+    ZerosforElement_ct = FHEcryptoContext->Compress(ZerosforElement_ct, 2);/* Compression with value 1 is not working */
+#endif    
 
     //FHEcryptoContext->ModReduceInPlace(ZerosforElement_ct);
 
@@ -589,6 +607,9 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPol
     
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+#if REDUCE_CT_SIZE
+    ZerosforTag_ct = FHEcryptoContext->Compress(ZerosforTag_ct, 2);/* Compression with value 1 is not working */
+#endif    
 
     //FHEcryptoContext->ModReduceInPlace(ZerosforTag_ct);
 
@@ -606,6 +627,9 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforTag_ct){
     
     plaintextOnes = FHEcryptoContext->MakePackedPlaintext(vectorOfOnes);
     OnesforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextOnes);
+#if REDUCE_CT_SIZE
+    OnesforTag_ct = FHEcryptoContext->Compress(OnesforTag_ct, 2);/* Compression with value 1 is not working */
+#endif      
     
     //FHEcryptoContext->ModReduceInPlace(OnesforTag_ct);
 
@@ -623,6 +647,9 @@ void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforTag_ct){
     
     plaintextZeros = FHEcryptoContext->MakePackedPlaintext(vectorOfZeros);
     ZerosforTag_ct = FHEcryptoContext->Encrypt(pk_F, plaintextZeros);
+#if REDUCE_CT_SIZE
+    ZerosforTag_ct = FHEcryptoContext->Compress(ZerosforTag_ct, 2);/* Compression with value 1 is not working */
+#endif      
 
     //FHEcryptoContext->ModReduceInPlace(ZerosforTag_ct);
 

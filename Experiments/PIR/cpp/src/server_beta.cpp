@@ -937,6 +937,10 @@ static int ProcessClientRequest_beta(){
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
             }
+
+            if (k == 0){
+                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")));
+            }
         }
 
         mpz_class T_hat = ElGamal_randomGroupElement();

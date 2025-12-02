@@ -80,6 +80,10 @@ extern std::string completed_reinit_for_epoch_message;
 #define Q_BITS  (256+2)//(64+2)//3 // Size of q in bits. Adding two more bits, since we require to generate a safe prime and (q-1)/2 must be a prime
 #define R_BITS  64//2 // Size of r in bits
 
+/* Regarding optimization */
+#define REDUCE_CT_SIZE  (1)
+#warning The effect of compression is not verified yet
+
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number
 * can be represented in a single ciphertext. However, we may add
