@@ -84,6 +84,9 @@ extern std::string completed_reinit_for_epoch_message;
 #define REDUCE_CT_SIZE  (1)
 #warning The effect of compression is not verified yet
 
+/* Regarding testing */
+#define TEST_SHELTER_FOUND (1) /* Forcefully make the shelter search successful */
+
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number
 * can be represented in a single ciphertext. However, we may add

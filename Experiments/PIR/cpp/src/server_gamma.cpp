@@ -461,23 +461,21 @@ static int ObliviouslySearchShelter_gamma() {
     }
 
     dserializedFssSize = deserializeFssAndServerKeyEq(net_buf, received_sz, fServer, K_gamma);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the dserialized data: " + std::to_string(dserializedFssSize));
 
-    /* TODO Dummy print to verify the gmp_class is actually got transferred */
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received values from server Beta is: ");
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_gamma.w: " + (K_gamma.w).get_str());
+#if TEST_SHELTER_FOUND
+    mpz_class special_tag, special_tag_location;
 
-#if 1
-    mpz_class special_tag;
-
-    printf("Enter the value of the set search tag (base 10): ");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the value of the set search tag (base 10): ");
     mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
 
-    sh[2].tag_short = special_tag;/* There will be a match while processing the 4th request */
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the index within the shelter, where this special tag must be placed (set the same value as specified in server_alpha): ");
+    mpz_inp_str(special_tag_location.get_mpz_t(), stdin, 10);
+
+    sh[special_tag_location.get_ui()].tag_short = special_tag;
+
+    if (special_tag_location.get_ui() >= K) {
+        PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Since the entered position is greater than the current size of the shelter, there will not be any shelter hit.");
+    }
 #endif
 
 

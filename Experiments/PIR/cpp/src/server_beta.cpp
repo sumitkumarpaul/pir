@@ -683,150 +683,19 @@ static int ObliviouslySearchShelter_beta() {
     // Step 1.3 Initialize server structure
     initializeServer(&fServer, &fClient);
 
-    /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
-#if 1
-    sh[2].tag_short = widehat_t_I;/* There will be a match while processing the 4th request */
-    mpz_class d_alpha, d_gamma, d_ct;
-    d_alpha = mpz_class(0);
-    d_gamma = mpz_class(0);
-    Ciphertext<DCRTPoly> d_ct_FHE;
-    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-    bool fnd_alpha = false;
-
-    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
-    
-    for (size_t k = 0; k < K; k += NUM_CPU_CORES)
-    {
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            thread_sums[t] = 0;
-
-#pragma omp parallel for
-        for (int j = 0; j < NUM_CPU_CORES; ++j)
-        {
-            if ((k + j) < K)
-            {
-                if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short))
-                {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
-
-                    /* Same as XORing */
-                    thread_fnd[j] = !thread_fnd[j];
-                    printf("1 ");
-                }
-                else
-                {
-                    printf("0 ");
-                }
-            }
-        }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-        {
-            mpz_xor(d_alpha.get_mpz_t(), d_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
-        }
-    }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_alpha ^= thread_fnd[t];
-    }
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_alpha: " + std::to_string(fnd_alpha));
-
-    thread_fnd.assign(thread_fnd.size(), false);
-    bool fnd_gamma = false;
-
-    for (size_t k = 0; k < K; k += NUM_CPU_CORES)
-    {
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            thread_sums[t] = 0;
-
-#pragma omp parallel for
-        for (int j = 0; j < NUM_CPU_CORES; ++j)
-        {
-            if ((k + j) < K)
-            {
-                if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short))
-                {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k + j].element_FHE_ct.get_mpz_t());
-
-                    /* Same as XORing */
-                    thread_fnd[j] = !thread_fnd[j];
-                    printf("1 ");
-                }
-                else
-                {
-                    printf("0 ");
-                }
-            }
-        }
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-        {
-            mpz_xor(d_gamma.get_mpz_t(), d_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
-        }
-    }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_gamma ^= thread_fnd[t];
-    }
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Expected result of fnd_gamma: " + std::to_string(fnd_gamma));
-
-    /* Step 8.2.1 Compute d_ct in mpz_class */
-    mpz_xor(d_ct.get_mpz_t(), d_gamma.get_mpz_t(), d_alpha.get_mpz_t());
-
-    /* Hack */
-    #if 1
-    if (d_ct == 0){
-        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorOnesforElement_ct, SerType::BINARY) == true){
-            d_ct = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
-        }else{
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorOnesforTag ciphertext");
-        }
-    }
-    #endif
-
-    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
-    export_to_file_from_mpz_class("/dev/shm/fin.ct", d_ct);
-    Ciphertext<DCRTPoly> fin_ct;
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
-
-    if (!Serial::DeserializeFromFile("/dev/shm/fin.ct", d_ct_FHE, SerType::BINARY)) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
-    }
-    
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
-#endif
+    /* 2.a.1 Genrate FSS-key parts and send them to the server_alpha and server_gamma */
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_alpha, net_buf, sizeof(net_buf));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the serialized data: " + std::to_string(serializedFssSize));
 
-    /* TODO Dummy print to verify the gmp_class is actually got transferred */
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending values from server Beta is: ");
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_alpha.w: " + (K_alpha.w).get_str());
-
-    /* 2.a.1 Send the server structure */
     (void)sendAll(sock_beta_alpha_con, net_buf, serializedFssSize);
 
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_gamma, net_buf, sizeof(net_buf));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the serialized data: " + std::to_string(serializedFssSize));
-
-    /* TODO Dummy print to verify the gmp_class is actually got transferred */
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending values from server Beta is: ");
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_gamma.w: " + (K_gamma.w).get_str());
-
 
     (void)sendAll(sock_beta_gamma_con, net_buf, serializedFssSize);
 
+#if TEST_SHELTER_FOUND
     /* This line is only for testing purpose  */
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The search tag is widehat_t_I: " + widehat_t_I.get_str());
-
-    /* Send the private key for verification. It is only for testing */
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Fore verification only. Enter this search tag in Server_Alpha and Server_Beta prompt to make DPF search successful: " + widehat_t_I.get_str());
+#endif
 
     /************************ Refresh fnd_ct_element ciphertext ***********************/
 
@@ -1075,7 +944,7 @@ static int SelShuffDBSearchTag_beta(){
         // move the last element into `T_phi` and remove it from the vector
         T_phi = std::move(SetPhi.back());
         SetPhi.pop_back();
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected new dummy tag is: " + T_phi.get_str());
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected new dummy tag is: " + T_phi.get_str());
     }
     else
     {

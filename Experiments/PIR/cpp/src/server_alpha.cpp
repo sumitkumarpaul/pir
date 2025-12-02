@@ -441,6 +441,7 @@ static int ShelterTagDetermination_alpha(){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C.first from the Server Beta");
         return -1;
     }
+
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha starts client request processing from this point");
 
     E_g_pow_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
@@ -538,24 +539,22 @@ static int ObliviouslySearchShelter_alpha() {
     }
 
     dserializedFssSize = deserializeFssAndServerKeyEq(net_buf, received_sz, fServer, K_alpha);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Total size of the dserialized data: " + std::to_string(dserializedFssSize));
-
-    /* TODO Dummy print to verify the gmp_class is actually got transferred */
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received values from server Beta is: ");
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numBits: " + std::to_string(fServer.numBits));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.prime: " + (fServer.prime).get_str());
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numParties: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "fServer.numKeys: " + std::to_string(fServer.numParties));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "K_alpha.w: " + (K_alpha.w).get_str());
 
     /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
-#if 1
-    mpz_class special_tag;
+#if TEST_SHELTER_FOUND
+    mpz_class special_tag, special_tag_location;
 
-    printf("Enter the value of the set search tag (base 10): ");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the value of the set search tag (base 10): ");
     mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
 
-    sh[2].tag_short = special_tag;/* There will be a match while processing the 4th request */
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the index within the shelter, where this special tag must be placed (set the same value in server_gamma as well): ");
+    mpz_inp_str(special_tag_location.get_mpz_t(), stdin, 10);
+
+    sh[special_tag_location.get_ui()].tag_short = special_tag;
+
+    if (special_tag_location.get_ui() >= K) {
+        PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Since the entered position is greater than the current size of the shelter, there will not be any shelter hit.");
+    }
 #endif
 
 
@@ -622,34 +621,19 @@ static int ObliviouslySearchShelter_alpha() {
     }
     d_ct_gamma = mpz_class(std::string(net_buf, received_sz));
 
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
-
     /* Step 8.1 Determine fnd_alpha_ct */
     if (fnd_alpha == true){
         FHE_EncOfOnes(fnd_alpha_ct_element, fnd_alpha_ct_tag);
     }else{
         FHE_EncOfZeros(fnd_alpha_ct_element, fnd_alpha_ct_tag);
     }
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
     /* Step 8.2 Homomorphically compute fnd_ct = fnd_alpha_ct XOR fnd_alpha_ct = (fnd_alpha_ct + fnd_alpha_ct) - 2*(fnd_alpha_ct*fnd_alpha_ct) */
-    /* Only for debugging purpose receive private key from server beta */
-    ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
-        return -1;
-    }
-    Serial::DeserializeFromString(sk_F, std::string(net_buf, received_sz));
-
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
-
     fnd_ct_element = FHE_bitwise_XOR(fnd_alpha_ct_element, fnd_gamma_ct_element);
     fnd_ct_tag = FHE_bitwise_XOR(fnd_alpha_ct_tag, fnd_gamma_ct_tag);
 
     /* Step 8.2.1 Compute d_ct in mpz_class */
     mpz_xor(SR_sh_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "HERE");
 
     /* Hack */
     #if 1
@@ -669,27 +653,6 @@ static int ObliviouslySearchShelter_alpha() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
     }
     
-    /* This one only for experimentation purpose */
-    mpz_class dec_block_content, dec_block_index, dec_content_and_index;
-    mpz_class dec_fnd_ct_element, dec_fnd_ct_tag, dec_fnd_alpha_ct_element, dec_fnd_gamma_ct_element, dec_vectorOnesforTag_ct, dec_vectorOnesforElement_ct;
-    
-    FHE_Dec_SDBElement(SR_sh_ct_FHE, dec_content_and_index);
-
-    dec_block_content = (dec_content_and_index >> log_N);
-    dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U));
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted data: " + dec_block_content.get_str()+ " index: " + dec_block_index.get_str());
-
-    {
-        /* Already it is found that the DPF search is working. Now it is to be figured out why decrypted value of the fnd_ct is not working */
-        FHE_Dec_Tag(vectorOnesforTag_ct, dec_vectorOnesforTag_ct);
-
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of decrypted dec_vectorOnesforTag_ct: " + dec_vectorOnesforTag_ct.get_str());
-
-    }
-
-    /* It is verified that, at the end of this function, server_alpha can properly generate the FHE ciphertext of the fnd bit and d. As per step 8 of Figure 8. */
-
     /****************** Refresh fnd_ct_element ******************/
     /* Create a random SDBElement having PLAINTEXT_PIR_BLOCK_DATA_SIZE-bit data and log_N bit index */
     random_pt = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
