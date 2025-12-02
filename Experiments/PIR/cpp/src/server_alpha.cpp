@@ -490,6 +490,8 @@ static int ShelterTagDetermination_alpha(){
 
     // Step 8. Semi-homomorphically raises that to h_alpha0_1 under ElGamal encryption in GG to remove h_alpha0
     E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul_h_alpha0, h_alpha0_1, pk_E);
+    // Assign it to E_T_I, to be used later in SelShuffDBSearchTag_alpha()
+    E_T_I = E_g_pow_Rho_pow_I;
 
     // Step 9.1. Compute the ciphertext of a
     E_a = ElGamal_encrypt(a, pk_E);
