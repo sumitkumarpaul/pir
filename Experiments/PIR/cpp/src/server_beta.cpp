@@ -53,6 +53,7 @@ static int CreateRandomDatabase();
 static int ProcessClientRequest_beta();
 static int ShelterTagDetermination_beta();
 static int ObliviouslySearchShelter_beta();
+static int ShelterUpdate_beta();
 
 static void TestSrv_beta();
 
@@ -364,7 +365,8 @@ static int PerEpochOperations_beta(){
     // then remove it by swapping with the last element and pop_back()
 
     for (uint64_t iter = 0; iter < M;) {
-        #pragma omp parallel for
+        //#pragma omp parallel for
+        #warning multi-threaded shuffling is not currently working
         for (uint64_t j = 0; (j < NUM_ITEMS_IN_TMP_BUF); ++j)
         {
             size_t send_size = 0;
@@ -377,11 +379,12 @@ static int PerEpochOperations_beta(){
             mpz_class d_part, d_alpha_part, d_gamma_part;
             mpz_class mask;
             uint64_t I;
-            mpz_class mpz_I  = mpz_class(I);
+            mpz_class mpz_I;
             unsigned char net_buf_local[(P_BITS/8)];
 
             // 4. Instead of randomly choose an index I from SS, choose unique index from an already shuffled SS[]
             I = SS[(iter+j)];
+            mpz_I  = mpz_class(I);
 
             /* TODO: Temporarily store the index-location mapping. For the purpose of testing */
             //TMP_IDX_LOC_MAP[(I - 1)] = (iter+j); // Since I = 0, is not a valid index
@@ -427,7 +430,18 @@ static int PerEpochOperations_beta(){
             /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
             mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
             convert_buf_to_item_type2((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
-
+            #if 0
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For item: " + std::to_string(I) + " converted the tag value: " + T_I.get_str() + " to Kuku-key value: ");
+            std::cout << "[ ";
+            for (const auto& byte : TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]) {
+                // static_cast<int> is CRITICAL. 
+                // Without it, cout tries to print the ASCII character.
+                std::cout << static_cast<int>(byte) << " "; 
+            }
+            std::cout << "]" << std::endl;
+            #else
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + std::to_string(iter+j) + " item: " + std::to_string(I));
+            #endif
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
             //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
@@ -734,6 +748,47 @@ static int ObliviouslySearchShelter_beta() {
     return ret;
 }
 
+static int ShelterUpdate_beta(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed_c_dashed_h_gamma0;
+    mpz_class T_star_a_dashed_c_dashed_h_gamma0, T_star_a_dashed_b_dashed_c_dashed_h_gamma0;
+    
+    /* 1.b. Randomly select b_dashed */
+    mpz_class b_dashed = ElGamal_randomGroupElement();
+
+    /* 3.4.1 Receive first component of E(T_*.a'.c'.h_gamma0) */
+    ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive first component of E(T_*.a'.c'.h_gamma0)) from Server Gamma");
+        close(sock_beta_gamma_con);
+        goto exit;
+    }
+    E_T_star_a_dashed_c_dashed_h_gamma0.first = mpz_class(std::string(net_buf, received_sz));
+
+    /* 3.4.2 Receive second component of E(T_*.a'.c'.h_gamma0) */
+    ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive second component of E(T_*.a'.c'.h_gamma0)) from Server Gamma");
+        close(sock_beta_gamma_con);
+        goto exit;
+    }
+    E_T_star_a_dashed_c_dashed_h_gamma0.second = mpz_class(std::string(net_buf, received_sz));
+
+    /* 4.1 Decrypt E(T_*.a'.c'.h_gamma0) to T_*.a'.c'.h_gamma0 */
+    T_star_a_dashed_c_dashed_h_gamma0 = ElGamal_decrypt(E_T_star_a_dashed_c_dashed_h_gamma0, sk_E);
+
+    /* 4.2 Compute T_*.a'.b'.c'.h_gamma0 */
+    T_star_a_dashed_b_dashed_c_dashed_h_gamma0 = (T_star_a_dashed_c_dashed_h_gamma0 * b_dashed) % p;
+
+    /* 4.3 Return T_*.a'.b'.c'.h_gamma0 to the server gamma */
+    (void)sendAll(sock_beta_gamma_con, T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().c_str(), T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().size());
+
+exit:
+    return ret;
+}
+
 static int ProcessClientRequest_beta(){
     int ret = -1;
     struct sockaddr_in address;
@@ -770,7 +825,7 @@ static int ProcessClientRequest_beta(){
 
     //Always initialize them
     K = 0;
-    b = 1;
+    b = 1;/* Initialize with 1, so that, during the first iteration b = b'*(b^-1) = b'*1 = b' */
 
     /* For debugging only */
 #if 1
@@ -876,8 +931,13 @@ static int ProcessClientRequest_beta(){
 
         ret = SelShuffDBSearchTag_beta();
 
-        /* Other sequences and then */
-        b = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the selecting shuffled database tag..!!");
+            ret = -1;
+            goto exit;
+        }
+
+        ShelterUpdate_beta();
 
         /* Close the connection with existing client */
         close(sock_beta_client_srv);

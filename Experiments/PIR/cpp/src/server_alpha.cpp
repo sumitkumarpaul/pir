@@ -32,8 +32,11 @@ static shelter_element sh[sqrt_N]; // Database to store values, each entry is a 
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
 
-std::pair<mpz_class, mpz_class> E_T_I;
+static std::pair<mpz_class, mpz_class> E_T_I;
+static mpz_class T_star;
 static mpz_class a;
+static mpz_class SR_sh_ct;
+static std::fstream sdb;
 
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 #define NUM_CPU_CORES 16
@@ -61,6 +64,8 @@ static int ProcessClientRequest_alpha();
 static int SelShuffDBSearchTag_alpha();
 static int ShelterTagDetermination_alpha();
 static int ObliviouslySearchShelter_alpha();
+static int FetchCombineSelect_alpha();
+static int ShelterUpdate_alpha();
 
 static void TestSrv_alpha();
 static void TestPKEOperations_alpha();
@@ -259,7 +264,6 @@ static int PerEpochOperations_alpha(){
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;
     std::ofstream exportedHFile;    
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting PerEpochOperations sequence");
@@ -393,7 +397,16 @@ static int PerEpochOperations_alpha(){
         else {
             /* 13.a.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + to_string(i) + " insertion location: " + std::to_string(res.location()));
+            #if 0
+            std::cout << "[ ";
+            for (const auto& byte : Kuku_key) {
+                // static_cast<int> is CRITICAL. 
+                // Without it, cout tries to print the ASCII character.
+                std::cout << static_cast<int>(byte) << " "; 
+            }
+            std::cout << "]" << std::endl;               
+            #endif
         }
 
         if (((i+1) % 100000000) == 0){
@@ -402,7 +415,6 @@ static int PerEpochOperations_alpha(){
     }
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
     // 14.a. Nothing is required to be done for clearing the shelter content
 
@@ -524,7 +536,7 @@ static int ObliviouslySearchShelter_alpha() {
     Ciphertext<DCRTPoly> fnd_alpha_ct_tag, fnd_gamma_ct_tag;
     Ciphertext<DCRTPoly> random_ct, tmp_ct;
     mpz_class d_ct_alpha = 0, random_pt, tmp_pt;
-    mpz_class d_ct_gamma, SR_sh_ct;
+    mpz_class d_ct_gamma;
     Ciphertext<DCRTPoly> SR_sh_ct_FHE;
     std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
     bool fnd_alpha = false;
@@ -700,6 +712,103 @@ static int ObliviouslySearchShelter_alpha() {
     return 0;
 }
 
+static int FetchCombineSelect_alpha(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    QueryResult Qres;
+    item_type Kuku_key;
+    shuffled_db_entry SR_D_alpha;
+    uint64_t L_i;
+
+    /* 1.a.1 Convert T_* to cuckoo hash key */
+    mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
+    // Create a temporary array to satisfy the function signature
+    std::array<unsigned char, 16> temp;
+
+    convert_buf_to_item_type2((const unsigned char *)net_buf, (P_BITS / 8), temp);
+    // Copy the bytes into the Kuku_key variable
+    std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
+    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
+
+    std::cout << "[ ";
+    for (const auto& byte : Kuku_key) {
+        // static_cast<int> is CRITICAL. 
+        // Without it, cout tries to print the ASCII character.
+        std::cout << static_cast<int>(byte) << " "; 
+    }
+    std::cout << "]" << std::endl;    
+
+    /* 1.a.2 Lookup the location according to the Kuku table */
+    Qres = HTable->query(Kuku_key);
+    if (!Qres)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the request number: " + to_string(K));
+        ret = -1;
+        goto exit;
+    }
+
+    /* 1.a.3 Read the entry from that location of the shuffled database */
+    //L_i = (Qres.location() - 1);/* Since the location is zero indexed */
+    L_i = Qres.location();
+    read_sdb_entry(sdb, L_i, SR_D_alpha);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+
+exit:
+
+    return ret;
+}
+
+static int ShelterUpdate_alpha(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    mpz_class T_star_hat, t_star_hat;
+    
+    /* 1.a.1 Randomly select a_dashed */
+    mpz_class a_dashed = ElGamal_randomGroupElement();
+
+    /* 1.a.2 Randomly select h_alpha3 */
+    mpz_class h_alpha3 = ElGamal_randomGroupElement();
+
+    /* 2.1 Compute E(T_*.a_dashed) */
+    mpz_class T_star_a_dashed = ((T_star * a_dashed) % p);
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed = ElGamal_encrypt(T_star_a_dashed, pk_E);
+
+    /* 2.2 Send both the componets of E(T_*.a_dashed) to Server Gamma */
+    (void)sendAll(sock_alpha_to_gamma, E_T_star_a_dashed.first.get_str().c_str(), E_T_star_a_dashed.first.get_str().size());
+    (void)sendAll(sock_alpha_to_gamma, E_T_star_a_dashed.second.get_str().c_str(), E_T_star_a_dashed.second.get_str().size());
+
+    /* 6.1.2 Receive T_star_hat to Server Gamma */
+    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T*^ from Server Gamma");
+        close(sock_alpha_to_gamma);
+        goto exit;
+    }
+
+    T_star_hat = mpz_class(std::string(net_buf, received_sz));
+
+    /* 6.2.2 Receive t_star_hat to Server Gamma */
+    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive t*^ from Server Gamma");
+        close(sock_alpha_to_gamma);
+        goto exit;
+    }
+
+    t_star_hat = mpz_class(std::string(net_buf, received_sz));
+
+    /* 7.a */
+    sh[K].tag = T_star_hat;
+    sh[K].tag_short = t_star_hat;
+    // TODO sh[K].element_FHE_ct = SR_sh_ct;
+
+exit:
+    return ret;
+}
+
 //TODO static int ResumeRequestProcessing_alpha(){
 static int ProcessClientRequest_alpha(){
     int ret = -1;
@@ -707,13 +816,11 @@ static int ProcessClientRequest_alpha(){
     //int opt = 1;
     //int addrlen = sizeof(address);
     //int accepted_socket = -1;
-    shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
     item_type Kuku_key;    
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;
     std::ifstream importedHFile;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha: Starting Request processing sequence");
@@ -735,7 +842,7 @@ static int ProcessClientRequest_alpha(){
 
     //Always initialize them
     K = 0;
-    a = 1;
+    a = 1; /* Initialize with 1, so that, during the first iteration a = a'*(a^-1) = a'*1 = a' */
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -752,6 +859,14 @@ static int ProcessClientRequest_alpha(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded hash table into the RAM");
+
+    /* Open the shuffled and secret shared database */
+    sdb.open(sdb_filename, std::ios::in | std::ios::binary);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        ret = -1;
+        goto exit;
+    }
 
     /* For debugging loading the shelter into the RAM, in real situation the shelter will always remain in the RAM */
     for(size_t k = 0; k < sqrt_N; k++) {
@@ -798,8 +913,25 @@ static int ProcessClientRequest_alpha(){
 
         ret = SelShuffDBSearchTag_alpha();
 
-        /* Other sequences */
-        a = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the selecting shuffled database tag..!!");
+            ret = -1;
+            goto exit;
+        }
+
+        ret = FetchCombineSelect_alpha();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Fetch_Combine_and_Select stage..!!");
+            ret = -1;
+            goto exit;
+        }
+
+        ret = ShelterUpdate_alpha();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
+            ret = -1;
+            goto exit;
+        }
 
         /* Close the connection with existing client */
         close(sock_alpha_client_srv);
@@ -811,6 +943,11 @@ static int ProcessClientRequest_alpha(){
 
 
 exit:
+    sdb.close();
+    /* If there are any dangling connection with client, close that */
+    close(sock_alpha_client_srv);
+    close(sock_alpha_client_con);    
+
     return ret;
 }
 
@@ -889,12 +1026,16 @@ static int SelShuffDBSearchTag_alpha(){
     mpz_class T_star_h_alpha2 = mpz_class(std::string(net_buf, received_sz));
 
     /* 14.a.1 Extract T_* */
-    mpz_class T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
+    T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
+
+
+    //PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Modify to your custom T_* (base 10): ");
+    //mpz_inp_str(T_star.get_mpz_t(), stdin, 10);    
 
     /* 14.a.2 Send T_* to server gamma */
     (void)sendAll(sock_alpha_to_gamma, T_star.get_str().c_str(), T_star.get_str().size());
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
 
     return ret;
 }

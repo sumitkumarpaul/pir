@@ -39,6 +39,8 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 static KukuTable *HTable = nullptr;
 
 static mpz_class c;
+static mpz_class SR_sh_ct;
+static std::fstream sdb;
 
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/PER_EPOCH_MATERIALS/")
@@ -56,6 +58,8 @@ static int PerEpochOperations_gamma();
 static int ProcessClientRequest_gamma();
 static int ShelterTagDetermination_gamma();
 static int ObliviouslySearchShelter_gamma();
+static int FetchCombineSelect_gamma();
+static int ShelterUpdate_gamma();
 
 static int FinSrv_gamma();
 
@@ -231,7 +235,6 @@ static int PerEpochOperations_gamma(){
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;
     std::ofstream exportedHFile;    
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting PerEpochOperations sequence");
@@ -534,16 +537,144 @@ static int ObliviouslySearchShelter_gamma() {
     return 0;
 }
 
+static int FetchCombineSelect_gamma(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    QueryResult Qres;
+    item_type Kuku_key;
+    shuffled_db_entry SR_D_gamma;
+    uint64_t L_i;
+
+    /* 1.a.1 Convert T_* to cuckoo hash key */
+    mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
+    // Create a temporary array to satisfy the function signature
+    std::array<unsigned char, 16> temp;
+
+    convert_buf_to_item_type2((const unsigned char *)net_buf, (P_BITS / 8), temp);
+    // Copy the bytes into the Kuku_key variable
+    std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
+    
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
+
+    std::cout << "[ ";
+    for (const auto& byte : Kuku_key) {
+        // static_cast<int> is CRITICAL. 
+        // Without it, cout tries to print the ASCII character.
+        std::cout << static_cast<int>(byte) << " "; 
+    }
+    std::cout << "]" << std::endl;   
+
+    /* 1.a.2 Lookup the location according to the Kuku table */
+    Qres = HTable->query(Kuku_key);
+    if (!Qres)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the request number: " + to_string(K));
+        ret = -1;
+        goto exit;
+    }
+
+    /* 1.a.3 Read the entry from that location of the shuffled database */
+    //L_i = (Qres.location() - 1);/* Since the location is zero indexed */
+    L_i = Qres.location();
+    read_sdb_entry(sdb, L_i, SR_D_gamma);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+
+exit:
+
+    return ret;
+}
+
+
+static int ShelterUpdate_gamma(){
+    int ret = 0;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed;
+    mpz_class c_dashed_h_gamma0, T_star_a_dashed_b_dashed_c_dashed_h_gamma0;
+    std::pair<mpz_class, mpz_class> E_c_dashed_h_gamma0;
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed_c_dashed_h_gamma0;
+    mpz_class h_gamma0_1;
+    mpz_class T_star_hat, t_star_hat;
+   
+    /* 1.c.1 Randomly select c_dashed */
+    mpz_class c_dashed = ElGamal_randomGroupElement();
+
+    /* 1.c.2 Randomly select h_gamma0 */
+    mpz_class h_gamma0 = ElGamal_randomGroupElement();
+
+    /* 2.3.1 Receive first component of E(T_*.a_dashed) */
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive first component of E(T_*.a_dashed) from Server Alpha");
+        close(sock_gamma_to_alpha_con);
+        goto exit;
+    }
+    E_T_star_a_dashed.first = mpz_class(std::string(net_buf, received_sz));
+
+    /* 2.3.2 Receive second component of E(T_*.a_dashed) */
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive second component of E(T_*.a_dashed) from Server Alpha");
+        close(sock_gamma_to_alpha_con);
+        goto exit;
+    }
+    E_T_star_a_dashed.second = mpz_class(std::string(net_buf, received_sz));
+
+    /* 3.1 Compute E(c'.h_gamma0) */
+    c_dashed_h_gamma0 = ((c_dashed * h_gamma0) % p);
+    E_c_dashed_h_gamma0 = ElGamal_encrypt(c_dashed_h_gamma0, pk_E);
+
+    /* 3.2 Compute E(T_*.a'.c'.h_gamma0) */
+    E_T_star_a_dashed_c_dashed_h_gamma0 = ElGamal_mult_ct(E_T_star_a_dashed, E_c_dashed_h_gamma0);
+
+    /* 3.3 Send both the componets of E(T_*.a'.c'.h_gamma0) to Server Gamma */
+    (void)sendAll(sock_gamma_to_beta, E_T_star_a_dashed_c_dashed_h_gamma0.first.get_str().c_str(), E_T_star_a_dashed_c_dashed_h_gamma0.first.get_str().size());
+    (void)sendAll(sock_gamma_to_beta, E_T_star_a_dashed_c_dashed_h_gamma0.second.get_str().c_str(), E_T_star_a_dashed_c_dashed_h_gamma0.second.get_str().size());
+
+    /* 4.4 Receive T_*.a'.b'.c'.h_gamma0 from the server gamma */
+    ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive second component of E(T_*.a_dashed) from Server Alpha");
+        close(sock_gamma_to_beta);
+        goto exit;
+    }
+
+    T_star_a_dashed_b_dashed_c_dashed_h_gamma0 = mpz_class(std::string(net_buf, received_sz));
+
+    /* 5.1 Compute h_gamma0^{-1}  */
+    mpz_invert(h_gamma0_1.get_mpz_t(), h_gamma0.get_mpz_t(), p.get_mpz_t());
+    
+    /* 5.2 Compute T_star^  */
+    T_star_hat = (T_star_a_dashed_b_dashed_c_dashed_h_gamma0 * h_gamma0_1) % p;
+
+    /* 5.3 Compute t_star^  */
+    t_star_hat = (T_star_hat % r);
+    
+    /* 6.1.1 Send T_star_hat to Server Alpha */
+    (void)sendAll(sock_gamma_to_alpha_con, T_star_hat.get_str().c_str(), T_star_hat.get_str().size());
+
+    /* 6.2.1 Send t_star_hat to Server Alpha */
+    (void)sendAll(sock_gamma_to_alpha_con, t_star_hat.get_str().c_str(), t_star_hat.get_str().size());
+
+    /* 7.c */
+    sh[K].tag = T_star_hat;
+    sh[K].tag_short = t_star_hat;
+    // TODO sh[K].element_FHE_ct = SR_sh_ct;
+
+exit:
+
+    return ret;
+}
+
 //TODO static int ResumeRequestProcessing_gamma(){
 static int ProcessClientRequest_gamma(){
     int ret = -1;
-    shuffled_db_entry sdb_entry;
     uint64_t M = (N + sqrt_N);
     item_type Kuku_key;    
     QueryResult res;
     std::fstream L;
     std::fstream DK;
-    std::fstream sdb;
     std::ifstream importedHFile;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma: Starting Request processing sequence");
@@ -565,7 +696,7 @@ static int ProcessClientRequest_gamma(){
     
     //Always initialize them
     K = 0;
-    c = 1;
+    c = 1;/* Initialize with 1, so that, during the first iteration c = c'*(c^-1) = c'*1 = c' */
 
     importedHFile.open(HTable_filename, std::ios::binary);
     if (!importedHFile) {
@@ -582,6 +713,14 @@ static int ProcessClientRequest_gamma(){
         goto exit;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded hash table into the RAM");
+
+    /* Open the shuffled and secret shared database */
+    sdb.open(sdb_filename, std::ios::in | std::ios::binary);
+    if (!sdb) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open SDB file at location: " + sdb_filename);
+        ret = -1;
+        goto exit;
+    }
 
     /* For debugging loading the shelter into the RAM, in real situation the shelter will always remain in the RAM */
     for(size_t k = 0; k < sqrt_N; k++) {
@@ -625,9 +764,25 @@ static int ProcessClientRequest_gamma(){
 
         ret = SelShuffDBSearchTag_gamma();
 
-        /* Other sequences */
-        c = rng.get_z_range(p); /* TODO, this will be part of shelter update */
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the selecting shuffled database tag..!!");
+            ret = -1;
+            goto exit;
+        }
 
+        ret = FetchCombineSelect_gamma();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Fetch_Combine_and_Select stage..!!");
+            ret = -1;
+            goto exit;
+        }
+
+        ret = ShelterUpdate_gamma();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
+            ret = -1;
+            goto exit;
+        }
 
         /* Close the connection with existing client */
         close(sock_gamma_client_srv);
@@ -638,6 +793,11 @@ static int ProcessClientRequest_gamma(){
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
 
 exit:
+    sdb.close();
+    /* If there are any dangling connection with client, close that */
+    close(sock_gamma_client_srv);
+    close(sock_gamma_client_con);
+
     return ret;
 }
 
