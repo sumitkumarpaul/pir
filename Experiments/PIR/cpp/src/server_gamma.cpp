@@ -39,7 +39,6 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 static KukuTable *HTable = nullptr;
 
 static mpz_class c;
-static mpz_class SR_sh_ct;
 static std::fstream sdb;
 
 #define ONE_TIME_MATERIALS_LOCATION_GAMMA std::string("/mnt/sumit/PIR_GAMMA/ONE_TIME_MATERIALS/")
@@ -354,7 +353,7 @@ static int PerEpochOperations_gamma(){
         L.read(net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
         /* 13.c.4: Prepare them to a tuple of shuffled database */
-        memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type));
+        //memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type)); cuckoo key is no more present in the structure
         memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);    
 
         /* 13.c.5: Query and find the location */
@@ -545,6 +544,10 @@ static int FetchCombineSelect_gamma(){
     item_type Kuku_key;
     shuffled_db_entry SR_D_gamma;
     uint64_t L_i;
+    mpz_t tmp;
+    mpz_class SR_D_gamma_mpz;
+    mpz_init(tmp);
+    Ciphertext<DCRTPoly> SR_D_alpha_ct, SR_D_gamma_ct, SR_D_ct;
 
     /* 1.a.1 Convert T_* to cuckoo hash key */
     mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
@@ -555,6 +558,7 @@ static int FetchCombineSelect_gamma(){
     // Copy the bytes into the Kuku_key variable
     std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
     
+    #if 0
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
 
     std::cout << "[ ";
@@ -563,7 +567,8 @@ static int FetchCombineSelect_gamma(){
         // Without it, cout tries to print the ASCII character.
         std::cout << static_cast<int>(byte) << " "; 
     }
-    std::cout << "]" << std::endl;   
+    std::cout << "]" << std::endl;
+    #endif
 
     /* 1.a.2 Lookup the location according to the Kuku table */
     Qres = HTable->query(Kuku_key);
@@ -575,10 +580,74 @@ static int FetchCombineSelect_gamma(){
     }
 
     /* 1.a.3 Read the entry from that location of the shuffled database */
-    //L_i = (Qres.location() - 1);/* Since the location is zero indexed */
     L_i = Qres.location();
     read_sdb_entry(sdb, L_i, SR_D_gamma);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+
+    /* 2.4 Receive the FHE ciphertext SR_D_alpha_ct  */
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext SR_D_gamma_ct from Server Alpha");
+        goto exit;
+    }
+    Serial::DeserializeFromString(SR_D_alpha_ct, std::string(net_buf, received_sz));
+
+    /* 3.1 First convert from shuffled_db_entry to mpz_class */
+    mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, SR_D_gamma.element);
+    SR_D_gamma_mpz = mpz_class(tmp);
+    
+    /* 3.2 Compute SR_D_gamma_ct */
+    SR_D_gamma_ct = FHE_Enc_SDBElement(SR_D_gamma_mpz);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SR_D_gamma_mpz is: " + SR_D_gamma_mpz.get_str(16));
+    
+    /* 4. Homomorphically combine them */
+    SR_D_ct = (SR_D_alpha_ct + SR_D_gamma_ct);
+
+    /* 5.1.2 Receive fnd_ct_element  */
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext fnd_ct_element from Server Alpha");
+        goto exit;
+    }
+    Serial::DeserializeFromString(fnd_ct_element, std::string(net_buf, received_sz));
+
+    /* 5.2.2 Receive SR_sh_ct  */
+    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext SR_sh_ct from Server Alpha");
+        goto exit;
+    }
+    Serial::DeserializeFromString(SR_sh_ct, std::string(net_buf, received_sz));
+
+    #warning Temporary from here
+    // Receive sk_F
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(sk_F, std::string(net_buf, received_sz));
+
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(SR_D_ct).c_str(), Serial::SerializeToString(SR_D_ct).size());
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
+    #warning Temporary upto here
+
+    /* 6. Select the ciphertext of the requested element */
+    requested_element_ct = FHE_SelectElement(fnd_ct_element, SR_D_ct, SR_sh_ct);
+
+    #warning Temporary from here
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
+    #warning Temporary upto here
+
+    /* 7.1 Send requested_element_ct to server alpha */
+    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
+
 
 exit:
 

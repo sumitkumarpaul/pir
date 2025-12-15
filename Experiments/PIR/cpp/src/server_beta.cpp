@@ -39,7 +39,9 @@ static std::array<unsigned char, 16> TMP_KEY_BUF[NUM_ITEMS_IN_TMP_BUF] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 static unsigned char TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
 
-//static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
+#if TEST_SHUFF_DB_FETCH
+static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
+#endif
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
@@ -65,7 +67,9 @@ static void Test_FHE_DBElement();
 static void TestSelShuffDBSearchTag_beta();
 static int TestShelterDPFSearch_beta();
 static int TestClientProcessing_beta();
+#if TEST_SHUFF_DB_FETCH
 static void TestShuffDBFetch_beta();
+#endif
 
 
 static void Perf_avg_online_server_time_beta();
@@ -387,8 +391,10 @@ static int PerEpochOperations_beta(){
             mpz_I  = mpz_class(I);
 
             /* TODO: Temporarily store the index-location mapping. For the purpose of testing */
-            //TMP_IDX_LOC_MAP[(I - 1)] = (iter+j); // Since I = 0, is not a valid index
-            // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string((iter+j)));
+#if TEST_SHUFF_DB_FETCH            
+            TMP_IDX_LOC_MAP[(I - 1)] = (iter+j); // Since I = 0, is not a valid index
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string((iter+j)));
+#endif
 
             // 5. Compute T_I = g^{Rho^I mod p}
             // These two exponentiations takes a long time
@@ -936,6 +942,56 @@ static int ProcessClientRequest_beta(){
             ret = -1;
             goto exit;
         }
+
+        #warning Temporary from here
+        size_t received_sz = 0;
+        mpz_class dec_element_content, dec_element_index, dec_content_and_index, dec_tmp;
+        Ciphertext<DCRTPoly> tmp;
+        (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
+
+        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Gamma");
+            goto exit;
+        }
+        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
+        FHE_Dec_SDBElement(tmp, dec_tmp);
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded SR_D: " + dec_tmp.get_str(16));
+
+        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext fnd_ct_element from Server Gamma");
+            goto exit;
+        }
+        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
+        FHE_Dec_SDBElement(tmp, dec_tmp);
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded fnd_element: " + dec_tmp.get_str(16));
+
+        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Gamma");
+            goto exit;
+        }
+        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
+        FHE_Dec_SDBElement(tmp, dec_tmp);
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded SR_sh: " + dec_tmp.get_str(16));
+
+        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+        if (ret != 0)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Alpha");
+            goto exit;
+        }
+        Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
+        FHE_Dec_SDBElement(requested_element_ct, dec_content_and_index);
+        dec_element_content = (dec_content_and_index >> log_N);
+        dec_element_index = (dec_content_and_index & ((1U << log_N) - 1U));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected element is: " + dec_content_and_index.get_str(16));
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetcheched index is: " + dec_element_index.get_str());
+        #warning Temporary upto here
 
         ShelterUpdate_beta();
 
@@ -1849,12 +1905,14 @@ static void TestSrv_beta()
 {
     //TestPKEOperations_beta();
     //TestSelShuffDBSearchTag_beta();
-    TestShelterDPFSearch_beta();
+    //TestShelterDPFSearch_beta();
     //TestClientProcessing_beta();
-    //TestShuffDBFetch_beta();
+    TestShuffDBFetch_beta();
     //Test_FHE_DBElement();
 }
 
+#if TEST_SHUFF_DB_FETCH
+#warning this function will not work, due to the absense of this large global array
 static void TestShuffDBFetch_beta(){
     int ret = -1;
     u_int test_failure = 0;
@@ -1862,7 +1920,7 @@ static void TestShuffDBFetch_beta(){
     mpz_t tmp;
     mpz_init(tmp);
 
-    #define NUM_FETCH_TEST_CNT 100
+    #define NUM_FETCH_TEST_CNT 4
     /* First perform the per-epoch initialization */
     PerEpochOperations_beta();
 
@@ -1884,8 +1942,8 @@ static void TestShuffDBFetch_beta(){
     for (unsigned int fetch_trial; fetch_trial < NUM_FETCH_TEST_CNT; fetch_trial++){
         I = dist(gen);
 
-        //loc = TMP_IDX_LOC_MAP[(I - 1)]; // Location for item I is stored at index (i-1)
-        #warning this function will not work, due to the absense of this large global array
+
+        loc = TMP_IDX_LOC_MAP[(I - 1)]; // Location for item I is stored at index (i-1)
 
         /* Fetch the share from that location of D_alpha */
         D_alpha.seekg((loc * NUM_BYTES_PER_SDB_ELEMENT), std::ios::beg);
@@ -1939,6 +1997,8 @@ static void TestShuffDBFetch_beta(){
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_alpha is:             " + d_alpha.get_str(16) + "\nd_gamma is:             " + d_gamma.get_str(16)+ "\ndec_block_and_index is: " + dec_block_and_index.get_str(16));
 
             test_failure++;
+        } else {
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I=" + std::to_string(I) + "\nd_alpha is:             " + d_alpha.get_str(16) + "\nd_gamma is:             " + d_gamma.get_str(16)+ "\ndec_block_and_index is: " + dec_block_and_index.get_str(16));
         }
 
         if ((dec_block != d) && (I != 0))
@@ -1958,7 +2018,7 @@ static void TestShuffDBFetch_beta(){
 
     return;
 }
-
+#endif
 
 int main(int argc, char *argv[]){
     int ret = -1;

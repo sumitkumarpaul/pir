@@ -35,8 +35,11 @@ static KukuTable *HTable = nullptr;
 static std::pair<mpz_class, mpz_class> E_T_I;
 static mpz_class T_star;
 static mpz_class a;
-static mpz_class SR_sh_ct;
+static mpz_class SR_sh_ct_mpz;
 static std::fstream sdb;
+static Ciphertext<DCRTPoly> vectorZeroesforElement_ct;
+static Ciphertext<DCRTPoly> vectorZerosforTag_ct;
+
 
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
 #define NUM_CPU_CORES 16
@@ -383,7 +386,7 @@ static int PerEpochOperations_alpha(){
         L.read(net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
         /* 13.a.4: Prepare them to a tuple of shuffled database */
-        memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type));
+        //memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type)); Cuckoo key is no more present in the structure
         memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
         /* 13.a.5: Query and find the location */
@@ -534,10 +537,9 @@ static int ObliviouslySearchShelter_alpha() {
     size_t dserializedFssSize;
     Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_gamma_ct_element;
     Ciphertext<DCRTPoly> fnd_alpha_ct_tag, fnd_gamma_ct_tag;
-    Ciphertext<DCRTPoly> random_ct, tmp_ct;
+    Ciphertext<DCRTPoly> random_ct;
     mpz_class d_ct_alpha = 0, random_pt, tmp_pt;
     mpz_class d_ct_gamma;
-    Ciphertext<DCRTPoly> SR_sh_ct_FHE;
     std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
     bool fnd_alpha = false;
     std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
@@ -645,23 +647,23 @@ static int ObliviouslySearchShelter_alpha() {
     fnd_ct_tag = FHE_bitwise_XOR(fnd_alpha_ct_tag, fnd_gamma_ct_tag);
 
     /* Step 8.2.1 Compute d_ct in mpz_class */
-    mpz_xor(SR_sh_ct.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
+    mpz_xor(SR_sh_ct_mpz.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
 
     /* Hack */
     #if 1
-    if (SR_sh_ct == 0){
-        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorOnesforElement_ct, SerType::BINARY) == true){
-            SR_sh_ct = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
+    if (SR_sh_ct_mpz == 0){
+        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorZeroesforElement_ct, SerType::BINARY) == true){
+            SR_sh_ct_mpz = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
         }else{
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorOnesforTag ciphertext");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorZeroesforElement_ct ciphertext");
         }
     }
     #endif
 
     /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
-    export_to_file_from_mpz_class("/dev/shm/d.ct", SR_sh_ct);
+    export_to_file_from_mpz_class("/dev/shm/d.ct", SR_sh_ct_mpz);
 
-    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", SR_sh_ct_FHE, SerType::BINARY)) {
+    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", SR_sh_ct, SerType::BINARY)) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
     }
     
@@ -720,6 +722,10 @@ static int FetchCombineSelect_alpha(){
     item_type Kuku_key;
     shuffled_db_entry SR_D_alpha;
     uint64_t L_i;
+    mpz_t tmp;
+    mpz_class SR_D_alpha_mpz;
+    mpz_init(tmp);
+    Ciphertext<DCRTPoly> SR_D_alpha_ct;
 
     /* 1.a.1 Convert T_* to cuckoo hash key */
     mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
@@ -730,6 +736,7 @@ static int FetchCombineSelect_alpha(){
     // Copy the bytes into the Kuku_key variable
     std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
     
+    #if 0
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
 
     std::cout << "[ ";
@@ -738,7 +745,8 @@ static int FetchCombineSelect_alpha(){
         // Without it, cout tries to print the ASCII character.
         std::cout << static_cast<int>(byte) << " "; 
     }
-    std::cout << "]" << std::endl;    
+    std::cout << "]" << std::endl;
+    #endif
 
     /* 1.a.2 Lookup the location according to the Kuku table */
     Qres = HTable->query(Kuku_key);
@@ -750,10 +758,35 @@ static int FetchCombineSelect_alpha(){
     }
 
     /* 1.a.3 Read the entry from that location of the shuffled database */
-    //L_i = (Qres.location() - 1);/* Since the location is zero indexed */
     L_i = Qres.location();
     read_sdb_entry(sdb, L_i, SR_D_alpha);
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+
+    /* 2.1 First convert from shuffled_db_entry to mpz_class */
+    mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, SR_D_alpha.element);
+    SR_D_alpha_mpz = mpz_class(tmp);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SR_D_alpha_mpz is: " + SR_D_alpha_mpz.get_str(16));
+
+    /* 2.2 Compute FHE-ciphertext SR_D_alpha_ct */
+    SR_D_alpha_ct = FHE_Enc_SDBElement(SR_D_alpha_mpz);
+
+    /* 2.3 Send SR_D_alpha_ct to server Gamma */
+    (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_D_alpha_ct).c_str(), Serial::SerializeToString(SR_D_alpha_ct).size());
+
+    /* 5.1.1 Send fnd_ct_element to server gamma */
+    (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
+
+    /* 5.2.1 Send SR_sh_ct to server gamma */
+    (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
+
+    /* 7.2 Receive requested_element_ct  */
+    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Alpha");
+        goto exit;
+    }
+    Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
 
 exit:
 
@@ -803,7 +836,7 @@ static int ShelterUpdate_alpha(){
     /* 7.a */
     sh[K].tag = T_star_hat;
     sh[K].tag_short = t_star_hat;
-    // TODO sh[K].element_FHE_ct = SR_sh_ct;
+    // TODO sh[K].element_FHE_ct = SR_sh_ct_mpz;
 
 exit:
     return ret;
@@ -837,6 +870,7 @@ static int ProcessClientRequest_alpha(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    FHE_EncOfZeros(vectorZeroesforElement_ct, vectorZerosforTag_ct);/* Initialize shelter search result with not-found */
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
@@ -909,6 +943,7 @@ static int ProcessClientRequest_alpha(){
         } else {
             /* For the first request set the fnd_ct to encryption of Zeros */
             FHE_EncOfZeros(fnd_ct_element, fnd_ct_tag);
+            SR_sh_ct = vectorZeroesforElement_ct;
         }
 
         ret = SelShuffDBSearchTag_alpha();

@@ -24,6 +24,8 @@ Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 Ciphertext<DCRTPoly> fnd_ct;
 Ciphertext<DCRTPoly> fnd_ct_element;
 Ciphertext<DCRTPoly> fnd_ct_tag;
+Ciphertext<DCRTPoly> SR_sh_ct;
+Ciphertext<DCRTPoly> requested_element_ct;
 
 std::string start_reinit_for_epoch_message = "START_REINIT_FOR_EPOCH";
 std::string completed_reinit_for_epoch_message = "COMPLETED_REINIT_FOR_EPOCH";
