@@ -59,6 +59,7 @@ static int ShelterTagDetermination_gamma();
 static int ObliviouslySearchShelter_gamma();
 static int FetchCombineSelect_gamma();
 static int ShelterUpdate_gamma();
+static int ObliDecReturn_gamma();
 
 static int FinSrv_gamma();
 
@@ -623,31 +624,41 @@ static int FetchCombineSelect_gamma(){
     }
     Serial::DeserializeFromString(SR_sh_ct, std::string(net_buf, received_sz));
 
-    #warning Temporary from here
-    // Receive sk_F
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
-        return -1;
-    }
-    Serial::DeserializeFromString(sk_F, std::string(net_buf, received_sz));
-
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(SR_D_ct).c_str(), Serial::SerializeToString(SR_D_ct).size());
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
-    #warning Temporary upto here
-
     /* 6. Select the ciphertext of the requested element */
     requested_element_ct = FHE_SelectElement(fnd_ct_element, SR_D_ct, SR_sh_ct);
-
-    #warning Temporary from here
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
-    #warning Temporary upto here
 
     /* 7.1 Send requested_element_ct to server alpha */
     (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
 
+
+exit:
+
+    return ret;
+}
+
+static int ObliDecReturn_gamma(){
+    int ret = -1;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    Ciphertext<DCRTPoly> m_C_ct, masked_requested_element_ct;
+
+    /* Step 2.3: Receive the ciphertext of the mask */
+    ret_recv = recvAll(sock_gamma_client_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_C_ct from Client");
+        goto exit;
+    }
+    Serial::DeserializeFromString(m_C_ct, std::string(net_buf, received_sz));
+
+    /* Step 3: Homomorphically apply the mask. In paper it is mentioned +, but here we are using - */
+    /* Consequently, the client is using +, instead of - */
+    masked_requested_element_ct = requested_element_ct - m_C_ct;
+
+    /* Step 4.1: Send the masked result to server beta */
+    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(masked_requested_element_ct).c_str(), Serial::SerializeToString(masked_requested_element_ct).size());
+
+    ret = 0;
 
 exit:
 
@@ -847,6 +858,13 @@ static int ProcessClientRequest_gamma(){
         }
 
         ret = ShelterUpdate_gamma();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
+            ret = -1;
+            goto exit;
+        }
+
+        ret = ObliDecReturn_gamma();
         if (ret != 0){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
             ret = -1;

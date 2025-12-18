@@ -22,6 +22,7 @@ static char net_buf[NET_BUF_SZ] = {0};
 static int InitClient();
 static int OneTimeInit_client();
 static int ShelterTagDetermination_Client(uint64_t I);
+static int ObliDecReturn_Client(uint64_t* p_received_index);
 static int FinClient();
 
 static void TestClient();
@@ -257,10 +258,71 @@ static int ShelterTagDetermination_Client(uint64_t I){
     return ret;
 }
 
+static int ObliDecReturn_Client(uint64_t* p_received_index) {
+    int ret = -1;
+    Ciphertext<DCRTPoly> m_C_ct;
+    mpz_class m_C;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    mpz_class received_element, extracted_element, extracted_element_content, extracted_element_index;
+    mpz_class extracted_part, received_part, m_C_part, mask;
+    *p_received_index = 0;
+
+    /* Step 1: Generate random mask */
+    m_C = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
+
+    /* Step 2.1: Generate ciphertext of the random mask */
+    m_C_ct = FHE_Enc_SDBElement(m_C);
+
+    /* Step 2.2: Send corresponding ciphertext to server gamma */
+    (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(m_C_ct).c_str(), Serial::SerializeToString(m_C_ct).size());
+
+    /* 6.2 Receive decryption result */
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first from the Server Alpha");
+        return -1;
+    }
+    received_element = mpz_class(std::string(net_buf, received_sz));
+
+    /* 7. Remove mask */
+    /* Similar but reverse logic of per-epoch operations for server beta */
+    extracted_element = mpz_class(0);
+    mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+
+    for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
+    {
+        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
+        m_C_part = (m_C & mask);
+        received_part = (received_element & mask);
+
+        /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
+        extracted_part = (received_part + m_C_part) & mask;
+
+        /* Append the part at the proper location */
+        extracted_element = (extracted_element | extracted_part);
+
+        mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
+    }
+
+    /* Extract result */
+    extracted_element_content = (extracted_element >> log_N);
+    extracted_element_index = (extracted_element & ((1U << log_N) - 1U));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received element is (HEX): " + extracted_element.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Extracted block content is (HEX): " + extracted_element_content.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received index is (DEC): " + extracted_element_index.get_str());
+
+    *p_received_index = extracted_element_index.get_ui();
+
+exit:
+    return ret;
+}
+
 int main(int argc, char *argv[])
 {
     int ret = -1;
-    uint64_t I;
+    uint64_t I, received_index;
 
     /* Process as per the command line arguments */
     if (argc >= 2) {
@@ -271,6 +333,7 @@ int main(int argc, char *argv[])
             if ((I > N) || (I < 1))
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The database contains: " + std::to_string(N) + " blocks. Please enter a value in between 1 and " + std::to_string(N));
+                return -1;
             }
         }
         catch (const std::out_of_range &oor)
@@ -287,6 +350,15 @@ int main(int argc, char *argv[])
 
         /* Shelter-tag determination */
         ShelterTagDetermination_Client(I);
+
+        /* Oblivious decryption and return */
+        ObliDecReturn_Client(&received_index);
+
+        if (received_index == I){
+            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Index of the received block matches with requested index: " + std::to_string(I));
+        } else {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received index is: " + std::to_string(received_index) + "which does not matches with requested index: " + std::to_string(I));
+        }
     }
     else
     {

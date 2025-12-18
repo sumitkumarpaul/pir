@@ -33,7 +33,7 @@ std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
 std::string SetPhi_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"SetPhi.bin";
 
-#define NUM_ITEMS_IN_TMP_BUF 16//((sqrt_N) * (NUM_CPU_CORES)) //100000//16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
+#define NUM_ITEMS_IN_TMP_BUF sqrt_N//((sqrt_N) * (NUM_CPU_CORES)) //100000//16//4112//6553760//100000 // After these many item creation, everything is written to the disk. This must be multiple of number of threads used in parallel for loop and also must be a divisor of (N+sqrt_N)
 //static unsigned char TMP_KEY_BUF[((sizeof(item_type))* NUM_ITEMS_IN_TMP_BUF)] = {0};
 static std::array<unsigned char, 16> TMP_KEY_BUF[NUM_ITEMS_IN_TMP_BUF] = {0};
 static unsigned char TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF)] = {0};
@@ -55,6 +55,7 @@ static int CreateRandomDatabase();
 static int ProcessClientRequest_beta();
 static int ShelterTagDetermination_beta();
 static int ObliviouslySearchShelter_beta();
+static int ObliDecReturn_beta();
 static int ShelterUpdate_beta();
 
 static void TestSrv_beta();
@@ -369,8 +370,8 @@ static int PerEpochOperations_beta(){
     // then remove it by swapping with the last element and pop_back()
 
     for (uint64_t iter = 0; iter < M;) {
-        //#pragma omp parallel for
-        #warning multi-threaded shuffling is not currently working
+        #pragma omp parallel for
+        #warning multi-threaded shuffling is required to be confirmed
         for (uint64_t j = 0; (j < NUM_ITEMS_IN_TMP_BUF); ++j)
         {
             size_t send_size = 0;
@@ -754,6 +755,35 @@ static int ObliviouslySearchShelter_beta() {
     return ret;
 }
 
+static int ObliDecReturn_beta(){
+    int ret = -1;
+    size_t received_sz = 0;
+    int ret_recv = 0;
+    Ciphertext<DCRTPoly> masked_requested_element_ct;
+    mpz_class masked_requested_element_pt;
+
+    /* Step 4.2: Receive the ciphertext of the masked element */
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_C_ct from Client");
+        goto exit;
+    }
+    Serial::DeserializeFromString(masked_requested_element_ct, std::string(net_buf, received_sz));
+       
+    /* Step 5. Decrypt the result */
+    FHE_Dec_SDBElement(masked_requested_element_ct, masked_requested_element_pt);
+
+    /* Step 6.1: Send the decryption result to the client */
+    (void)sendAll(sock_beta_client_con, masked_requested_element_pt.get_str().c_str(), masked_requested_element_pt.get_str().size());
+
+    ret = 0;
+    
+exit:
+
+    return ret;
+}
+
 static int ShelterUpdate_beta(){
     int ret = 0;
     size_t received_sz = 0;
@@ -834,7 +864,7 @@ static int ProcessClientRequest_beta(){
     b = 1;/* Initialize with 1, so that, during the first iteration b = b'*(b^-1) = b'*1 = b' */
 
     /* For debugging only */
-#if 1
+#if 0
     /* Populate the shelter, with random elements */
     for(size_t k = 0; k < sqrt_N; k++) {
         //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
@@ -943,57 +973,9 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-        #warning Temporary from here
-        size_t received_sz = 0;
-        mpz_class dec_element_content, dec_element_index, dec_content_and_index, dec_tmp;
-        Ciphertext<DCRTPoly> tmp;
-        (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(sk_F).c_str(), Serial::SerializeToString(sk_F).size());
-
-        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Gamma");
-            goto exit;
-        }
-        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
-        FHE_Dec_SDBElement(tmp, dec_tmp);
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded SR_D: " + dec_tmp.get_str(16));
-
-        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext fnd_ct_element from Server Gamma");
-            goto exit;
-        }
-        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
-        FHE_Dec_SDBElement(tmp, dec_tmp);
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded fnd_element: " + dec_tmp.get_str(16));
-
-        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Gamma");
-            goto exit;
-        }
-        Serial::DeserializeFromString(tmp, std::string(net_buf, received_sz));
-        FHE_Dec_SDBElement(tmp, dec_tmp);
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Receivded SR_sh: " + dec_tmp.get_str(16));
-
-        ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
-        if (ret != 0)
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Alpha");
-            goto exit;
-        }
-        Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
-        FHE_Dec_SDBElement(requested_element_ct, dec_content_and_index);
-        dec_element_content = (dec_content_and_index >> log_N);
-        dec_element_index = (dec_content_and_index & ((1U << log_N) - 1U));
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected element is: " + dec_content_and_index.get_str(16));
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Fetcheched index is: " + dec_element_index.get_str());
-        #warning Temporary upto here
-
         ShelterUpdate_beta();
+        
+        ObliDecReturn_beta();
 
         /* Close the connection with existing client */
         close(sock_beta_client_srv);

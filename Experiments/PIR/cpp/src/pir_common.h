@@ -71,9 +71,9 @@ extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
-#define N       256//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
+#define N       1048576//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
 #define log_N   31    // ceil((log2(N)))
-#define sqrt_N  16//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
+#define sqrt_N  1024//40960//1024//40960 // ceil((sqrt(N))) TODO: Forcefully makig it 0, so that total size remains small and divisible by 16(number of cpu cores)
 
 /* For quick-tag generation and experimentation with cuckoo hashing reduced the size of bits */
 #define P_BITS  3072//128//5 // Size of p in bits
