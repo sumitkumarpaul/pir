@@ -260,7 +260,7 @@ static int ShelterTagDetermination_Client(uint64_t I){
 
 static int ObliDecReturn_Client(uint64_t* p_received_index) {
     int ret = -1;
-    Ciphertext<DCRTPoly> m_C_ct;
+    Ciphertext<DCRTPoly> m_C_ct, refreshed_ct;
     mpz_class m_C;
     size_t received_sz = 0;
     int ret_recv = 0;
@@ -315,6 +315,11 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     *p_received_index = extracted_element_index.get_ui();
 
+    /* Additional steps for refreshing ciphertext */
+    refreshed_ct = FHE_Enc_SDBElement(extracted_element);
+    /* Send refreshed ciphertext to Server Gamma */
+    (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(refreshed_ct).c_str(), Serial::SerializeToString(refreshed_ct).size());    
+
 exit:
     return ret;
 }
@@ -357,7 +362,7 @@ int main(int argc, char *argv[])
         if (received_index == I){
             PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Index of the received block matches with requested index: " + std::to_string(I));
         } else {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received index is: " + std::to_string(received_index) + "which does not matches with requested index: " + std::to_string(I));
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received index is: " + std::to_string(received_index) + " which does not matches with requested index: " + std::to_string(I));
         }
     }
     else

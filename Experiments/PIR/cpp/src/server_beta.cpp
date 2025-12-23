@@ -648,7 +648,7 @@ static int ShelterTagDetermination_beta(){
     widehat_T_I = (g_pow_Rho_pow_I__mul_a_mul_c * b) % p;
 
     /* Step 11.3 Determine \widehat{t_I} */
-    widehat_t_I = g_pow_Rho_pow_I__mul_a_mul_c % r;
+    widehat_t_I = widehat_T_I % r;
 
     /* TODO: This step is only for verification */
 #if 0
@@ -662,10 +662,10 @@ static int ShelterTagDetermination_beta(){
     mpz_inp_str(c.get_mpz_t(), stdin, 10);
 
     mpz_powm(RhoExpI.get_mpz_t(), Rho.get_mpz_t(), mpz_class(I).get_mpz_t(), q.get_mpz_t()); // Since this is an exponenet
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated expected RhoExpI: " + RhoExpI.get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Calculated expected RhoExpI: " + RhoExpI.get_str());
 
     mpz_powm(gExp_RhoExpI.get_mpz_t(), g.get_mpz_t(), RhoExpI.get_mpz_t(), p.get_mpz_t());
-    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated expected RhoExpI: " + gExp_RhoExpI.get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Calculated expected RhoExpI: " + gExp_RhoExpI.get_str());
 
     mpz_class expected_widehat_T_I = (gExp_RhoExpI * a * b * c) % p;
     if (expected_widehat_T_I != widehat_T_I)
@@ -676,8 +676,18 @@ static int ShelterTagDetermination_beta(){
     {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "widehat_T_I matched with expected value. Haha..Thank you..:) :) ");
     }
+    mpz_class expected_widehat_t_I = (expected_widehat_T_I) % r;
+    if (expected_widehat_t_I != widehat_t_I)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Calculated widehat_t_I does not match: expected " + expected_widehat_t_I.get_str() + ", got " + widehat_t_I.get_str());
+    }
+    else
+    {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "widehat_t_I matched with expected value. Haha..Thank you..:) :) ");
+    }
     /* Upto this point, for the verification of shelter_tag_determination flow */
 #endif
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated shelter search tag is: " + widehat_t_I.get_str());
 
     return ret;
 }
@@ -787,14 +797,15 @@ exit:
 static int ShelterUpdate_beta(){
     int ret = 0;
     size_t received_sz = 0;
-    int ret_recv = 0;
-    std::pair<mpz_class, mpz_class> E_T_star_a_dashed_c_dashed_h_gamma0;
-    mpz_class T_star_a_dashed_c_dashed_h_gamma0, T_star_a_dashed_b_dashed_c_dashed_h_gamma0;
+    int ret_recv = 0, completion_cnt = 0;
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed_c_dashed_h_gamma0, E_Del_a_Del_c_h_alpha3;
+    mpz_class b_dashed, T_star_a_dashed_c_dashed_h_gamma0, T_star_a_dashed_b_dashed_c_dashed_h_gamma0, Del_a_Del_c_h_alpha3, b_1, Del_b, Del_a_Del_b_Del_c_h_alpha3;
     
+start:
     /* 1.b. Randomly select b_dashed */
-    mpz_class b_dashed = ElGamal_randomGroupElement();
+    b_dashed = ElGamal_randomGroupElement();
 
-    /* 3.4.1 Receive first component of E(T_*.a'.c'.h_gamma0) */
+    /* 3.3.2 Receive first component of E(T_*.a'.c'.h_gamma0) */
     ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive first component of E(T_*.a'.c'.h_gamma0)) from Server Gamma");
@@ -818,8 +829,73 @@ static int ShelterUpdate_beta(){
     /* 4.2 Compute T_*.a'.b'.c'.h_gamma0 */
     T_star_a_dashed_b_dashed_c_dashed_h_gamma0 = (T_star_a_dashed_c_dashed_h_gamma0 * b_dashed) % p;
 
-    /* 4.3 Return T_*.a'.b'.c'.h_gamma0 to the server gamma */
+    /* 4.3.1 Return T_*.a'.b'.c'.h_gamma0 to the server gamma */
     (void)sendAll(sock_beta_gamma_con, T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().c_str(), T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().size());
+
+    /* 9.4.2 Receive first component of E(Del_a_Del_c_h_alpha3) */
+    ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive first component of E(Del_a_Del_c_h_alpha3) from Server Beta");
+        close(sock_beta_gamma_con);
+        goto exit;
+    }
+    E_Del_a_Del_c_h_alpha3.first = mpz_class(std::string(net_buf, received_sz));
+
+    /* 9.5.2 Receive second component of E(Del_a_Del_c_h_alpha3) */
+    ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive second component of E(Del_a_Del_c_h_alpha3) from Server Beta");
+        close(sock_beta_gamma_con);
+        goto exit;
+    }
+    E_Del_a_Del_c_h_alpha3.second = mpz_class(std::string(net_buf, received_sz));
+
+    /* 10.1.1 Compute b^{-1} */
+    mpz_invert(b_1.get_mpz_t(), b.get_mpz_t(), p.get_mpz_t());
+
+    /* 10.1.2 Compute Del_b */
+    Del_b = (b_dashed * b_1) % p;    
+
+    /* 10.2 Decrypt E(E_Del_a_Del_c_h_alpha3) to Del_a_Del_c_h_alpha3 */
+    Del_a_Del_c_h_alpha3 = ElGamal_decrypt(E_Del_a_Del_c_h_alpha3, sk_E);
+
+    /* 10.3 Compute Del_a_Del_b_Del_c_h_alpha3 */
+    Del_a_Del_b_Del_c_h_alpha3 = (Del_a_Del_c_h_alpha3 * Del_b) % p;
+
+    /* 11.1.1 Send Del_a_Del_b_Del_c_h_alpha3 to server alpha */
+    (void)sendAll(sock_beta_alpha_con, Del_a_Del_b_Del_c_h_alpha3.get_str().c_str(), Del_a_Del_b_Del_c_h_alpha3.get_str().size());
+
+    /* 11.2.1 Send Del_a_Del_b_Del_c_h_alpha3 to server gamma */
+    (void)sendAll(sock_beta_gamma_con, Del_a_Del_b_Del_c_h_alpha3.get_str().c_str(), Del_a_Del_b_Del_c_h_alpha3.get_str().size());
+
+    /* Receive completion message from servers */
+    #if 0
+    (void)recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    
+    if (std::string(net_buf, received_sz) == completed_request_processing_message) {
+        completion_cnt++;
+    }
+
+    (void)recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    
+    if (std::string(net_buf, received_sz) == completed_request_processing_message) {
+        completion_cnt++;
+    }
+
+    if (completion_cnt == 0){
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Tag collision.. Restarting the shelter update process..!!");
+        goto start;
+    } else if (completion_cnt == 1) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Servers are not behaving honestly, one server reported tag collision and the other is not");
+        ret = -1;
+    } else {
+        /* Both the servers reported completion of request processing */
+        ret = 0;
+    }
+    #else
+    ret = 0;
+    b = b_dashed;
+    #endif
 
 exit:
     return ret;
@@ -863,61 +939,6 @@ static int ProcessClientRequest_beta(){
     K = 0;
     b = 1;/* Initialize with 1, so that, during the first iteration b = b'*(b^-1) = b'*1 = b' */
 
-    /* For debugging only */
-#if 0
-    /* Populate the shelter, with random elements */
-    for(size_t k = 0; k < sqrt_N; k++) {
-        //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
-        if (1) {
-            // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-            mpz_class data = rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE);
-            mpz_class index = rng.get_z_bits(log_N);
-            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement(( data << log_N) | index);
-
-            /* Printing, so that afer the DPF search it can be verified */
-            if (k == 0){
-                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The value of data, which should be found during DPF search experiment is: " + data.get_str()+ " index: " + index.get_str());
-            }
-
-            /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
-            if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
-            {
-#if 0 /* Already performed this error checking, while doing experimentation for serveral times. Hence ommited */
-            Ciphertext<DCRTPoly> deserialized_tmp_ct;
-            if (Serial::DeserializeFromFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", deserialized_tmp_ct, SerType::BINARY) == false) {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to deserialize element FHE ciphertext from file");
-            } else {
-                if (*(tmp_ct) != *(deserialized_tmp_ct)) {
-                    PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Deserialized element FHE ciphertext does not match original");
-                }
-            }
-#endif
-            }
-            else
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
-            }
-
-            if (k == 0){
-                PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")));
-            }
-        }
-
-        mpz_class T_hat = ElGamal_randomGroupElement();
-        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat", T_hat);
-        export_to_file_from_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat", (T_hat % r));
-    }
-    
-    /* Load the shelter into the RAM */
-    for(size_t k = 0; k < sqrt_N; k++) {
-        sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
-
-        /* Generate the tags and keep them in the variable, which will be used for DPF search */
-        sh[k].tag = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat");
-        sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
-    }
-#endif    
-
     while (K < sqrt_N){        
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for processing the PIR request number: "+ std::to_string(K+1) +" from the client..!!");
 
@@ -945,6 +966,8 @@ static int ProcessClientRequest_beta(){
         (void)sendAll(sock_beta_client_con, E_q_Rho.first.get_str().c_str(), E_q_Rho.first.get_str().size());
         (void)sendAll(sock_beta_client_con, E_q_Rho.second.get_str().c_str(), E_q_Rho.second.get_str().size());
 
+        /* Even if for the request number 1, the determined shelter tag is not required to be used.
+           Still, we cannot move this function within if (K > 0) block, since the client interaction is involved in this function. */
         ret = ShelterTagDetermination_beta();
         if (ret != 0)
         {
@@ -973,10 +996,11 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-        ShelterUpdate_beta();
-        
+       
         ObliDecReturn_beta();
 
+        ShelterUpdate_beta();
+        
         /* Close the connection with existing client */
         close(sock_beta_client_srv);
         close(sock_beta_client_con);
@@ -1042,7 +1066,7 @@ static int SelShuffDBSearchTag_beta(){
         // move the last element into `T_phi` and remove it from the vector
         T_phi = std::move(SetPhi.back());
         SetPhi.pop_back();
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected new dummy tag is: " + T_phi.get_str());
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected new dummy tag is: " + T_phi.get_str());
     }
     else
     {
@@ -1889,7 +1913,9 @@ static void TestSrv_beta()
     //TestSelShuffDBSearchTag_beta();
     //TestShelterDPFSearch_beta();
     //TestClientProcessing_beta();
+#if TEST_SHUFF_DB_FETCH
     TestShuffDBFetch_beta();
+#endif
     //Test_FHE_DBElement();
 }
 

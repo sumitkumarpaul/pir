@@ -29,6 +29,8 @@ Ciphertext<DCRTPoly> requested_element_ct;
 
 std::string start_reinit_for_epoch_message = "START_REINIT_FOR_EPOCH";
 std::string completed_reinit_for_epoch_message = "COMPLETED_REINIT_FOR_EPOCH";
+std::string completed_request_processing_message = "COMPLETED_REQ_PROCESSING";
+std::string reinit_shelter_update_message = "REINIT_SHELTER_UPDATE";
 
 void PrintLog(int log_level, const char* file, int line, const std::string& message) {
 

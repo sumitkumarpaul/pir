@@ -589,10 +589,8 @@ static int ObliviouslySearchShelter_alpha() {
 
                     /* Same as XORing */
                     thread_fnd[j] = !thread_fnd[j];
-                    printf("1 ");
                 }
                 else{
-                    printf("0 ");
                 }
             }
         }
@@ -690,7 +688,7 @@ static int ObliviouslySearchShelter_alpha() {
     /* Remove the random to get back the usable ciphertext */
     fnd_ct_element = (fnd_ct_element - random_ct); 
 
-    /****************** Refresh fnd_ct_element ******************/
+    /****************** Refresh fnd_ct_tag ******************/
     /* Generate random tag and encrypt that */
     random_pt = rng.get_z_bits(P_BITS);
     random_ct = FHE_Enc_Tag(random_pt);
@@ -760,7 +758,7 @@ static int FetchCombineSelect_alpha(){
     /* 1.a.3 Read the entry from that location of the shuffled database */
     L_i = Qres.location();
     read_sdb_entry(sdb, L_i, SR_D_alpha);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
 
     /* 2.1 First convert from shuffled_db_entry to mpz_class */
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, SR_D_alpha.element);
@@ -779,6 +777,7 @@ static int FetchCombineSelect_alpha(){
     /* 5.2.1 Send SR_sh_ct to server gamma */
     (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
 
+    #if 0/* !!!!! Updated flow to refresh ciphertext */
     /* 7.2 Receive requested_element_ct  */
     ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
@@ -787,6 +786,7 @@ static int FetchCombineSelect_alpha(){
         goto exit;
     }
     Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
+    #endif
 
 exit:
 
@@ -797,20 +797,32 @@ static int ShelterUpdate_alpha(){
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv = 0;
-    mpz_class T_star_hat, t_star_hat;
+    mpz_class a_dashed, h_alpha3, T_star_a_dashed, T_star_hat, t_star_hat, a_1, Del_a, Del_a_h_alpha3, Del_a_Del_b_Del_c_h_alpha3, h_alpha3_1, Del_a_Del_b_Del_c;
+    std::pair<mpz_class, mpz_class> E_T_star_a_dashed, E_Del_a_h_alpha3;
     
+    /* !!!!! Updated flow to refresh ciphertext. This is actually step 7.2 of FetchCombineSelect_alpha  */
+    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Alpha");
+        goto exit;
+    }
+    Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
+start:
     /* 1.a.1 Randomly select a_dashed */
-    mpz_class a_dashed = ElGamal_randomGroupElement();
+    a_dashed = ElGamal_randomGroupElement();
 
     /* 1.a.2 Randomly select h_alpha3 */
-    mpz_class h_alpha3 = ElGamal_randomGroupElement();
+    h_alpha3 = ElGamal_randomGroupElement();
 
     /* 2.1 Compute E(T_*.a_dashed) */
-    mpz_class T_star_a_dashed = ((T_star * a_dashed) % p);
-    std::pair<mpz_class, mpz_class> E_T_star_a_dashed = ElGamal_encrypt(T_star_a_dashed, pk_E);
+    T_star_a_dashed = ((T_star * a_dashed) % p);
+    E_T_star_a_dashed = ElGamal_encrypt(T_star_a_dashed, pk_E);
 
-    /* 2.2 Send both the componets of E(T_*.a_dashed) to Server Gamma */
+    /* 2.2.1 Send the first componet of E(T_*.a_dashed) to Server Gamma */
     (void)sendAll(sock_alpha_to_gamma, E_T_star_a_dashed.first.get_str().c_str(), E_T_star_a_dashed.first.get_str().size());
+
+    /* 2.3.1 Send the second componet of E(T_*.a_dashed) to Server Gamma */
     (void)sendAll(sock_alpha_to_gamma, E_T_star_a_dashed.second.get_str().c_str(), E_T_star_a_dashed.second.get_str().size());
 
     /* 6.1.2 Receive T_star_hat to Server Gamma */
@@ -833,10 +845,73 @@ static int ShelterUpdate_alpha(){
 
     t_star_hat = mpz_class(std::string(net_buf, received_sz));
 
-    /* 7.a */
+    /* 7.a.1 Convert the ciphertext of the requested element in mpz format and then append that to the shelter */
+    if (Serial::SerializeToFile("/dev/shm/tmp.ct", requested_element_ct, SerType::BINARY) == true){
+        sh[K].element_FHE_ct = import_from_file_to_mpz_class("/dev/shm/tmp.ct");        
+    }else{
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to convert and then save the ciphertext of the requested element in mpz format");
+        goto exit;
+    }
+    /* 7.a.2 Append the shelter tags */
     sh[K].tag = T_star_hat;
     sh[K].tag_short = t_star_hat;
-    // TODO sh[K].element_FHE_ct = SR_sh_ct_mpz;
+
+    /* 8.1.1 Compute a^{-1} */
+    mpz_invert(a_1.get_mpz_t(), a.get_mpz_t(), p.get_mpz_t());
+
+    /* 8.1.2 Compute a'.a^{-1} */
+    Del_a = (a_dashed * a_1) % p;
+
+    /* 8.2.1 Compute Del_a.h_alpha3 */
+    Del_a_h_alpha3 = ((Del_a * h_alpha3) % p);
+
+    /* 8.2.2 Compute E(Del_a.h_alpha3) */
+    E_Del_a_h_alpha3 = ElGamal_encrypt(Del_a_h_alpha3, pk_E);
+
+    /* 8.3.1 Send h_alpha3 */
+    (void)sendAll(sock_alpha_to_gamma, h_alpha3.get_str().c_str(), h_alpha3.get_str().size());
+
+    /* 8.4.1.1 Send the first componet of E(Del_a.h_alpha3) to Server Gamma */
+    (void)sendAll(sock_alpha_to_gamma, E_Del_a_h_alpha3.first.get_str().c_str(), E_Del_a_h_alpha3.first.get_str().size());
+
+    /* 8.4.2.1 Send the second componet of E(Del_a.h_alpha3) to Server Gamma */
+    (void)sendAll(sock_alpha_to_gamma, E_Del_a_h_alpha3.second.get_str().c_str(), E_Del_a_h_alpha3.second.get_str().size());
+
+    /* 11.1.2 Receive Del_a_Del_b_Del_c_h_alpha3 to Server Beta */
+    ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive Del_a_Del_b_Del_c_h_alpha3 from Server Beta");
+        close(sock_alpha_to_gamma);
+        goto exit;
+    }
+
+    Del_a_Del_b_Del_c_h_alpha3 = mpz_class(std::string(net_buf, received_sz));
+
+    /* 12.a.1 Compute h_alpha3^{-1} */
+    mpz_invert(h_alpha3_1.get_mpz_t(), h_alpha3.get_mpz_t(), p.get_mpz_t());
+
+    /* 12.a.2 Extract Del_a_Del_b_Del_c */
+    Del_a_Del_b_Del_c = ((Del_a_Del_b_Del_c_h_alpha3 * h_alpha3_1) % p);
+
+    for (unsigned int i = 0; i < K; i++) {
+        sh[i].tag = ((sh[i].tag * Del_a_Del_b_Del_c) % p);
+        sh[i].tag_short = sh[i].tag % r;
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "sh["+ std::to_string(i) + "].tag_short: " + sh[i].tag_short.get_str());
+
+        #warning Ideally, this check must be present
+        #if 0
+        if (t_star_hat == sh[i].tag_short) {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Tag collision.. Restarting the shelter update process..!!");
+            (void)sendAll(sock_alpha_to_beta, reinit_shelter_update_message.c_str(), reinit_shelter_update_message.size());
+            goto start;
+        }
+        #endif
+    }
+
+    //(void)sendAll(sock_alpha_to_beta, completed_request_processing_message.c_str(), completed_request_processing_message.size());
+
+    a = a_dashed;
+    ret = 0;
 
 exit:
     return ret;
@@ -902,15 +977,6 @@ static int ProcessClientRequest_alpha(){
         goto exit;
     }
 
-    /* For debugging loading the shelter into the RAM, in real situation the shelter will always remain in the RAM */
-    for(size_t k = 0; k < sqrt_N; k++) {
-        sh[k].element_FHE_ct = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct");
-
-        /* Generate the tags and keep them in the variable, which will be used for DPF search */
-        sh[k].tag = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].T_hat");
-        sh[k].tag_short = import_from_file_to_mpz_class(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].t_hat"); // Create a random short tag
-    }
-
     while (K < sqrt_N){
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Waiting for processing the PIR request number: "+ std::to_string(K+1) +" from the client..!!");
 
@@ -923,6 +989,8 @@ static int ProcessClientRequest_alpha(){
             goto exit;
         }
 
+        /* Even if for the request number 1, the determined shelter tag is not required to be used.
+           Still, we cannot move this function within if (K > 0) block, since the client interaction is involved in this function. */
         ret = ShelterTagDetermination_alpha();
         if (ret != 0)
         {
@@ -1063,7 +1131,7 @@ static int SelShuffDBSearchTag_alpha(){
     /* 14.a.1 Extract T_* */
     T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
 
 
     //PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Modify to your custom T_* (base 10): ");

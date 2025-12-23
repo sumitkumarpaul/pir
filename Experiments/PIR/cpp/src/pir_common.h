@@ -47,7 +47,7 @@ using namespace kuku;
 #define LOG_LEVEL_DEBUG     3
 #define LOG_LEVEL_TRACE     4
 
-#define SET_LOG_LEVEL LOG_LEVEL_TRACE
+#define SET_LOG_LEVEL LOG_LEVEL_INFO
 
 #define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
 
@@ -69,6 +69,8 @@ using namespace kuku;
 
 extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
+extern std::string completed_request_processing_message;
+extern std::string reinit_shelter_update_message;
 
 /* We will be experimenting with 100GB database. Each block is of size 512-bits. */
 #define N       1048576//1677721600 // Number of elements in the plaintext database ((100*1024*1024*1024) / (512/8)) 
@@ -85,7 +87,8 @@ extern std::string completed_reinit_for_epoch_message;
 
 /* Regarding testing */
 #define TEST_SHELTER_FOUND (0) /* Forcefully make the shelter search successful */
-#define TEST_SHUFF_DB_FETCH (1) /* This will take a lot of memory */
+#define TEST_SHUFF_DB_FETCH (0) /* This will take a lot of memory */
+#define TEST_VERIFY_SECURITY (1)  /* To verify that no location is touched twice */
 
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number
