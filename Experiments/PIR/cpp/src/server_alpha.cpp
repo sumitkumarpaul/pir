@@ -401,15 +401,6 @@ static int PerEpochOperations_alpha(){
             /* 13.a.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + to_string(i) + " insertion location: " + std::to_string(res.location()));
-            #if 0
-            std::cout << "[ ";
-            for (const auto& byte : Kuku_key) {
-                // static_cast<int> is CRITICAL. 
-                // Without it, cout tries to print the ASCII character.
-                std::cout << static_cast<int>(byte) << " "; 
-            }
-            std::cout << "]" << std::endl;               
-            #endif
         }
 
         if (((i+1) % 100000000) == 0){
@@ -733,18 +724,6 @@ static int FetchCombineSelect_alpha(){
     convert_buf_to_item_type2((const unsigned char *)net_buf, (P_BITS / 8), temp);
     // Copy the bytes into the Kuku_key variable
     std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
-    
-    #if 0
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
-
-    std::cout << "[ ";
-    for (const auto& byte : Kuku_key) {
-        // static_cast<int> is CRITICAL. 
-        // Without it, cout tries to print the ASCII character.
-        std::cout << static_cast<int>(byte) << " "; 
-    }
-    std::cout << "]" << std::endl;
-    #endif
 
     /* 1.a.2 Lookup the location according to the Kuku table */
     Qres = HTable->query(Kuku_key);
@@ -777,16 +756,9 @@ static int FetchCombineSelect_alpha(){
     /* 5.2.1 Send SR_sh_ct to server gamma */
     (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
 
-    #if 0/* !!!!! Updated flow to refresh ciphertext */
-    /* 7.2 Receive requested_element_ct  */
-    ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext requested_element_ct from Server Alpha");
-        goto exit;
-    }
-    Serial::DeserializeFromString(requested_element_ct, std::string(net_buf, received_sz));
-    #endif
+    /* Updated flow to cope up with cihpetext refresh related modification.
+       Moved the step 7.2 of receiving requested_element_ct from server_Gamma
+       from here to the first step of the ShelterUpdate_alpha() function. */
 
 exit:
 
@@ -800,7 +772,7 @@ static int ShelterUpdate_alpha(){
     mpz_class a_dashed, h_alpha3, T_star_a_dashed, T_star_hat, t_star_hat, a_1, Del_a, Del_a_h_alpha3, Del_a_Del_b_Del_c_h_alpha3, h_alpha3_1, Del_a_Del_b_Del_c;
     std::pair<mpz_class, mpz_class> E_T_star_a_dashed, E_Del_a_h_alpha3;
     
-    /* !!!!! Updated flow to refresh ciphertext. This is actually step 7.2 of FetchCombineSelect_alpha  */
+    /* !!!!! [Updated flow to refresh ciphertext] This was actually step 7.2 of FetchCombineSelect_alpha in the diagram */
     ret = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
@@ -898,17 +870,14 @@ start:
         sh[i].tag_short = sh[i].tag % r;
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "sh["+ std::to_string(i) + "].tag_short: " + sh[i].tag_short.get_str());
 
-        #warning Ideally, this check must be present
-        #if 0
         if (t_star_hat == sh[i].tag_short) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Tag collision.. Restarting the shelter update process..!!");
             (void)sendAll(sock_alpha_to_beta, reinit_shelter_update_message.c_str(), reinit_shelter_update_message.size());
             goto start;
         }
-        #endif
     }
 
-    //(void)sendAll(sock_alpha_to_beta, completed_request_processing_message.c_str(), completed_request_processing_message.size());
+    (void)sendAll(sock_alpha_to_beta, completed_request_processing_message.c_str(), completed_request_processing_message.size());
 
     a = a_dashed;
     ret = 0;

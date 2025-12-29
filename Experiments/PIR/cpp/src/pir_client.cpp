@@ -209,6 +209,8 @@ static int ShelterTagDetermination_Client(uint64_t I){
 
     size_t received_sz = 0;
     int ret_recv = 0;
+
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
     
     /* Step 1 */
     E_q_Rho_pow_I = ElGamal_q_exp_ct(E_q_Rho, mpz_class(I), pk_E_q);
@@ -284,6 +286,8 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first from the Server Alpha");
         return -1;
     }
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Completed receiving requested item");
+
     received_element = mpz_class(std::string(net_buf, received_sz));
 
     /* 7. Remove mask */
@@ -315,7 +319,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     *p_received_index = extracted_element_index.get_ui();
 
-    /* Additional steps for refreshing ciphertext */
+    /* !!!!! [Updated flow to refresh ciphertext] This is an additional step for refreshing ciphertext while updating shelter */
     refreshed_ct = FHE_Enc_SDBElement(extracted_element);
     /* Send refreshed ciphertext to Server Gamma */
     (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(refreshed_ct).c_str(), Serial::SerializeToString(refreshed_ct).size());    

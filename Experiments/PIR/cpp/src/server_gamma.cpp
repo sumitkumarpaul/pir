@@ -499,10 +499,8 @@ static int ObliviouslySearchShelter_gamma() {
 
                     /* Same as XORing */
                     thread_fnd[j] = !thread_fnd[j];
-                    printf("1 ");
                 }
                 else{
-                    printf("0 ");
                 }
             }
         }
@@ -558,18 +556,6 @@ static int FetchCombineSelect_gamma(){
     convert_buf_to_item_type2((const unsigned char *)net_buf, (P_BITS / 8), temp);
     // Copy the bytes into the Kuku_key variable
     std::memcpy(&Kuku_key, temp.data(), sizeof(Kuku_key));
-    
-    #if 0
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The Kuku_key is: ");
-
-    std::cout << "[ ";
-    for (const auto& byte : Kuku_key) {
-        // static_cast<int> is CRITICAL. 
-        // Without it, cout tries to print the ASCII character.
-        std::cout << static_cast<int>(byte) << " "; 
-    }
-    std::cout << "]" << std::endl;
-    #endif
 
     /* 1.a.2 Lookup the location according to the Kuku table */
     Qres = HTable->query(Kuku_key);
@@ -627,9 +613,10 @@ static int FetchCombineSelect_gamma(){
     /* 6. Select the ciphertext of the requested element */
     requested_element_ct = FHE_SelectElement(fnd_ct_element, SR_D_ct, SR_sh_ct);
 
-    /* 7.1 Send requested_element_ct to server alpha */
-    //(void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
 
+    /* Updated flow to cope up with cihpetext refresh related modification.
+       Moved the step 7.1 of sending requested_element_ct to server_Alpha
+       from here to the first step of the ShelterUpdate_gamma() function. */
 
 exit:
 
@@ -682,7 +669,7 @@ static int ShelterUpdate_gamma(){
     mpz_class c_dashed, h_gamma0, c_dashed_h_gamma0, T_star_a_dashed_b_dashed_c_dashed_h_gamma0, h_gamma0_1, T_star_hat, t_star_hat, h_alpha3, Del_c, c_1, Del_a_Del_b_Del_c_h_alpha3, h_alpha3_1, Del_a_Del_b_Del_c;
     std::pair<mpz_class, mpz_class> E_T_star_a_dashed, E_c_dashed_h_gamma0, E_T_star_a_dashed_c_dashed_h_gamma0, E_Del_a_h_alpha3, E_Del_a_Del_c_h_alpha3, E_Del_c;
 
-    /* Updated flow */
+    /* !!!!! [Updated flow to refresh ciphertext] This was actually step 7.1 of FetchCombineSelect_alpha in the diagram */
     (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(requested_element_ct).c_str(), Serial::SerializeToString(requested_element_ct).size());
 
 start:
@@ -826,17 +813,14 @@ start:
         sh[i].tag_short = sh[i].tag % r;
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "sh["+ std::to_string(i) + "].tag_short: " + sh[i].tag_short.get_str());
         
-        #warning Ideally, this check must be present
-        #if 0
         if (t_star_hat == sh[i].tag_short) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Tag collision.. Restarting the shelter update process..!!");
             (void)sendAll(sock_gamma_to_beta, reinit_shelter_update_message.c_str(), reinit_shelter_update_message.size());
             goto start;
         }
-        #endif
     }
 
-    //(void)sendAll(sock_gamma_to_beta, completed_request_processing_message.c_str(), completed_request_processing_message.size());
+    (void)sendAll(sock_gamma_to_beta, completed_request_processing_message.c_str(), completed_request_processing_message.size());
 
     ret = 0;
     c = c_dashed;
@@ -949,6 +933,7 @@ static int ProcessClientRequest_gamma(){
             goto exit;
         }
 
+        /* !!!!! [Updated flow to refresh ciphertext] First returning the data and then updating the shelter */
         ret = ObliDecReturn_gamma();
         if (ret != 0){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
@@ -956,6 +941,7 @@ static int ProcessClientRequest_gamma(){
             goto exit;
         }
 
+        
         ret = ShelterUpdate_gamma();
         if (ret != 0){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");

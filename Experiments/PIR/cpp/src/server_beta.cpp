@@ -437,18 +437,8 @@ static int PerEpochOperations_beta(){
             /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
             mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
             convert_buf_to_item_type2((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
-            #if 0
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For item: " + std::to_string(I) + " converted the tag value: " + T_I.get_str() + " to Kuku-key value: ");
-            std::cout << "[ ";
-            for (const auto& byte : TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]) {
-                // static_cast<int> is CRITICAL. 
-                // Without it, cout tries to print the ASCII character.
-                std::cout << static_cast<int>(byte) << " "; 
-            }
-            std::cout << "]" << std::endl;
-            #else
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + std::to_string(iter+j) + " item: " + std::to_string(I));
-            #endif
+
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
             //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
@@ -869,7 +859,6 @@ start:
     (void)sendAll(sock_beta_gamma_con, Del_a_Del_b_Del_c_h_alpha3.get_str().c_str(), Del_a_Del_b_Del_c_h_alpha3.get_str().size());
 
     /* Receive completion message from servers */
-    #if 0
     (void)recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     
     if (std::string(net_buf, received_sz) == completed_request_processing_message) {
@@ -891,11 +880,8 @@ start:
     } else {
         /* Both the servers reported completion of request processing */
         ret = 0;
+        b = b_dashed;
     }
-    #else
-    ret = 0;
-    b = b_dashed;
-    #endif
 
 exit:
     return ret;
@@ -996,7 +982,8 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-       
+
+        /* !!!!! [Updated flow to refresh ciphertext] First returning the data and then updating the shelter */
         ObliDecReturn_beta();
 
         ShelterUpdate_beta();
@@ -1229,20 +1216,6 @@ static void TestBlindedExponentiation() {
     } else {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "g^{Rho^{I}.h} mod q matches with g^{Rho^{I}.h.alpha.alpha^{-1}} mod q..!!");
     }
-#if 0
-    mpz_class reduced_RhoExpImulh = decrypted_RhoExpImulh % q;
-
-    mpz_class Exp_rhoExpImulh, Exp_RedrhoExpImulh, h_inverse, final_result, reduced_final_result;
-    mpz_powm(Exp_rhoExpImulh.get_mpz_t(), g.get_mpz_t(), decrypted_rhoExpImulh.get_mpz_t(), p.get_mpz_t());
-    mpz_powm(Exp_RedrhoExpImulh.get_mpz_t(), g.get_mpz_t(), reduced_rhoExpImulh.get_mpz_t(), p.get_mpz_t());
-    mpz_invert(h_inverse.get_mpz_t(), h.get_mpz_t(), p.get_mpz_t());
-    mpz_class reduced_h_inverse = h_inverse % q;
-    mpz_powm(final_result.get_mpz_t(), Exp_rhoExpImulh.get_mpz_t(), h_inverse.get_mpz_t(), p.get_mpz_t());
-    mpz_powm(reduced_final_result.get_mpz_t(), Exp_RedrhoExpImulh.get_mpz_t(), reduced_h_inverse.get_mpz_t(), p.get_mpz_t());
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Decrypted messages are decrypted_rhoExpI: " + decrypted_rhoExpI.get_str() + ", decrypted_rhoExpImulh: " + decrypted_rhoExpImulh.get_str() + ", Exp_rhoExpImulh: " + Exp_rhoExpImulh.get_str() + ", Exp_RedrhoExpImulh: " + Exp_RedrhoExpImulh.get_str());
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "h_inverse: " + h_inverse.get_str() + ", reduced_h_inverse: " + reduced_h_inverse.get_str() + ", final_result: " + final_result.get_str() + ", reduced_final_result: " + reduced_final_result.get_str());
-#endif
 }
 
 static void TestBlindedExponentiation1() {
