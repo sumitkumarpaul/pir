@@ -47,7 +47,7 @@ using namespace kuku;
 #define LOG_LEVEL_DEBUG     3
 #define LOG_LEVEL_TRACE     4
 
-#define SET_LOG_LEVEL LOG_LEVEL_INFO
+#define SET_LOG_LEVEL LOG_LEVEL_ERROR
 
 #define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
 
@@ -88,7 +88,10 @@ extern std::string reinit_shelter_update_message;
 /* Regarding testing */
 #define TEST_SHELTER_FOUND (0) /* Forcefully make the shelter search successful */
 #define TEST_SHUFF_DB_FETCH (0) /* This will take a lot of memory */
-#define TEST_VERIFY_SECURITY (1)  /* To verify that no location is touched twice */
+#define TEST_VERIFY_PRIVACY (1)  /* To verify that no location is touched twice */
+#if TEST_VERIFY_PRIVACY
+#warning Enabling this macro will affect performance.
+#endif
 
 /*****************************************************************
 * Since, the plaintext modulus is 65537, hence upto 16-bit number

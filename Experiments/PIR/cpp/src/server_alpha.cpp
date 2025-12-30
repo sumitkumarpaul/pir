@@ -24,6 +24,10 @@ static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
 static int sock_alpha_client_srv = -1, sock_alpha_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 
+#if TEST_VERIFY_PRIVACY
+static uint64_t touched_lcation_alpha[sqrt_N] = {0};
+#endif
+
 // The value of N will determine the bitlength during the client initialization
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
 #define B 512 // Block size in bits, can be adjusted as needed
@@ -739,6 +743,20 @@ static int FetchCombineSelect_alpha(){
     read_sdb_entry(sdb, L_i, SR_D_alpha);
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
 
+#if TEST_VERIFY_PRIVACY
+    {
+        uint64_t i;
+        for (i = 0; i < K; i++){
+            if (touched_lcation_alpha[i] == L_i){
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Same location touched twice..!!");
+                break;
+            }
+        }
+        touched_lcation_alpha[K] = L_i;
+    }
+#endif
+
+
     /* 2.1 First convert from shuffled_db_entry to mpz_class */
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, SR_D_alpha.element);
     SR_D_alpha_mpz = mpz_class(tmp);
@@ -1101,10 +1119,6 @@ static int SelShuffDBSearchTag_alpha(){
     T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
-
-
-    //PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Modify to your custom T_* (base 10): ");
-    //mpz_inp_str(T_star.get_mpz_t(), stdin, 10);    
 
     /* 14.a.2 Send T_* to server gamma */
     (void)sendAll(sock_alpha_to_gamma, T_star.get_str().c_str(), T_star.get_str().size());

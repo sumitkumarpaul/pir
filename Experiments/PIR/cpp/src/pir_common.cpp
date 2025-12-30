@@ -203,7 +203,7 @@ int InitListeningSocket(int port, int* p_server_fd) {
         return ret;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Listening on port: " + std::to_string(port));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Listening on port: " + std::to_string(port));
 
     return 0;
 }
@@ -243,7 +243,7 @@ int InitAcceptingSocket(int port, int* p_server_fd, int* p_new_socket) {
         return ret;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Listening on port: " + std::to_string(port));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Listening on port: " + std::to_string(port));
 
     *p_new_socket = accept(*p_server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
     if (*p_new_socket < 0) {

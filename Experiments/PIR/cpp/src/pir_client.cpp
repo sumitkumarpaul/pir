@@ -342,7 +342,7 @@ int main(int argc, char *argv[])
             if ((I > N) || (I < 1))
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "The database contains: " + std::to_string(N) + " blocks. Please enter a value in between 1 and " + std::to_string(N));
-                return -1;
+                return ret;
             }
         }
         catch (const std::out_of_range &oor)
@@ -364,7 +364,8 @@ int main(int argc, char *argv[])
         ObliDecReturn_Client(&received_index);
 
         if (received_index == I){
-            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Index of the received block matches with requested index: " + std::to_string(I));
+            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Success..index of the received block matches with requested index: " + std::to_string(I));
+            ret = 0;
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received index is: " + std::to_string(received_index) + " which does not matches with requested index: " + std::to_string(I));
         }
@@ -380,7 +381,7 @@ int main(int argc, char *argv[])
 
     FinClient();
 
-    return 0;
+    return ret;
 }
 
 void TestClient(){

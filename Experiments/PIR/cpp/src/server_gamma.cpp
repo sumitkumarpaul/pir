@@ -25,6 +25,10 @@
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
 static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
+#if TEST_VERIFY_PRIVACY
+static uint64_t touched_lcation_gamma[sqrt_N] = {0};
+#endif
+
 #define NUM_CPU_CORES 16
 //#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
 #define SHELTER_STORING_LOCATION std::string("/dev/shm/")
@@ -570,6 +574,20 @@ static int FetchCombineSelect_gamma(){
     L_i = Qres.location();
     read_sdb_entry(sdb, L_i, SR_D_gamma);
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "SDB touch location: " + std::to_string(L_i));
+
+#if TEST_VERIFY_PRIVACY
+    {
+        uint64_t i;
+        for (i = 0; i < K; i++){
+            if (touched_lcation_gamma[i] == L_i){
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Same location touched twice..!!");
+                break;
+            }
+        }
+        touched_lcation_gamma[K] = L_i;
+    }
+#endif
+
 
     /* 2.4 Receive the FHE ciphertext SR_D_alpha_ct  */
     ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
