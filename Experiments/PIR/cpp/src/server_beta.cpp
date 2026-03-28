@@ -9,6 +9,8 @@
 static char net_buf[NET_BUF_SZ] = {0};
 static int sock_beta_alpha_srv = -1, sock_beta_alpha_con = -1;
 static int sock_beta_gamma_srv = -1, sock_beta_gamma_con = -1;
+static int sock_beta_delta_srv = -1, sock_beta_delta_con = -1;
+static int sock_beta_epsilon_srv = -1, sock_beta_epsilon_con = -1;
 static int sock_beta_client_srv = -1, sock_beta_client_con = -1;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
@@ -170,6 +172,18 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
 
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server delta");
+
+    //Send parameters to Server Delta
+    (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+
+    //Send parameters to Server Epsilon
+    #if 0 /* Server epsilon is not ready yet */
+    (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+    #endif
+
     return 0;
 }
 
@@ -232,6 +246,24 @@ static int InitSrv_beta(){
         goto exit;
     }
     
+    ret = InitAcceptingSocket(BETA_LISTENING_TO_DELTA_PORT, &sock_beta_delta_srv, &sock_beta_delta_con);
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Delta!!");
+        ret = -1;
+        goto exit;
+    }
+
+    #if 0 /* Server Epsilon is not initialized yet */
+    ret = InitAcceptingSocket(BETA_LISTENING_TO_EPSILON_PORT, &sock_beta_epsilon_srv, &sock_beta_epsilon_con);
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Epsilon!!");
+        ret = -1;
+        goto exit;
+    }
+    #endif
+
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
 exit:
     if (ret != 0){
@@ -561,7 +593,38 @@ static int FinSrv_beta(){
         close(sock_beta_alpha_con);
         sock_beta_alpha_con = -1;
     }
-
+    if (sock_beta_gamma_srv != -1) {
+        close(sock_beta_gamma_srv);
+        sock_beta_gamma_srv = -1;
+    }
+    if (sock_beta_gamma_con != -1) {
+        close(sock_beta_gamma_con);
+        sock_beta_gamma_con = -1;
+    }
+    if (sock_beta_delta_srv != -1) {
+        close(sock_beta_delta_srv);
+        sock_beta_delta_srv = -1;
+    }
+    if (sock_beta_delta_con != -1) {
+        close(sock_beta_delta_con);
+        sock_beta_delta_con = -1;
+    }
+    if (sock_beta_epsilon_srv != -1) {
+        close(sock_beta_epsilon_srv);
+        sock_beta_epsilon_srv = -1;
+    }
+    if (sock_beta_epsilon_con != -1) {
+        close(sock_beta_epsilon_con);
+        sock_beta_epsilon_con = -1;
+    }
+    if (sock_beta_client_srv != -1) {
+        close(sock_beta_client_srv);
+        sock_beta_client_srv = -1;
+    }
+    if (sock_beta_client_con != -1) {
+        close(sock_beta_client_con);
+        sock_beta_client_con = -1;
+    }
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Beta");
 
     return ret;

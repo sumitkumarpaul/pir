@@ -22,7 +22,7 @@
 #include "pir_common.h"
 
 
-static int sock_gamma_to_beta = -1, sock_gamma_to_alpha = -1, sock_gamma_to_alpha_con = -1;
+static int sock_gamma_to_beta = -1, sock_gamma_to_alpha_srv = -1, sock_gamma_to_alpha_con = -1, sock_gamma_to_epsilon_srv = -1, sock_gamma_to_epsilon_con = -1;
 static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 #if TEST_VERIFY_PRIVACY
@@ -88,13 +88,26 @@ static int InitSrv_gamma(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
     //Initialize sockets for communication with server alpha
-    ret = InitAcceptingSocket(GAMMA_LISTENING_TO_ALPHA_PORT, &sock_gamma_to_alpha, &sock_gamma_to_alpha_con);
+    ret = InitAcceptingSocket(GAMMA_LISTENING_TO_ALPHA_PORT, &sock_gamma_to_alpha_srv, &sock_gamma_to_alpha_con);
 
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot open Accepting socket for Server Gamma!!");
         ret = -1;
         goto exit;
     }
+
+    #if 0/* TODO: Epsilon is not available at this moment */
+    ret = InitAcceptingSocket(GAMMA_LISTENING_TO_EPSILON_PORT, &sock_gamma_to_epsilon_srv, &sock_gamma_to_epsilon_con);
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Epsilon!!");
+        ret = -1;
+        goto exit;
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
+    #endif
+
     
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
 
@@ -407,7 +420,7 @@ static int ShelterTagDetermination_gamma(){
     std::pair<mpz_class, mpz_class> E_c;
 
     // Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha_con));
     ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -992,13 +1005,21 @@ static int FinSrv_gamma(){
         close(sock_gamma_to_beta);
         sock_gamma_to_beta = -1;
     }
-    if (sock_gamma_to_alpha != -1) {
-        close(sock_gamma_to_alpha);
-        sock_gamma_to_alpha = -1;
+    if (sock_gamma_to_alpha_srv != -1) {
+        close(sock_gamma_to_alpha_srv);
+        sock_gamma_to_alpha_srv = -1;
     }
     if (sock_gamma_to_alpha_con != -1) {
         close(sock_gamma_to_alpha_con);
         sock_gamma_to_alpha_con = -1;
+    }
+    if (sock_gamma_to_epsilon_srv != -1) {
+        close(sock_gamma_to_epsilon_srv);
+        sock_gamma_to_epsilon_srv = -1;
+    }
+    if (sock_gamma_to_epsilon_con != -1) {
+        close(sock_gamma_to_epsilon_con);
+        sock_gamma_to_epsilon_con = -1;
     }
     if (sock_gamma_client_srv != -1) {
         close(sock_gamma_client_srv);

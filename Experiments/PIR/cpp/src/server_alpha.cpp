@@ -22,6 +22,9 @@
 
 static int sock_alpha_to_beta = -1, sock_alpha_to_gamma = -1;
 static int sock_alpha_client_srv = -1, sock_alpha_client_con = -1;
+static int sock_alpha_delta_srv = -1, sock_alpha_delta_con = -1;
+static int sock_alpha_epsilon_srv = -1, sock_alpha_epsilon_con = -1;
+
 static char net_buf[NET_BUF_SZ] = {0};
 
 #if TEST_VERIFY_PRIVACY
@@ -99,6 +102,28 @@ static int InitSrv_alpha(){
     InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_ALPHA_PORT, &sock_alpha_to_gamma);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
+
+    ret = InitAcceptingSocket(ALPHA_LISTENING_TO_DELTA_PORT, &sock_alpha_delta_srv, &sock_alpha_delta_con);
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Delta!!");
+        ret = -1;
+        goto exit;
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Delta");
+
+    #if 0/* TODO: Epsilon is not available at this moment */
+    ret = InitAcceptingSocket(ALPHA_LISTENING_TO_EPSILON_PORT, &sock_alpha_epsilon_srv, &sock_alpha_epsilon_con);
+
+    if (ret != 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot establish communication with Server Epsilon!!");
+        ret = -1;
+        goto exit;
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
+    #endif
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
 
@@ -246,6 +271,22 @@ static int FinSrv_alpha(){
     if (sock_alpha_to_gamma != -1) {
         close(sock_alpha_to_gamma);
         sock_alpha_to_gamma = -1;
+    }
+    if (sock_alpha_delta_srv != -1) {
+        close(sock_alpha_delta_srv);
+        sock_alpha_delta_srv = -1;
+    }
+    if (sock_alpha_delta_con != -1) {
+        close(sock_alpha_delta_con);
+        sock_alpha_delta_con = -1;
+    }
+    if (sock_alpha_epsilon_srv != -1) {
+        close(sock_alpha_epsilon_srv);
+        sock_alpha_epsilon_srv = -1;
+    }
+    if (sock_alpha_epsilon_con != -1) {
+        close(sock_alpha_epsilon_con);
+        sock_alpha_epsilon_con = -1;
     }
     if (sock_alpha_client_srv != -1) {
         close(sock_alpha_client_srv);

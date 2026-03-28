@@ -55,17 +55,24 @@ using namespace kuku;
 //#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
 //#define SERVER_GAMMA_IP "192.168.16.132" // IP address of the server_gamma
 
-#define SERVER_ALPHA_IP "127.0.0.1" // IP address of the server_alpha
-#define SERVER_BETA_IP  "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
-#define SERVER_GAMMA_IP "127.0.0.1" // For the time being
+#define SERVER_ALPHA_IP     "127.0.0.1" // IP address of the server_alpha
+#define SERVER_BETA_IP      "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
+#define SERVER_GAMMA_IP     "127.0.0.1" // For the time being
+#define SERVER_DELTA_IP     "127.0.0.1" // For the time being
+#define SERVER_EPSILON_IP   "127.0.0.1" // For the time being
 
-#define BETA_LISTENING_TO_ALPHA_PORT    1234 // Port of beta to listen to alpha
-#define BETA_LISTENING_TO_GAMMA_PORT    1235 // Port of beta to listen to gamma
-#define GAMMA_LISTENING_TO_ALPHA_PORT   1236 // Port of gamma to listen to alpha
+#define ALPHA_LISTENING_TO_DELTA_PORT   1234 // Port of alpha to listen to delta
+#define ALPHA_LISTENING_TO_EPSILON_PORT 1235 // Port of alpha to listen to epsilon
+#define BETA_LISTENING_TO_ALPHA_PORT    1236 // Port of beta to listen to alpha
+#define BETA_LISTENING_TO_GAMMA_PORT    1237 // Port of beta to listen to gamma
+#define BETA_LISTENING_TO_DELTA_PORT    1238 // Port of beta to listen to delta
+#define BETA_LISTENING_TO_EPSILON_PORT  1239 // Port of beta to listen to epsilon
+#define GAMMA_LISTENING_TO_ALPHA_PORT   1240 // Port of gamma to listen to alpha
+#define GAMMA_LISTENING_TO_EPSILON_PORT 1241 // Port of gamma to listen to epsilon
 
-#define ALPHA_LISTENING_TO_CLIENT_PORT  1237 // Port of alpha to listen to the client
-#define BETA_LISTENING_TO_CLIENT_PORT   1238 // Port of beta to listen to the client
-#define GAMMA_LISTENING_TO_CLIENT_PORT  1239 // Port of gamma to listen to the client
+#define ALPHA_LISTENING_TO_CLIENT_PORT  1242 // Port of alpha to listen to the client
+#define BETA_LISTENING_TO_CLIENT_PORT   1243 // Port of beta to listen to the client
+#define GAMMA_LISTENING_TO_CLIENT_PORT  1244 // Port of gamma to listen to the client
 
 extern std::string start_reinit_for_epoch_message;
 extern std::string completed_reinit_for_epoch_message;
