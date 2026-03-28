@@ -14,6 +14,7 @@ static int sock_beta_epsilon_srv = -1, sock_beta_epsilon_con = -1;
 static int sock_beta_client_srv = -1, sock_beta_client_con = -1;
 static std::vector<mpz_class> SetPhi;
 static std::fstream pdb;
+static std::fstream mdb;
 static std::fstream D_K;
 static std::fstream D_alpha;
 static std::fstream D_gamma;
@@ -29,7 +30,9 @@ static shelter_element sh[sqrt_N]; /* TODO For debugging only */
 #define ONE_TIME_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
+#define MASK_DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
 std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
+std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"MaskDB.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"DK.bin";
 std::string D_alpha_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_alpha.bin";
 std::string D_gamma_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"D_gamma.bin";
@@ -179,7 +182,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
 
     //Send parameters to Server Epsilon
-    #if 0 /* Server epsilon is not ready yet */
+    #if 0 /* TODO: Server epsilon is not ready yet */
     (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
     (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
     #endif
@@ -359,6 +362,10 @@ static int PerEpochOperations_beta(){
     /* Start sync messages to both the servers, so that everyone is in sync regarding re-initialization process for the epoch */
     (void)sendAll(sock_beta_alpha_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
+    (void)sendAll(sock_beta_delta_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
+    #if 0/* TODO: Epsilon is not available at this moment */
+    (void)sendAll(sock_beta_epsilon_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
+    #endif
 
     pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
     D_K.open(DK_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
@@ -376,7 +383,28 @@ static int PerEpochOperations_beta(){
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin", E_q_Rho.first);
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
 
-    // 3.1 build SS = {1, 2, ..., (N + sqrt_N))}
+    /* 3. Create Mask database */
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
+    mdb.open(mdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+
+    #pragma omp parallel for
+    for (uint64_t iter = 0; iter < sqrt_N; iter++) {
+        mpz_class mask;
+        shuffled_db_entry mask_entry;
+        size_t count;
+
+        memset(mask_entry.element, 0, sizeof(mask_entry.element));
+        mask = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N));
+        mpz_export(mask_entry.element, &count, 1, 1, 1, 0, mask.get_mpz_t());
+        #pragma omp critical
+        {
+            insert_mdb_entry(mdb, iter, mask_entry);
+        }
+    }
+
+    // 4. We are skipping this in the implementation. We are transferring them manually, in chuncks
+
+    // 5.1 build SS = {1, 2, ..., (N + sqrt_N))}
     uint64_t M = N + sqrt_N;
     std::vector<uint64_t> SS;
     SS.reserve(M);
@@ -390,7 +418,7 @@ static int PerEpochOperations_beta(){
         goto exit;
     }
 
-    // 3.2 Clear SetPhi 
+    // 5.2 Clear SetPhi 
     SetPhi.clear();
 
     /* Create a random shuffling of the list */
@@ -419,7 +447,7 @@ static int PerEpochOperations_beta(){
             mpz_class mpz_I;
             unsigned char net_buf_local[(P_BITS/8)];
 
-            // 4. Instead of randomly choose an index I from SS, choose unique index from an already shuffled SS[]
+            // 6. Instead of randomly choose an index I from SS, choose unique index from an already shuffled SS[]
             I = SS[(iter+j)];
             mpz_I  = mpz_class(I);
 
@@ -429,14 +457,14 @@ static int PerEpochOperations_beta(){
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Keeping index I: " + std::to_string(I) + " at location: " + std::to_string((iter+j)));
 #endif
 
-            // 5. Compute T_I = g^{Rho^I mod p}
+            // 7. Compute T_I = g^{Rho^I mod p}
             // These two exponentiations takes a long time
             mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), mpz_I.get_mpz_t(), q.get_mpz_t());
             mpz_powm(T_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
             if (I <= N)
             {
-                // 6. Compute d = (block_I || I)
+                // 8. Compute d = (block_I || I)
                 #pragma omp critical
                 {
                     /* Index D[I] is located as location (I-1) */
@@ -452,7 +480,7 @@ static int PerEpochOperations_beta(){
             }
             else
             {
-                // 7. Choose d as {0}^{B+log_N} and append T_I to SetPhi
+                // 9. Choose d as {0}^{B+log_N} and append T_I to SetPhi
                 d = mpz_class(0);
                 #pragma omp critical
                 {
@@ -460,13 +488,13 @@ static int PerEpochOperations_beta(){
                 }
             }
             
-            /* 8.1 First create a random number as the secret-share for server_alpha */
+            /* 10.1 First create a random number as the secret-share for server_alpha */
             #pragma omp critical
             {
                 d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
             }
 
-            /* 9.Convert T_I to cuckoo hash key and save that to the buffer */
+            /* 10.2.Convert T_I to cuckoo hash key and save that to the buffer */
             mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
             convert_buf_to_item_type2((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + std::to_string(iter+j) + " item: " + std::to_string(I));
@@ -474,7 +502,7 @@ static int PerEpochOperations_beta(){
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
             //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
-            /* 10.1 Store the d_alpha share in the local buffer */
+            /* 10.3 Store the d_alpha share in the local buffer */
             mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
             //(void)sendAll(sock_beta_alpha_con, net_buf, send_size);
 
@@ -486,7 +514,7 @@ static int PerEpochOperations_beta(){
                 memcpy(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], (net_buf_local + 1), NUM_BYTES_PER_SDB_ELEMENT);
             }
 
-            /* 8.2 Create the second share for server_gamma */
+            /* 10.4 Create the second share for server_gamma */
             // d_gamma = (d - d_alpha);/* Another share */ But this is creating error while combining homomorphically
 
             // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I = " + std::to_string(I) + " value of d: " + d.get_str(16) + " and d_alpha: " + d_alpha.get_str(16));
@@ -509,7 +537,7 @@ static int PerEpochOperations_beta(){
                 mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
             }
 
-            /* 10.2 Store the d_gamma share in the local buffer */
+            /* Store the d_gamma share in the local buffer */
             mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
 
             /* For some numbers, gmp exporting an additional byte. This is a corresponding fix */
@@ -530,7 +558,7 @@ static int PerEpochOperations_beta(){
 
         iter += NUM_ITEMS_IN_TMP_BUF;
 
-        /* Flush into the disk */
+        /* 10.5 Flush into the disk */
         D_K.write((const char *)TMP_KEY_BUF, sizeof(TMP_KEY_BUF));
         D_alpha.write((const char *)TMP_D_ALPHA_BUF, sizeof(TMP_D_ALPHA_BUF));
         D_gamma.write((const char *)TMP_D_GAMMA_BUF, sizeof(TMP_D_GAMMA_BUF));
@@ -541,6 +569,7 @@ static int PerEpochOperations_beta(){
         memset(TMP_D_GAMMA_BUF, 0, (NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF));
 
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Number of flushed item is: " + std::to_string(iter));
+        /* We are skipping step 11. We are transferring them manually, in chuncks. */
     }
 
     /* Files are required to close to ensure everything is actually flushed to the disk */
@@ -557,18 +586,25 @@ static int PerEpochOperations_beta(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed preparing the database shares and key-database");
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please manually transfer the shuffled and secret-shared databases to server_alpha and server_gamma.");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "== Please manually transfer the shuffled and secret-shared databases to server_alpha and server_gamma == ");
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_alpha, which is located at:" + D_alpha_filename);
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_gama, which is located at:" + D_gamma_filename);
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the key-file to both server_alpha and server_gamma, which is located at:" + DK_filename);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "== Please manually transfer the mask databases to server_delta and server_epsilon == ");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_delta, which is located at:" + mdb_filename);
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please transfer the secret-shared database to server_epsilon, which is located at:" + mdb_filename);
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please press enter to continue..!!");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Please press enter to continue, after maually transferring all the databases to the other server..!!");
 
     std::cin.get();
 
     /* Send ready message to Server Alpha and Server Gamma */
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
+    (void)sendAll(sock_beta_delta_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
+    #if 0/* TODO: Epsilon is not available at this moment */
+    (void)sendAll(sock_beta_epsilon_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
+    #endif
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
 exit:

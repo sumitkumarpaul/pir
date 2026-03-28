@@ -723,6 +723,21 @@ void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry) {
     return;
 }
 
+void insert_mdb_entry(std::fstream& mdb, uint64_t id, const shuffled_db_entry& entry) {
+    //TODO: Error check
+    mdb.seekp(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    mdb.write(reinterpret_cast<const char*>(&entry), sizeof(shuffled_db_entry));
+
+    return;
+}
+
+void read_mdb_entry(std::fstream& mdb, uint64_t id, shuffled_db_entry& out_entry) {
+    //TODO: Error check
+    mdb.seekg(static_cast<std::streampos>(id) * sizeof(shuffled_db_entry));
+    mdb.read(reinterpret_cast<char*>(&out_entry), sizeof(shuffled_db_entry));
+    return;
+}
+
 void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry) {
     //TODO: Error check
     std::streampos pos = static_cast<std::streampos>(id) * sizeof(shuffled_db_entry);

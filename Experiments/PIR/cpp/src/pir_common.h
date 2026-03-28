@@ -215,6 +215,8 @@ extern void read_sdb_entry(std::fstream& sdb, uint64_t id, shuffled_db_entry& ou
 extern void insert_sdb_entry(std::fstream& sdb, uint64_t id, const shuffled_db_entry& entry);
 extern void read_pdb_entry(std::fstream& pdb, uint64_t id, plain_db_entry& out_entry);
 extern void insert_pdb_entry(std::fstream& pdb, uint64_t id, const plain_db_entry& entry);
+extern void insert_mdb_entry(std::fstream& mdb, uint64_t id, const shuffled_db_entry& entry);
+extern void read_mdb_entry(std::fstream& mdb, uint64_t id, shuffled_db_entry& out_entry);
 
 extern void convert_buf_to_item_type(const unsigned char* buf, size_t buf_size, item_type& out_item);
 extern void convert_buf_to_item_type1(const unsigned char* buf, size_t buf_size, std::array<unsigned char, 16>& out_item);

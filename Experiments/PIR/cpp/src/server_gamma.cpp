@@ -325,7 +325,7 @@ static int PerEpochOperations_gamma(){
         goto exit;
     }
 
-    // 12.c.1 Allocate a new Cuckoo hash table
+    // 14.c.1 Allocate a new Cuckoo hash table
     // Keeping the number of entries, larger than the number of elements to place. The reason is, it will reduce the number of probe during placement and make the per epoch operations faster
     HTable = new KukuTable(CUCKOO_TABLE_SIZE, CUCKOO_STASH_SIZE, CUCKOO_LOC_FUNC_COUNT, CUCKOO_LOC_FUNC_SEED, CUCKOO_MAX_PROBE, CUCKOO_EMPTY_ITEM);
     if (HTable == nullptr) {
@@ -334,7 +334,7 @@ static int PerEpochOperations_gamma(){
         goto exit;
     }
 
-    /* 12.c.2 Prepare the entire Kuku hash HTable, based on all the keys */
+    /* 14.c.2 Prepare the entire Kuku hash HTable, based on all the keys */
     for (uint64_t i = 0; i < M; i++){
         /* Read the next Kuku key from the DK file */
         DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
@@ -358,23 +358,23 @@ static int PerEpochOperations_gamma(){
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Cuckoo hash HTable creation complete. Current stash size: " + to_string(HTable->stash().size()) + " and total probe count is: " + to_string (HTable->total_probe_count_));
 
-    //13.c.2 Reset the read pointers to the beginning
+    //15.c.2 Reset the read pointers to the beginning
     DK.seekg(0, std::ios::beg);
     L.seekg(0, std::ios::beg);
     sdb.seekp(0, std::ios::beg);
 
-    //13.c.3 Now place all the elements from the temporary list(L) to the shuffled database(SDB) according to the Kuku hash table
+    //15.c.3 Now place all the elements from the temporary list(L) to the shuffled database(SDB) according to the Kuku hash table
     for (uint64_t i = 0; i < M; i++){
         /* Read the next key */
         DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
         /* Read the next secret share */
         L.read(net_buf, NUM_BYTES_PER_SDB_ELEMENT);
 
-        /* 13.c.4: Prepare them to a tuple of shuffled database */
+        /* 15.c.4: Prepare them to a tuple of shuffled database */
         //memcpy(sdb_entry.cuckoo_key.data(), Kuku_key.data(), sizeof(item_type)); cuckoo key is no more present in the structure
         memcpy(sdb_entry.element, net_buf, NUM_BYTES_PER_SDB_ELEMENT);    
 
-        /* 13.c.5: Query and find the location */
+        /* 15.c.5: Query and find the location */
         res = HTable->query(Kuku_key);
         if (!res)
         {
@@ -383,7 +383,7 @@ static int PerEpochOperations_gamma(){
             goto exit;
         }
         else {
-            /* 13.c.5 Insert at the location of the shuffled database, determined by the query result */
+            /* 15.c.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
             PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
         }
@@ -396,7 +396,7 @@ static int PerEpochOperations_gamma(){
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
-    // 14.c. Nothing is required to be done for clearing the shelter content
+    // 16.c. Nothing is required to be done for clearing the shelter content
 
     //Store the cuckoo table in the disk
     exportedHFile.open(HTable_filename, std::ios::binary);
