@@ -270,8 +270,16 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     mpz_class extracted_part, received_part, m_C_part, mask;
     *p_received_index = 0;
 
-    /* Step 1: Generate random mask */
-    m_C = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
+    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
+    InitBitZeroingMask();
+
+    /* Step 1.a: Generate random mask */
+    m_C = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The bit zeroing mask is(HEX): " + bit_zeroing_mask.get_str(16));
+
+    /* TODO: To ensure overflow. Certain bits are required to be zero */
+    mpz_and(m_C.get_mpz_t(), m_C.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
 
     /* Step 2.1: Generate ciphertext of the random mask */
     m_C_ct = FHE_Enc_SDBElement(m_C);
@@ -279,7 +287,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     /* Step 2.2: Send corresponding ciphertext to server gamma */
     (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(m_C_ct).c_str(), Serial::SerializeToString(m_C_ct).size());
 
-    /* 6.2 Receive decryption result */
+    /* 9.2 Receive decryption result */
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -290,7 +298,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     received_element = mpz_class(std::string(net_buf, received_sz));
 
-    /* 7. Remove mask */
+    /* 10. Remove mask */
     /* Similar but reverse logic of per-epoch operations for server beta */
     extracted_element = mpz_class(0);
     mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
@@ -319,10 +327,12 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     *p_received_index = extracted_element_index.get_ui();
 
+    #if 0/* TODO: Probably this part is not required */
     /* !!!!! [Updated flow to refresh ciphertext] This is an additional step for refreshing ciphertext while updating shelter */
     refreshed_ct = FHE_Enc_SDBElement(extracted_element);
     /* Send refreshed ciphertext to Server Gamma */
     (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(refreshed_ct).c_str(), Serial::SerializeToString(refreshed_ct).size());    
+    #endif
 
 exit:
     return ret;

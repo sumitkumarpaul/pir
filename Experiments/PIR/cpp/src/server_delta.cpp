@@ -234,7 +234,7 @@ static int ObliviouslySearchShelter_delta() {
             if ((k + j) < K)
             {
                 if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short)) {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element_FHE_ct.get_mpz_t());
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
 
                     /* Same as XORing */
                     thread_fnd[j] = !thread_fnd[j];

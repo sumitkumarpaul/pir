@@ -23,6 +23,7 @@ static mpz_class b;
 static mpz_class widehat_t_I;
 
 static shelter_element sh[sqrt_N]; /* TODO For debugging only */
+static shuffled_db_entry M[sqrt_N]; /* This arrary extracts entire mask database into a RAM array */
 #define NUM_CPU_CORES 16 /* TODO For debugging only */
 //#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/") /* TODO For debugging only */
 #define SHELTER_STORING_LOCATION std::string("/dev/shm/") /* TODO For debugging only */
@@ -31,6 +32,7 @@ static shelter_element sh[sqrt_N]; /* TODO For debugging only */
 #define PER_EPOCH_MATERIALS_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/")
 #define DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
 #define MASK_DATABASE_LOCATION_BETA std::string("/mnt/sumit/PIR_BETA/")
+
 std::string pdb_filename = DATABASE_LOCATION_BETA+"PlaintextDB.bin";
 std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"MaskDB.bin";
 std::string DK_filename = PER_EPOCH_MATERIALS_LOCATION_BETA+"DK.bin";
@@ -61,7 +63,7 @@ static int ProcessClientRequest_beta();
 static int ShelterTagDetermination_beta();
 static int ObliviouslySearchShelter_beta();
 static int ObliDecReturn_beta();
-static int ShelterUpdate_beta();
+static int ShelterTagUpdate_beta();
 
 static void TestSrv_beta();
 
@@ -384,6 +386,9 @@ static int PerEpochOperations_beta(){
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
 
     /* 3. Create Mask database */
+    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
+    InitBitZeroingMask();
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Initialize Bit Zeroing mask");    
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
     mdb.open(mdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
@@ -394,7 +399,9 @@ static int PerEpochOperations_beta(){
         size_t count;
 
         memset(mask_entry.element, 0, sizeof(mask_entry.element));
-        mask = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N));
+        mask = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
+        /* TODO: To avoid overflow, certain bits are required to be zero */
+        mpz_and(mask.get_mpz_t(), mask.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
         mpz_export(mask_entry.element, &count, 1, 1, 1, 0, mask.get_mpz_t());
         #pragma omp critical
         {
@@ -610,6 +617,7 @@ static int PerEpochOperations_beta(){
 exit:
     //mpz_clear(tmp);
     pdb.close();
+    mdb.close();
     D_alpha.close();
     D_gamma.close();
     D_K.close();
@@ -858,23 +866,51 @@ static int ObliDecReturn_beta(){
     int ret = -1;
     size_t received_sz = 0;
     int ret_recv = 0;
-    Ciphertext<DCRTPoly> masked_requested_element_ct;
-    mpz_class masked_requested_element_pt;
+    Ciphertext<DCRTPoly> masked_requested_element_client_ct, masked_requested_element_gamma_ct;
+    mpz_class masked_requested_element_client_pt, masked_requested_element_gamma_pt, masked_shelter_element_gamma, shelter_mask;
+    mpz_t tmp;
+    mpz_init(tmp);
+    masked_shelter_element_gamma = mpz_class(0);
+    mpz_class bit_mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+    mpz_class masked_requested_element_gamma_part, shelter_mask_part, extracted_part;
 
-    /* Step 4.2: Receive the ciphertext of the masked element */
+
+    /* Step 3.4.2: Receive the ciphertext masked_requested_element_client_ct */
     ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_C_ct from Client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive masked_requested_element_client_ct from Gamma");
         goto exit;
     }
-    Serial::DeserializeFromString(masked_requested_element_ct, std::string(net_buf, received_sz));
-       
-    /* Step 5. Decrypt the result */
-    FHE_Dec_SDBElement(masked_requested_element_ct, masked_requested_element_pt);
+    Serial::DeserializeFromString(masked_requested_element_client_ct, std::string(net_buf, received_sz));
 
-    /* Step 6.1: Send the decryption result to the client */
-    (void)sendAll(sock_beta_client_con, masked_requested_element_pt.get_str().c_str(), masked_requested_element_pt.get_str().size());
+    /* Step 3.5.2: Receive the ciphertext masked_requested_element_gamma_ct */
+    ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive masked_requested_element_gamma_ct from Gamma");
+        goto exit;
+    }
+    Serial::DeserializeFromString(masked_requested_element_gamma_ct, std::string(net_buf, received_sz));    
+       
+    /* Step 4.1. Decrypt masked_requested_element_client_ct */
+    FHE_Dec_SDBElement(masked_requested_element_client_ct, masked_requested_element_client_pt);
+
+    /* Step 4.2. Decrypt masked_requested_element_gamma_ct */
+    FHE_Dec_SDBElement(masked_requested_element_gamma_ct, masked_requested_element_gamma_pt);
+
+    /* Step 5.1. Apply the mask to the decrypted element */
+    mpz_import(tmp, sizeof(M[K].element), 1, 1, 1, 0, M[K].element);
+    shelter_mask = mpz_class(tmp);
+    /* Apply mask via mathematical +. Since we are using + & - to perform masking homomorphically */
+    masked_shelter_element_gamma = masked_requested_element_gamma_pt + shelter_mask;
+    
+    /* Step 5.2.1: Send the masked decryption result to server_gamma */
+    (void)sendAll(sock_beta_gamma_con, masked_shelter_element_gamma.get_str().c_str(), masked_shelter_element_gamma.get_str().size());
+
+
+    /* Step 9.1: Send the decryption result to the client */
+    (void)sendAll(sock_beta_client_con, masked_requested_element_client_pt.get_str().c_str(), masked_requested_element_client_pt.get_str().size());
 
     ret = 0;
     
@@ -883,7 +919,7 @@ exit:
     return ret;
 }
 
-static int ShelterUpdate_beta(){
+static int ShelterTagUpdate_beta(){
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv = 0, completion_cnt = 0;
@@ -921,7 +957,7 @@ start:
     /* 4.3.1 Return T_*.a'.b'.c'.h_gamma0 to the server gamma */
     (void)sendAll(sock_beta_gamma_con, T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().c_str(), T_star_a_dashed_b_dashed_c_dashed_h_gamma0.get_str().size());
 
-    /* 9.4.2 Receive first component of E(Del_a_Del_c_h_alpha3) */
+    /* 8.4.2 Receive first component of E(Del_a_Del_c_h_alpha3) */
     ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive first component of E(Del_a_Del_c_h_alpha3) from Server Beta");
@@ -930,7 +966,7 @@ start:
     }
     E_Del_a_Del_c_h_alpha3.first = mpz_class(std::string(net_buf, received_sz));
 
-    /* 9.5.2 Receive second component of E(Del_a_Del_c_h_alpha3) */
+    /* 8.5.2 Receive second component of E(Del_a_Del_c_h_alpha3) */
     ret = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive second component of E(Del_a_Del_c_h_alpha3) from Server Beta");
@@ -939,22 +975,22 @@ start:
     }
     E_Del_a_Del_c_h_alpha3.second = mpz_class(std::string(net_buf, received_sz));
 
-    /* 10.1.1 Compute b^{-1} */
+    /* 9.1.1 Compute b^{-1} */
     mpz_invert(b_1.get_mpz_t(), b.get_mpz_t(), p.get_mpz_t());
 
-    /* 10.1.2 Compute Del_b */
+    /* 9.1.2 Compute Del_b */
     Del_b = (b_dashed * b_1) % p;    
 
-    /* 10.2 Decrypt E(E_Del_a_Del_c_h_alpha3) to Del_a_Del_c_h_alpha3 */
+    /* 9.2 Decrypt E(E_Del_a_Del_c_h_alpha3) to Del_a_Del_c_h_alpha3 */
     Del_a_Del_c_h_alpha3 = ElGamal_decrypt(E_Del_a_Del_c_h_alpha3, sk_E);
 
-    /* 10.3 Compute Del_a_Del_b_Del_c_h_alpha3 */
+    /* 9.3 Compute Del_a_Del_b_Del_c_h_alpha3 */
     Del_a_Del_b_Del_c_h_alpha3 = (Del_a_Del_c_h_alpha3 * Del_b) % p;
 
-    /* 11.1.1 Send Del_a_Del_b_Del_c_h_alpha3 to server alpha */
+    /* 10.1.1 Send Del_a_Del_b_Del_c_h_alpha3 to server alpha */
     (void)sendAll(sock_beta_alpha_con, Del_a_Del_b_Del_c_h_alpha3.get_str().c_str(), Del_a_Del_b_Del_c_h_alpha3.get_str().size());
 
-    /* 11.2.1 Send Del_a_Del_b_Del_c_h_alpha3 to server gamma */
+    /* 10.2.1 Send Del_a_Del_b_Del_c_h_alpha3 to server gamma */
     (void)sendAll(sock_beta_gamma_con, Del_a_Del_b_Del_c_h_alpha3.get_str().c_str(), Del_a_Del_b_Del_c_h_alpha3.get_str().size());
 
     /* Receive completion message from servers */
@@ -964,6 +1000,7 @@ start:
         completion_cnt++;
     }
 
+    /* 14.b Receive the error notification or the success notification */
     (void)recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     
     if (std::string(net_buf, received_sz) == completed_request_processing_message) {
@@ -1011,6 +1048,13 @@ static int ProcessClientRequest_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    
+    /* Load the mask database into the RAM location for faster access */
+    mdb.open(mdb_filename, std::ios::in | std::ios::binary);
+
+    for (uint64_t iter = 0; iter < sqrt_N; iter++) {
+            read_mdb_entry(mdb, iter, M[iter]);
+    }
 
     if (!load_mpz_vector(SetPhi, SetPhi_filename))
     {
@@ -1019,6 +1063,10 @@ static int ProcessClientRequest_beta(){
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
+
+    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
+    InitBitZeroingMask();
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Initialize Bit Zeroing mask");    
 
     //Always initialize them
     K = 0;
@@ -1081,12 +1129,10 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-
-        /* !!!!! [Updated flow to refresh ciphertext] First returning the data and then updating the shelter */
+        ShelterTagUpdate_beta();
+        
         ObliDecReturn_beta();
 
-        ShelterUpdate_beta();
-        
         /* Close the connection with existing client */
         close(sock_beta_client_srv);
         close(sock_beta_client_con);
@@ -1101,6 +1147,7 @@ exit:
         close(sock_beta_client_srv);
         close(sock_beta_client_con);
     }
+    mdb.close();
 
     return ret;
 }

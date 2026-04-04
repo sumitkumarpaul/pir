@@ -134,6 +134,8 @@ extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
 
+extern mpz_class bit_zeroing_mask;
+
 extern PublicKey<DCRTPoly> pk_F;
 extern PrivateKey<DCRTPoly> sk_F;
 extern CryptoContext<DCRTPoly> FHEcryptoContext;
@@ -160,7 +162,7 @@ typedef struct [[gnu::packed]]{
 
 typedef struct {
     /* Here only storing the tags. The ciphertext part is stored in the RAM, in serialized format */
-    mpz_class element_FHE_ct;
+    mpz_class element;
     mpz_class tag;
     mpz_class tag_short;
 } shelter_element;
@@ -228,3 +230,5 @@ extern size_t serializeFssAndServerKeyEq(const Fss& fss, const ServerKeyEq& key,
 
 extern bool save_mpz_vector(const std::vector<mpz_class>& vec, const std::string& path);
 extern bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path);
+
+extern void InitBitZeroingMask();

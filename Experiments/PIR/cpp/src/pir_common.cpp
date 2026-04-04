@@ -15,6 +15,8 @@ std::pair<mpz_class, mpz_class> E_q_Rho;
 mpz_class pk_E, pk_E_q;
 mpz_class sk_E, sk_E_q;
 
+mpz_class bit_zeroing_mask;
+
 // FHE related
 PublicKey<DCRTPoly> pk_F;
 PrivateKey<DCRTPoly> sk_F;
@@ -1107,4 +1109,14 @@ bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path) {
         vec.push_back(el);
     }
     return true;
+}
+
+void InitBitZeroingMask(){
+    bit_zeroing_mask = mpz_class(0);
+
+    /* 0x1FFF is a 2 byte value. Hence, run the loop half of NUM_BYTES_PER_SDB_ELEMENT */
+    for (int i = 0; i < (NUM_BYTES_PER_SDB_ELEMENT/2); i++){
+        bit_zeroing_mask <<= 16;
+        bit_zeroing_mask |= 0xFFFF;
+    }
 }
