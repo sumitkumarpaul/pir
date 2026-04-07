@@ -713,11 +713,11 @@ static int ObliDecReturn_gamma(){
 
     for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
     {
-        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
+        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of masked_requested_element_gamma and mask_gamma */
         m_gamma_part = (m_gamma & mask);
         received_part = (received_element & mask);
 
-        /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
+        /* Undo the masking by + and take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
         extracted_part = (received_part + m_gamma_part) & mask;
 
         /* Append the part at the proper location */
@@ -733,6 +733,8 @@ static int ObliDecReturn_gamma(){
     sh[K].element = shelter_element;
     sh[K].tag = T_star_hat;
     sh[K].tag_short = t_star_hat;
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Stored masked shelter element is(HEX): " + shelter_element.get_str(16));
 
     ret = 0;
 
