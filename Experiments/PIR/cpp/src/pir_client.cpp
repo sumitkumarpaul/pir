@@ -318,6 +318,45 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
         mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
     }
 
+    #if 1 /* TODO: For testing masked shelter element */
+    {
+        mpz_class masked_shelter_element_gamma, shelter_mask;
+        mpz_class bit_mask, shelter_mask_part, extracted_element_part, masked_shelter_element_gamma_part;
+
+        shuffled_db_entry mask_entry;
+        std::fstream mdb;
+        std::string mdb_filename = std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/MaskDB.bin");
+        mpz_t tmp;
+        mpz_init(tmp);
+        mdb.open(mdb_filename, std::ios::in | std::ios::binary);
+        read_mdb_entry(mdb, 0, mask_entry);
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Extracted element is: " + extracted_element.get_str());
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Extracted element is(HEX): " + extracted_element.get_str(16));
+        mpz_import(tmp, sizeof(mask_entry.element), 1, 1, 1, 0, mask_entry.element);
+        shelter_mask = mpz_class(tmp);
+
+        masked_shelter_element_gamma = mpz_class(0);
+        bit_mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
+        for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
+        {
+            /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
+            shelter_mask_part = (shelter_mask & bit_mask);
+            extracted_element_part = (extracted_element & bit_mask);
+
+            /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
+            masked_shelter_element_gamma_part = (extracted_element_part - shelter_mask_part) & bit_mask;
+
+            /* Append the part at the proper location */
+            masked_shelter_element_gamma = (masked_shelter_element_gamma | masked_shelter_element_gamma_part);
+
+            bit_mask = bit_mask << PLAINTEXT_FHE_BLOCK_SIZE;
+        }
+
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Corresponding masked item should be(HEX): " + masked_shelter_element_gamma.get_str(16));
+        mdb.close();
+    }
+    #endif
+
     /* Extract result */
     extracted_element_content = (extracted_element >> log_N);
     extracted_element_index = (extracted_element & ((1U << log_N) - 1U));
