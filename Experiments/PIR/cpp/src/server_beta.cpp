@@ -184,10 +184,8 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
 
     //Send parameters to Server Epsilon
-    #if 0 /* TODO: Server epsilon is not ready yet */
     (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
     (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
-    #endif
 
     return 0;
 }
@@ -259,7 +257,6 @@ static int InitSrv_beta(){
         goto exit;
     }
 
-    #if 0 /* Server Epsilon is not initialized yet */
     ret = InitAcceptingSocket(BETA_LISTENING_TO_EPSILON_PORT, &sock_beta_epsilon_srv, &sock_beta_epsilon_con);
 
     if (ret != 0) {
@@ -267,7 +264,6 @@ static int InitSrv_beta(){
         ret = -1;
         goto exit;
     }
-    #endif
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta initialization complete");
 exit:
@@ -609,9 +605,7 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_alpha_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_delta_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
-    #if 0/* TODO: Epsilon is not available at this moment */
     (void)sendAll(sock_beta_epsilon_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
-    #endif
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
 exit:

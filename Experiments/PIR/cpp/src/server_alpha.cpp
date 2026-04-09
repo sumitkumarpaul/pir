@@ -114,7 +114,6 @@ static int InitSrv_alpha(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Delta");
 
-    #if 0/* TODO: Epsilon is not available at this moment */
     ret = InitAcceptingSocket(ALPHA_LISTENING_TO_EPSILON_PORT, &sock_alpha_epsilon_srv, &sock_alpha_epsilon_con);
 
     if (ret != 0) {
@@ -124,7 +123,6 @@ static int InitSrv_alpha(){
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
-    #endif
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Alpha initialization complete");
 

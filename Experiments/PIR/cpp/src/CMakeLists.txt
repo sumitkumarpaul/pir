@@ -108,6 +108,7 @@ add_executable(server_alpha fss/aesni-x86_64.S fss/aesni_wrapper.c server_alpha.
 add_executable(server_beta fss/aesni-x86_64.S fss/aesni_wrapper.c server_beta.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(server_gamma fss/aesni-x86_64.S fss/aesni_wrapper.c server_gamma.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(server_delta fss/aesni-x86_64.S fss/aesni_wrapper.c server_delta.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
+add_executable(server_epsilon fss/aesni-x86_64.S fss/aesni_wrapper.c server_epsilon.cpp fss/fss-client.cpp fss/fss-server.cpp fss/fss-common.cpp pir_common.cpp)
 add_executable(pir_client pir_client.cpp pir_common.cpp)
 
 # Link libraries for sumit-experiment
@@ -196,6 +197,20 @@ target_link_libraries(server_delta
     ${EXTRA_LIBS}
 )
 
+# Link libraries for server_epsilon
+target_link_libraries(server_epsilon
+    ${GMPXX_LIBRARIES}
+    ${GMP_LIBRARIES}
+    OPENFHEpke
+    OPENFHEcore
+    OpenMP::OpenMP_CXX
+    Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    crypto
+    Kuku::kuku
+    ${EXTRA_LIBS}
+)
 
 # Link libraries for pir_client
 target_link_libraries(pir_client

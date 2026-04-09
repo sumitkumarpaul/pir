@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include "pir_common.h"
 
-static int sock_delta_to_beta = -1, sock_delta_to_alpha = -1;
+static int sock_epsilon_to_beta = -1, sock_epsilon_to_alpha = -1, sock_epsilon_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 static mpz_class M[sqrt_N]; /* This arrary extracts entire mask database into a RAM array. Note this is in mpz_class format. */
 static char y_alpha_bits_buf[(sqrt_N+7)/8];
@@ -29,25 +29,25 @@ static std::fstream mdb;
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 
 #define NUM_CPU_CORES 16
-#define ONE_TIME_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/ONE_TIME_MATERIALS/")
-#define PER_EPOCH_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/PER_EPOCH_MATERIALS/")
-#define MASK_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/")
-std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_DELTA+"MaskDB_alpha.bin";
+#define ONE_TIME_MATERIALS_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/ONE_TIME_MATERIALS/")
+#define PER_EPOCH_MATERIALS_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/PER_EPOCH_MATERIALS/")
+#define MASK_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/")
+std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_EPSILON+"MaskDB_alpha.bin";
 
 
 // Function declarations
-static int InitSrv_delta();
-static int OneTimeInit_delta();
-static int FinSrv_delta();
-static int PerEpochOperations_delta();
-static int ProcessClientRequest_delta();
-static int ObliviouslySearchShelter_delta();
-static void TestSrv_delta();
+static int InitSrv_epsilon();
+static int OneTimeInit_epsilon();
+static int FinSrv_epsilon();
+static int PerEpochOperations_epsilon();
+static int ProcessClientRequest_epsilon();
+static int ObliviouslySearchShelter_epsilon();
+static void TestSrv_epsilon();
 
-static int Perf_avg_online_server_time_delta();
+static int Perf_avg_online_server_time_epsilon();
 
 // Function definitions
-static int InitSrv_delta(){
+static int InitSrv_epsilon(){
     int ret = -1;
     // Initialize random number generation
     std::random_device rd;
@@ -55,33 +55,37 @@ static int InitSrv_delta(){
     rng.seed(seed); // seed() seeds the gmp_randclass    
     
     // Server_alpha only connects to other servers, it does not listen to other servers
-    InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_DELTA_PORT, &sock_delta_to_beta);
+    InitConnectingSocket(SERVER_BETA_IP, BETA_LISTENING_TO_EPSILON_PORT, &sock_epsilon_to_beta);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Beta");
 
-    InitConnectingSocket(SERVER_ALPHA_IP, ALPHA_LISTENING_TO_DELTA_PORT, &sock_delta_to_alpha);
+    InitConnectingSocket(SERVER_ALPHA_IP, ALPHA_LISTENING_TO_EPSILON_PORT, &sock_epsilon_to_alpha);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Alpha");
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Delta initialization complete");
+    InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_EPSILON_PORT, &sock_epsilon_to_gamma);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Epsilon initialization complete");
 
     ret = 0;
 
 exit:
     if (ret != 0){
-        FinSrv_delta();
+        FinSrv_epsilon();
     }
 
     return ret;
 }
 
-static int OneTimeInit_delta() {
+static int OneTimeInit_epsilon() {
     size_t received_sz = 0;
     int ret_recv = 0;
 
     // Receive all the parameters from server beta
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
@@ -90,7 +94,7 @@ static int OneTimeInit_delta() {
     Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
 
     // Receive pk_F
-    ret_recv = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
@@ -99,12 +103,12 @@ static int OneTimeInit_delta() {
     Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
 
     //Save parameters to local files
-    if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_DELTA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY)){
+    if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_EPSILON + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY)){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the received FHEcryptoContext from Server Beta");
         return -1;
     }
     
-    if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_DELTA + "pk_F.bin", pk_F, SerType::BINARY)){
+    if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_EPSILON + "pk_F.bin", pk_F, SerType::BINARY)){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the received FHEcryptoContext from Server Beta");
         return -1;
     }
@@ -114,32 +118,36 @@ static int OneTimeInit_delta() {
     return 0;
 }
 
-static int FinSrv_delta(){
+static int FinSrv_epsilon(){
     int ret = -1;
 
     // Close the sockets
-    if (sock_delta_to_beta != -1) {
-        close(sock_delta_to_beta);
-        sock_delta_to_beta = -1;
+    if (sock_epsilon_to_alpha != -1) {
+        close(sock_epsilon_to_alpha);
+        sock_epsilon_to_alpha = -1;
     }
-    if (sock_delta_to_alpha != -1) {
-        close(sock_delta_to_alpha);
-        sock_delta_to_alpha = -1;
+    if (sock_epsilon_to_beta != -1) {
+        close(sock_epsilon_to_beta);
+        sock_epsilon_to_beta = -1;
+    }
+    if (sock_epsilon_to_gamma != -1) {
+        close(sock_epsilon_to_gamma);
+        sock_epsilon_to_gamma = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Delta");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Epsilon");
 
     return ret;
 }
 
-static int PerEpochOperations_delta(){
+static int PerEpochOperations_epsilon(){
     int ret = 0;
     size_t received_sz = 0;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Delta: Starting PerEpochOperations sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Epsilon: Starting PerEpochOperations sequence");
 
     /* Wait for receiving the ready message from server-beta */
-    ret = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive START_REINIT_FOR_EPOCH message from Server Beta");
@@ -152,7 +160,7 @@ static int PerEpochOperations_delta(){
     }
 
     /* Receive completed message from server-beta */
-    ret = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
 
     /* 4.d.2  Skipping the reception of mask. We are manually transferring them in chunks. */
     
@@ -166,38 +174,38 @@ static int PerEpochOperations_delta(){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Did not receive expected COMPLETED_REINIT_FOR_EPOCH message from Server Beta");
         return -1;
     } else {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Delta: Completed re-initialization for new epoch, now ready to process client-requests..!!");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Epsilon: Completed re-initialization for new epoch, now ready to process client-requests..!!");
     }
 
     return ret;
 }
 
-static int ObliviouslySearchShelter_delta() {
+static int ObliviouslySearchShelter_epsilon() {
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv;
-    Ciphertext<DCRTPoly> m_delta_ct;
+    Ciphertext<DCRTPoly> m_epsilon_ct;
 
     // 4.b Initialize with zeros
-    mpz_class m_delta = 0;
-    std::vector<bool> fnd_delta_thread(NUM_CPU_CORES, false);
-    bool fnd_delta = false;
-    std::vector<mpz_class> m_delta_thread(NUM_CPU_CORES);
+    mpz_class m_epsilon = 0;
+    std::vector<bool> fnd_epsilon_thread(NUM_CPU_CORES, false);
+    bool fnd_epsilon = false;
+    std::vector<mpz_class> m_epsilon_thread(NUM_CPU_CORES);
 
-    // 6.a.3 Receive the entire bit array from the server alpha
-    ret = recvAll(sock_delta_to_alpha, y_alpha_bits_buf, sizeof(y_alpha_bits_buf), &received_sz);
+    // 6.a.3 Receive the entire bit array from the server gamma
+    ret = recvAll(sock_epsilon_to_gamma, y_alpha_bits_buf, sizeof(y_alpha_bits_buf), &received_sz);
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bit array from Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bit array from Server Gamma");
         return -1;
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Alpha");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Gamma");
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t){
-            m_delta_thread[t] = 0;
+            m_epsilon_thread[t] = 0;
         }
 
 #pragma omp parallel for
@@ -206,44 +214,44 @@ static int ObliviouslySearchShelter_delta() {
             if ((k + j) < K)
             {
                 if (y_alpha_bits_buf[(k + j) / 8] & (1 << ((k + j) % 8))) {
-                    mpz_xor(m_delta_thread[j].get_mpz_t(), m_delta_thread[j].get_mpz_t(), M[k+j].get_mpz_t());
+                    mpz_xor(m_epsilon_thread[j].get_mpz_t(), m_epsilon_thread[j].get_mpz_t(), M[k+j].get_mpz_t());
 
                     /* Same as XORing */
-                    fnd_delta_thread[j] = !fnd_delta_thread[j];
+                    fnd_epsilon_thread[j] = !fnd_epsilon_thread[j];
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
-            mpz_xor(m_delta.get_mpz_t(), m_delta.get_mpz_t(), m_delta_thread[t].get_mpz_t());
+            mpz_xor(m_epsilon.get_mpz_t(), m_epsilon.get_mpz_t(), m_epsilon_thread[t].get_mpz_t());
         }
     }
     for (int t = 0; t < NUM_CPU_CORES; ++t)
     {
-        fnd_delta ^= fnd_delta_thread[t];
+        fnd_epsilon ^= fnd_epsilon_thread[t];
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_delta: " + std::to_string(fnd_delta));
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_delta's share of the mask is: " + m_delta.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_epsilon: " + std::to_string(fnd_epsilon));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_epsilon's share of the mask is: " + m_epsilon.get_str(16));
 
-    // 12.1 Compute the FHE ciphertext of m_delta
-    m_delta_ct = FHE_Enc_SDBElement(m_delta);
+    // 12.1 Compute the FHE ciphertext of m_epsilon
+    m_epsilon_ct = FHE_Enc_SDBElement(m_epsilon);
 
     /* 12.2 Send the ciphertext to server alpha */
-    (void)sendAll(sock_delta_to_alpha, Serial::SerializeToString(m_delta_ct).c_str(), Serial::SerializeToString(m_delta_ct).size());
+    (void)sendAll(sock_epsilon_to_alpha, Serial::SerializeToString(m_epsilon_ct).c_str(), Serial::SerializeToString(m_epsilon_ct).size());
 
     return 0;
 }
 
-static int ProcessClientRequest_delta(){
+static int ProcessClientRequest_epsilon(){
     int ret = -1;
     shuffled_db_entry tmp;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Delta: Starting Request processing sequence");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Epsilon: Starting Request processing sequence");
 
     /* First of all retrieve all the one-time initialized materials from the saved location */
-    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_DELTA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
-    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_DELTA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_EPSILON + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_EPSILON + "pk_F.bin", pk_F, SerType::BINARY);
     /* Load the mask database into the RAM location for faster access */
     mdb.open(mdb_filename, std::ios::in | std::ios::binary);
 
@@ -252,14 +260,14 @@ static int ProcessClientRequest_delta(){
         mpz_import(M[iter].get_mpz_t(), NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, tmp.element);
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Delta: Loaded one-time initialization materials");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Epsilon: Loaded one-time initialization materials");
 
     //Always initialize them
     K = 0;
     while (K < sqrt_N){
         /* For the first request, the shelter is not required to be searched */
         if (K > 0){
-            ret = ObliviouslySearchShelter_delta();
+            ret = ObliviouslySearchShelter_epsilon();
             if (ret != 0)
             {
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter search operation..!!");
@@ -276,14 +284,15 @@ static int ProcessClientRequest_delta(){
 exit:
     mdb.close();
     /* Close any dangling connections */
-    close(sock_delta_to_alpha);
-    close(sock_delta_to_beta);    
+    close(sock_epsilon_to_alpha);
+    close(sock_epsilon_to_beta);
+    close(sock_epsilon_to_gamma);
 
     return ret;
 }
 
 
-static void TestSrv_delta()
+static void TestSrv_epsilon()
 {
     //TestPKEOperations_alpha();
     //TestSelShuffDBSearchTag_alpha();
@@ -306,7 +315,7 @@ ostream &operator<<(ostream &stream, item_type item)
     simulates the same situation by pre-populating the shelter with (\sqrt{N}/2)-random elements
     and then measure the performance.
 ********************************************************************************************************/
-static int Perf_avg_online_server_time_delta() {
+static int Perf_avg_online_server_time_epsilon() {
     #if 0/* TODO: Implement later */
     // Set up variables
     Fss fClient, fServer;
@@ -317,7 +326,7 @@ static int Perf_avg_online_server_time_delta() {
     /* On average half of the shelter elements will be populated */
     int average_shelter_size = (sqrt_N/2);
     std::string DPF_search_test_shelter_location = std::string("/dev/shm/");
-    /* Generate a dummy delta value to update the shelter tags */
+    /* Generate a dummy epsilon value to update the shelter tags */
     mpz_class Del_abc = rng.get_z_bits(P_BITS);
     /* Suppose we want to search for a random tag */
     mpz_class tmp = rng.get_z_range(average_shelter_size);
@@ -429,30 +438,30 @@ int main(int argc, char *argv[])
     int ret = -1;
 
     /* Perform the basic initialization */
-    InitSrv_delta();
+    InitSrv_epsilon();
 
     /* Process as per the command line arguments */
     if (argc >= 2) {
         if (std::string("one_time_init").compare(std::string(argv[1]))==0) {
             // Perform one-time initialization for server alpha
-            ret = OneTimeInit_delta();
+            ret = OneTimeInit_epsilon();
         } else if (std::string("per_epoch_operations").compare(std::string(argv[1]))==0) {
             // Perform per-epoch initialization for server alpha
-            ret = PerEpochOperations_delta();
+            ret = PerEpochOperations_epsilon();
         } else if (std::string("clear_epoch_state").compare(std::string(argv[1]))==0) {
             // Clear the existing state of current epoch, start as if this is the first request of the epoch
             // Delete shelter content and set K = 0
         } else if (std::string("process_request").compare(std::string(argv[1]))==0) {
             // Start from last saved state
-            ret = ProcessClientRequest_delta();
+            ret = ProcessClientRequest_epsilon();
         } else if (std::string("test").compare(std::string(argv[1]))==0) {
-            TestSrv_delta();
+            TestSrv_epsilon();
         } else if (std::string("perf").compare(std::string(argv[1]))==0) {
             if (argc < 3){
                 PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Performance measurement option requires at least three command line parameters. Usage: server_alpha perf [srv_avg_online_time]");
             }else{
                 if (std::string("srv_avg_online_time").compare(std::string(argv[2]))==0){
-                    (void)Perf_avg_online_server_time_delta();
+                    (void)Perf_avg_online_server_time_epsilon();
                 }
             }
         } else {
@@ -464,10 +473,10 @@ int main(int argc, char *argv[])
     }
 
     if (ret == 0) {
-        //TestSrv_delta();
+        //TestSrv_epsilon();
     }
 
-    FinSrv_delta();
+    FinSrv_epsilon();
 
     return 0;
 }

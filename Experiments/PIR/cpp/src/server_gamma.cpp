@@ -96,7 +96,6 @@ static int InitSrv_gamma(){
         goto exit;
     }
 
-    #if 0/* TODO: Epsilon is not available at this moment */
     ret = InitAcceptingSocket(GAMMA_LISTENING_TO_EPSILON_PORT, &sock_gamma_to_epsilon_srv, &sock_gamma_to_epsilon_con);
 
     if (ret != 0) {
@@ -106,8 +105,6 @@ static int InitSrv_gamma(){
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
-    #endif
-
     
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Gamma initialization complete");
 
