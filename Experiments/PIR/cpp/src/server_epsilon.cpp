@@ -23,7 +23,7 @@
 static int sock_epsilon_to_beta = -1, sock_epsilon_to_alpha = -1, sock_epsilon_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
 static mpz_class M[sqrt_N]; /* This arrary extracts entire mask database into a RAM array. Note this is in mpz_class format. */
-static char y_alpha_bits_buf[(sqrt_N+7)/8];
+static char y_gamma_bits_buf[(sqrt_N+7)/8];
 static std::fstream mdb;
 
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
@@ -32,7 +32,7 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 #define ONE_TIME_MATERIALS_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/PER_EPOCH_MATERIALS/")
 #define MASK_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/")
-std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_EPSILON+"MaskDB_alpha.bin";
+std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_EPSILON+"MaskDB.bin";
 
 
 // Function declarations
@@ -65,7 +65,7 @@ static int InitSrv_epsilon(){
 
     InitConnectingSocket(SERVER_GAMMA_IP, GAMMA_LISTENING_TO_EPSILON_PORT, &sock_epsilon_to_gamma);
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Epsilon");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Established connection with Server Gamma");
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Epsilon initialization complete");
 
@@ -193,7 +193,7 @@ static int ObliviouslySearchShelter_epsilon() {
     std::vector<mpz_class> m_epsilon_thread(NUM_CPU_CORES);
 
     // 6.a.3 Receive the entire bit array from the server gamma
-    ret = recvAll(sock_epsilon_to_gamma, y_alpha_bits_buf, sizeof(y_alpha_bits_buf), &received_sz);
+    ret = recvAll(sock_epsilon_to_gamma, y_gamma_bits_buf, sizeof(y_gamma_bits_buf), &received_sz);
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bit array from Server Gamma");
@@ -201,6 +201,13 @@ static int ObliviouslySearchShelter_epsilon() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Gamma");
+    printf("Received bits are: ");
+    for (size_t k = 0; k < received_sz; k++)
+    {
+        printf("%02x", y_gamma_bits_buf[k]);
+    }
+    printf("\n");
+
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
@@ -208,12 +215,12 @@ static int ObliviouslySearchShelter_epsilon() {
             m_epsilon_thread[t] = 0;
         }
 
-#pragma omp parallel for
+        #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((k + j) < K)
             {
-                if (y_alpha_bits_buf[(k + j) / 8] & (1 << ((k + j) % 8))) {
+                if (y_gamma_bits_buf[(k + j) / 8] & (1 << ((k + j) % 8))) {
                     mpz_xor(m_epsilon_thread[j].get_mpz_t(), m_epsilon_thread[j].get_mpz_t(), M[k+j].get_mpz_t());
 
                     /* Same as XORing */
@@ -230,6 +237,7 @@ static int ObliviouslySearchShelter_epsilon() {
     {
         fnd_epsilon ^= fnd_epsilon_thread[t];
     }
+    printf("\n");
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_epsilon: " + std::to_string(fnd_epsilon));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_epsilon's share of the mask is: " + m_epsilon.get_str(16));

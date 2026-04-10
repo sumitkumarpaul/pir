@@ -32,7 +32,7 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 #define ONE_TIME_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/PER_EPOCH_MATERIALS/")
 #define MASK_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/")
-std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_DELTA+"MaskDB_alpha.bin";
+std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_DELTA+"MaskDB.bin";
 
 
 // Function declarations
@@ -193,6 +193,12 @@ static int ObliviouslySearchShelter_delta() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Alpha");
+    printf("Received bits are: ");
+    for (size_t k = 0; k < received_sz; k++)
+    {
+        printf("%02x", y_alpha_bits_buf[k]);
+    }
+    printf("\n");
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
@@ -200,7 +206,7 @@ static int ObliviouslySearchShelter_delta() {
             m_delta_thread[t] = 0;
         }
 
-#pragma omp parallel for
+        #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((k + j) < K)
@@ -222,6 +228,7 @@ static int ObliviouslySearchShelter_delta() {
     {
         fnd_delta ^= fnd_delta_thread[t];
     }
+    printf("\n");
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_delta: " + std::to_string(fnd_delta));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_delta's share of the mask is: " + m_delta.get_str(16));

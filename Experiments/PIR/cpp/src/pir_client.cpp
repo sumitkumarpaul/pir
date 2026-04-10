@@ -291,7 +291,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first from the Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive the decryption result from the Server Beta");
         return -1;
     }
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Completed receiving requested item");
