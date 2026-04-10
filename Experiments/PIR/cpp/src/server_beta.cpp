@@ -361,9 +361,7 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_alpha_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_gamma_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
     (void)sendAll(sock_beta_delta_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
-    #if 0/* TODO: Epsilon is not available at this moment */
     (void)sendAll(sock_beta_epsilon_con, start_reinit_for_epoch_message.c_str(), start_reinit_for_epoch_message.size());
-    #endif
 
     pdb.open(pdb_filename, std::ios::in | std::ios::binary | std::ios::app);
     D_K.open(DK_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
@@ -799,25 +797,19 @@ static int ObliviouslySearchShelter_beta() {
     // Step 1.1 Initialize client, use 64 bits in domain as example
     initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
 
-    // Step 1.2 Generate keys for equality FSS test
+    // Step 1.2 Generate keys for equality FSS
     generateTreeEq(&fClient, &K_alpha, &K_gamma, widehat_t_I, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
 
     // Step 1.3 Initialize server structure
     initializeServer(&fServer, &fClient);
 
-    /* 2.a.1 Genrate FSS-key parts and send them to the server_alpha and server_gamma */
+    /* 2.a.1 Send the key to the server_alpha */
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_alpha, net_buf, sizeof(net_buf));
-
     (void)sendAll(sock_beta_alpha_con, net_buf, serializedFssSize);
 
+    /* 2.c.1 Send the key to the server_gamma */
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_gamma, net_buf, sizeof(net_buf));
-
     (void)sendAll(sock_beta_gamma_con, net_buf, serializedFssSize);
-
-#if TEST_SHELTER_FOUND
-    /* This line is only for testing purpose  */
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Fore verification only. Enter this search tag in Server_Alpha and Server_Beta prompt to make DPF search successful: " + widehat_t_I.get_str());
-#endif
 
     /************************ Refresh fnd_ct_element ciphertext ***********************/
 
@@ -836,6 +828,7 @@ static int ObliviouslySearchShelter_beta() {
 
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
 
+    /* Additional steps for refreshing ciphertexts */
     /************************ Refresh fnd_ct_tag ciphertext ***********************/
 
     /* Receive the ciphertext fnd_ct_tag */
@@ -852,6 +845,23 @@ static int ObliviouslySearchShelter_beta() {
     tmp_ct = FHE_Enc_Tag(tmp_pt);
 
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
+
+    /************************ Refresh SR_sh_ct ciphertext ***********************/
+
+    /* Receive the ciphertext SR_sh_ct */
+    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive SR_sh_ct from Server Alpha");
+        return -1;
+    }
+    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
+
+    /* Decrypt then re-encrypt and send */
+    FHE_Dec_SDBElement(tmp_ct, tmp_pt);
+    tmp_ct = FHE_Enc_SDBElement(tmp_pt);
+
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());    
 
     return ret;
 }
@@ -1063,7 +1073,7 @@ static int ProcessClientRequest_beta(){
     mdb.open(mdb_filename, std::ios::in | std::ios::binary);
 
     for (uint64_t iter = 0; iter < sqrt_N; iter++) {
-            read_mdb_entry(mdb, iter, M[iter]);
+        read_mdb_entry(mdb, iter, M[iter]);
     }
 
     if (!load_mpz_vector(SetPhi, SetPhi_filename))
@@ -1139,9 +1149,19 @@ static int ProcessClientRequest_beta(){
             goto exit;
         }
 
-        ShelterTagUpdate_beta();
+        ret = ShelterTagUpdate_beta();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the shelter tag update phase..!!");
+            ret = -1;
+            goto exit;
+        }        
         
-        ObliDecReturn_beta();
+        ret = ObliDecReturn_beta();
+        if (ret != 0){
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the returning the response..!!");
+            ret = -1;
+            goto exit;
+        }
 
         /* Close the connection with existing client */
         close(sock_beta_client_srv);

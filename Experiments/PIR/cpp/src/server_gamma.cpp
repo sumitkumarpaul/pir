@@ -25,6 +25,7 @@
 static int sock_gamma_to_beta = -1, sock_gamma_to_alpha_srv = -1, sock_gamma_to_alpha_con = -1, sock_gamma_to_epsilon_srv = -1, sock_gamma_to_epsilon_con = -1;
 static int sock_gamma_client_srv = -1, sock_gamma_client_con = -1;
 static char net_buf[NET_BUF_SZ] = {0};
+static char y_gamma_bits_buf[(sqrt_N+7)/8];
 #if TEST_VERIFY_PRIVACY
 static uint64_t touched_lcation_gamma[sqrt_N] = {0};
 #endif
@@ -463,88 +464,86 @@ static int ObliviouslySearchShelter_gamma() {
     int ret = 0;
     size_t received_sz = 0;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_gamma_ct_element, fnd_gamma_ct_tag;
-    mpz_class d_ct_gamma = 0;
-    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-    bool fnd_gamma = false;
-    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    Ciphertext<DCRTPoly> fnd_gamma_ct_element, fnd_gamma_ct_tag, d_masked_gamma_ct;
 
-    // First, receive sk_F from the server Beta
+    // 3.c Initialize with zeros
+    mpz_class d_masked_gamma = 0;
+    std::vector<bool> fnd_gammma_thread(NUM_CPU_CORES, false);
+    bool fnd_gamma = false;
+    std::vector<mpz_class> d_masked_gamma_thread(NUM_CPU_CORES);
+
+    // 2.c.2 Receive FSS key from the server Beta
     ret = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive sk_F from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FSS key from Server Beta");
         return -1;
     }
 
+    // 2.c.3 Extract the key
     dserializedFssSize = deserializeFssAndServerKeyEq(net_buf, received_sz, fServer, K_gamma);
 
-#if TEST_SHELTER_FOUND
-    mpz_class special_tag, special_tag_location;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received DPF key from server beta and now starting to test DPF-search on the shelter");
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the value of the set search tag (base 10): ");
-    mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
-
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the index within the shelter, where this special tag must be placed (set the same value as specified in server_alpha): ");
-    mpz_inp_str(special_tag_location.get_mpz_t(), stdin, 10);
-
-    sh[special_tag_location.get_ui()].tag_short = special_tag;
-
-    if (special_tag_location.get_ui() >= K) {
-        PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Since the entered position is greater than the current size of the shelter, there will not be any shelter hit.");
-    }
-#endif
-
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+    // 3.c.2 Initialize the remaining parts with zeros
+    memset(y_gamma_bits_buf, 0, sizeof(y_gamma_bits_buf));
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            thread_sums[t] = 0;
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            d_masked_gamma_thread[t] = 0;
+        }
 
 #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((k + j) < K)
             {
+                /* Optimized by combining step 5.c, 7.c and 8.c */
                 if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short)) {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
+                    mpz_xor(d_masked_gamma_thread[j].get_mpz_t(), d_masked_gamma_thread[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
 
                     /* Same as XORing */
-                    thread_fnd[j] = !thread_fnd[j];
-                }
-                else{
+                    fnd_gammma_thread[j] = !fnd_gammma_thread[j];
+
+                    /* 6.c.1 Instead of sending the bits one by one, strore them in a single array */
+                    y_gamma_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
-            mpz_xor(d_ct_gamma.get_mpz_t(), d_ct_gamma.get_mpz_t(), thread_sums[t].get_mpz_t());
+            mpz_xor(d_masked_gamma.get_mpz_t(), d_masked_gamma.get_mpz_t(), d_masked_gamma_thread[t].get_mpz_t());
         }
     }
     for (int t = 0; t < NUM_CPU_CORES; ++t)
     {
-        fnd_gamma ^= thread_fnd[t];
+        fnd_gamma ^= fnd_gammma_thread[t];
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_gamma: " + std::to_string(fnd_gamma));
 
-    // Step 7.1 Compute
+    /* 6.c.2 Send the entire array to the server epsilon. The size is converted to the byte */
+    (void)sendAll(sock_gamma_to_epsilon_con, y_gamma_bits_buf, ((K + 7)/8));
+
+    /* 11.1 Generate FHE ciphertext of the S_gamma's part of the masked shelter search element */
+    d_masked_gamma_ct = FHE_Enc_SDBElement(d_masked_gamma);
+
+    /* 11.2 Determine fnd_gamma_ct for both element and tag. One can be used to select the element portion and another tag portion */
     if (fnd_gamma == true){
         FHE_EncOfOnes(fnd_gamma_ct_element, fnd_gamma_ct_tag);
     }else{
         FHE_EncOfZeros(fnd_gamma_ct_element, fnd_gamma_ct_tag);
     }
 
-    // Step 7.2.1 Send ciphertext of fnd_gamma_ct_element
+    // Step 11.3.1 Send ciphertext of fnd_gamma_ct_element to S_alpha
     (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct_element).c_str(), Serial::SerializeToString(fnd_gamma_ct_element).size());
     
-    // Step 7.3.1 Send ciphertext of fnd_gamma_ct_tag
+    // Step 11.4.1 Send ciphertext of fnd_gamma_ct_tag to S_alpha
     (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct_tag).c_str(), Serial::SerializeToString(fnd_gamma_ct_tag).size());
 
-    // Step 7.4.1 Send the computed share of the search result
-    (void)sendAll(sock_gamma_to_alpha_con, d_ct_gamma.get_str().c_str(), d_ct_gamma.get_str().size());
+    // Step 11.5.1 Send d_masked_gamma_ct to S_alpha
+    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(d_masked_gamma_ct).c_str(), Serial::SerializeToString(d_masked_gamma_ct).size());
 
     return 0;
 }
@@ -1033,7 +1032,7 @@ static int ProcessClientRequest_gamma(){
 
         ret = ObliDecReturn_gamma();
         if (ret != 0){
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during returning the response..!!");
             ret = -1;
             goto exit;
         }

@@ -26,6 +26,7 @@ static int sock_alpha_delta_srv = -1, sock_alpha_delta_con = -1;
 static int sock_alpha_epsilon_srv = -1, sock_alpha_epsilon_con = -1;
 
 static char net_buf[NET_BUF_SZ] = {0};
+static char y_alpha_bits_buf[(sqrt_N+7)/8];
 
 #if TEST_VERIFY_PRIVACY
 static uint64_t touched_lcation_alpha[sqrt_N] = {0};
@@ -46,6 +47,9 @@ static mpz_class SR_sh_ct_mpz;
 static std::fstream sdb;
 static Ciphertext<DCRTPoly> vectorZeroesforElement_ct;
 static Ciphertext<DCRTPoly> vectorZerosforTag_ct;
+static mpz_class random_sdb_element_pt, random_tag_pt;
+static Ciphertext<DCRTPoly> random_sdb_element_ct, random_tag_ct;
+
 
 
 #define CUCKOO_HASH_TABLE_REHASH_TRY_COUNT 1
@@ -570,78 +574,78 @@ static int ObliviouslySearchShelter_alpha() {
     size_t received_sz = 0;
     int ret_recv;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_gamma_ct_element;
-    Ciphertext<DCRTPoly> fnd_alpha_ct_tag, fnd_gamma_ct_tag;
-    Ciphertext<DCRTPoly> random_ct;
-    mpz_class d_ct_alpha = 0, random_pt, tmp_pt;
-    mpz_class d_ct_gamma;
-    std::vector<bool> thread_fnd(NUM_CPU_CORES, false);
-    bool fnd_alpha = false;
-    std::vector<mpz_class> thread_sums(NUM_CPU_CORES);
+    Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_alpha_ct_tag, d_masked_alpha_ct, fnd_gamma_ct_element, fnd_gamma_ct_tag, d_masked_gamma_ct, m_delta_ct, m_epsilon_ct, d_masked_ct, m_ct;
 
-    // First, receive FSS parameters from the server Beta
+    // 3.a.1 Initialize with zeros
+    mpz_class d_masked_alpha = 0;
+    bool fnd_alpha = false;
+    std::vector<bool> fnd_alpha_thread(NUM_CPU_CORES, false);
+    std::vector<mpz_class> d_masked_alpha_thread(NUM_CPU_CORES);
+
+    // 2.a.2 Receive FSS key from the server Beta
     ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FSS parameters from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FSS key from Server Beta");
         return -1;
     }
 
+    // 2.a.3 Extract the key
     dserializedFssSize = deserializeFssAndServerKeyEq(net_buf, received_sz, fServer, K_alpha);
 
-    /* For the verification purpose, set a particular location with special tag printed from server beta, to make the DPF search successful */
-#if TEST_SHELTER_FOUND
-    mpz_class special_tag, special_tag_location;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received DPF key from server beta and now starting to test DPF-search on the shelter");
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the value of the set search tag (base 10): ");
-    mpz_inp_str(special_tag.get_mpz_t(), stdin, 10);
-
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Enter the index within the shelter, where this special tag must be placed (set the same value in server_gamma as well): ");
-    mpz_inp_str(special_tag_location.get_mpz_t(), stdin, 10);
-
-    sh[special_tag_location.get_ui()].tag_short = special_tag;
-
-    if (special_tag_location.get_ui() >= K) {
-        PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Since the entered position is greater than the current size of the shelter, there will not be any shelter hit.");
-    }
-#endif
-
-
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter");
+    // 3.a.2 Initialize the remaining parts with zeros
+    memset(y_alpha_bits_buf, 0, sizeof(y_alpha_bits_buf));
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
-        for (int t = 0; t < NUM_CPU_CORES; ++t)
-            thread_sums[t] = 0;
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            d_masked_alpha_thread[t] = 0;
+        }
 
-#pragma omp parallel for
+        #pragma omp parallel for
         for (int j = 0; j < NUM_CPU_CORES; ++j)
         {
             if ((k + j) < K)
             {
+                /* Optimized by combining step 5.a, 7.a and 8.a */
                 if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short)) {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
+                    mpz_xor(d_masked_alpha_thread[j].get_mpz_t(), d_masked_alpha_thread[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
 
                     /* Same as XORing */
-                    thread_fnd[j] = !thread_fnd[j];
-                }
-                else{
+                    fnd_alpha_thread[j] = !fnd_alpha_thread[j];
+
+                    /* 6.a.1 Instead of sending the bits one by one, strore them in a single array */
+                    y_alpha_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
-            mpz_xor(d_ct_alpha.get_mpz_t(), d_ct_alpha.get_mpz_t(), thread_sums[t].get_mpz_t());
+            mpz_xor(d_masked_alpha.get_mpz_t(), d_masked_alpha.get_mpz_t(), d_masked_alpha_thread[t].get_mpz_t());
         }
     }
     for (int t = 0; t < NUM_CPU_CORES; ++t)
     {
-        fnd_alpha ^= thread_fnd[t];
+        fnd_alpha ^= fnd_alpha_thread[t];
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_alpha: " + std::to_string(fnd_alpha));
 
-    // 7.2.2 Receive fnd_gamma_ct_element
+    /* 6.a.2 Send the entire array to the server delta. The size is converted to the byte */
+    (void)sendAll(sock_alpha_delta_con, y_alpha_bits_buf, ((K + 7)/8));
+
+    /* 10.1 Generate FHE ciphertext of the S_alpha's part of the masked shelter search element */
+    d_masked_alpha_ct = FHE_Enc_SDBElement(d_masked_alpha);
+    /* 10.2 Determine fnd_alpha_ct for both element and tag. One can be used to select the element portion and another tag portion */
+    if (fnd_alpha == true){
+        FHE_EncOfOnes(fnd_alpha_ct_element, fnd_alpha_ct_tag);
+    }else{
+        FHE_EncOfZeros(fnd_alpha_ct_element, fnd_alpha_ct_tag);
+    }
+
+    // 11.3.2 Receive fnd_gamma_ct_element from S_gamma
     ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -650,7 +654,7 @@ static int ObliviouslySearchShelter_alpha() {
     }
     Serial::DeserializeFromString(fnd_gamma_ct_element, std::string(net_buf, received_sz));
 
-    // 7.3.2 Receive fnd_gamma_ct_tag
+    // 11.4.2 Receive fnd_gamma_ct_tag from S_gamma
     ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -659,54 +663,40 @@ static int ObliviouslySearchShelter_alpha() {
     }
     Serial::DeserializeFromString(fnd_gamma_ct_tag, std::string(net_buf, received_sz));
 
-    // 7.4.2 Receive d_ct_gamma
+    // 11.5.2 Receive d_masked_gamma_ct from S_gamma
     ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive d_ct_gamma from Server Gamma");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive d_masked_gamma_ct from Server Gamma");
         return -1;
     }
-    d_ct_gamma = mpz_class(std::string(net_buf, received_sz));
+    Serial::DeserializeFromString(d_masked_gamma_ct, std::string(net_buf, received_sz));
 
-    /* Step 8.1 Determine fnd_alpha_ct */
-    if (fnd_alpha == true){
-        FHE_EncOfOnes(fnd_alpha_ct_element, fnd_alpha_ct_tag);
-    }else{
-        FHE_EncOfZeros(fnd_alpha_ct_element, fnd_alpha_ct_tag);
+    // 12.3 Receive m_delta_ct from S_delta
+    ret_recv = recvAll(sock_alpha_delta_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_delta_ct from Server Delta");
+        return -1;
     }
+    Serial::DeserializeFromString(m_delta_ct, std::string(net_buf, received_sz));
 
-    /* Step 8.2 Homomorphically compute fnd_ct = fnd_alpha_ct XOR fnd_alpha_ct = (fnd_alpha_ct + fnd_alpha_ct) - 2*(fnd_alpha_ct*fnd_alpha_ct) */
+    // 13.3.2 Receive m_epsilon_ct
+    ret_recv = recvAll(sock_alpha_epsilon_con, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_epsilon_ct from Server Epsilon");
+        return -1;
+    }
+    Serial::DeserializeFromString(m_epsilon_ct, std::string(net_buf, received_sz));
+
+    /* Step 14.1 Homomorphically compute fnd_ct = fnd_alpha_ct XOR fnd_alpha_ct = (fnd_alpha_ct + fnd_alpha_ct) - 2*(fnd_alpha_ct*fnd_alpha_ct) */
     fnd_ct_element = FHE_bitwise_XOR(fnd_alpha_ct_element, fnd_gamma_ct_element);
     fnd_ct_tag = FHE_bitwise_XOR(fnd_alpha_ct_tag, fnd_gamma_ct_tag);
 
-    /* Step 8.2.1 Compute d_ct in mpz_class */
-    mpz_xor(SR_sh_ct_mpz.get_mpz_t(), d_ct_gamma.get_mpz_t(), d_ct_alpha.get_mpz_t());
-
-    /* Hack */
-    #if 1
-    if (SR_sh_ct_mpz == 0){
-        if (Serial::SerializeToFile("/dev/shm/dummy_element.ct", vectorZeroesforElement_ct, SerType::BINARY) == true){
-            SR_sh_ct_mpz = import_from_file_to_mpz_class("/dev/shm/dummy_element.ct");        
-        }else{
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize the vectorZeroesforElement_ct ciphertext");
-        }
-    }
-    #endif
-
-    /* Setp 8.3 Convert from mpz_class to FHE ciphertext */
-    export_to_file_from_mpz_class("/dev/shm/d.ct", SR_sh_ct_mpz);
-
-    if (!Serial::DeserializeFromFile("/dev/shm/d.ct", SR_sh_ct, SerType::BINARY)) {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot convert to the d_ct to Ciphertext<DCRTPoly>");
-    }
-    
     /****************** Refresh fnd_ct_element ******************/
-    /* Create a random SDBElement having PLAINTEXT_PIR_BLOCK_DATA_SIZE-bit data and log_N bit index */
-    random_pt = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
-    random_ct = FHE_Enc_SDBElement(random_pt);
-
     /* Mask the actual ciphertext using the random */
-    fnd_ct_element = (fnd_ct_element + random_ct);
+    fnd_ct_element = (fnd_ct_element + random_sdb_element_ct);
 
     /* Send to server beta for a refresh operation */
     (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
@@ -721,15 +711,12 @@ static int ObliviouslySearchShelter_alpha() {
     Serial::DeserializeFromString(fnd_ct_element, std::string(net_buf, received_sz));
 
     /* Remove the random to get back the usable ciphertext */
-    fnd_ct_element = (fnd_ct_element - random_ct); 
+    fnd_ct_element = (fnd_ct_element - random_sdb_element_ct); 
 
+    /* Additional steps for refreshing ciphertexts */
     /****************** Refresh fnd_ct_tag ******************/
-    /* Generate random tag and encrypt that */
-    random_pt = rng.get_z_bits(P_BITS);
-    random_ct = FHE_Enc_Tag(random_pt);
-    
     /* Homomorphically mask the ciphertext  */
-    fnd_ct_tag = (fnd_ct_tag + random_ct);
+    fnd_ct_tag = (fnd_ct_tag + random_tag_ct);
     (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_tag).c_str(), Serial::SerializeToString(fnd_ct_tag).size());
     
     /* Receive refreshed fnd_ct_tag */
@@ -742,7 +729,38 @@ static int ObliviouslySearchShelter_alpha() {
     Serial::DeserializeFromString(fnd_ct_tag, std::string(net_buf, received_sz));
 
     /* Remove the random to get back the usable ciphertext */
-    fnd_ct_tag = (fnd_ct_tag - random_ct); 
+    fnd_ct_tag = (fnd_ct_tag - random_tag_ct);    
+
+    /* Step 14.2 Homomorphically combine shelter element shares */
+    #warning Previously it was a XORing in mpz_class. Now it is homomorphic XOR. Check whether it is performing the same.
+    d_masked_ct = FHE_bitwise_XOR(d_masked_alpha_ct, d_masked_gamma_ct);
+
+    /* Step 14.3 Homomorphically combine mask shares */
+    #warning Similar concern as previous
+    m_ct = FHE_bitwise_XOR(m_delta_ct, m_epsilon_ct);
+
+    /* Step 14.4 Homomorphically unmask the shelter respose */
+    #warning Here check whether unmasking is happening properly. Because we did masking within a loop.
+    SR_sh_ct = d_masked_ct + m_ct;
+
+    /****************** Refresh SR_sh_ct, because it has a part of m_ct (which has undergone one multiplication) ******************/
+    /* Mask the actual ciphertext using the random */
+    SR_sh_ct = (SR_sh_ct + random_sdb_element_ct);
+
+    /* Send to server beta for a refresh operation */
+    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
+
+    /* Receive the refreshed ciphertext */
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed SR_sh_ct from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(SR_sh_ct, std::string(net_buf, received_sz));
+
+    /* Remove the random to get back the usable ciphertext */
+    SR_sh_ct = (SR_sh_ct - random_sdb_element_ct);     
 
     return 0;
 }
@@ -984,6 +1002,12 @@ static int ProcessClientRequest_alpha(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
     FHE_EncOfZeros(vectorZeroesforElement_ct, vectorZerosforTag_ct);/* Initialize shelter search result with not-found */
+    /* Create randoms for refreshing operations */
+    /* SDBElement having size NUM_BYTES_PER_SDB_ELEMENT*8-bits */
+    random_sdb_element_pt = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
+    random_sdb_element_ct = FHE_Enc_SDBElement(random_sdb_element_pt);
+    random_tag_pt = rng.get_z_bits((P_BITS));
+    random_tag_ct = FHE_Enc_SDBElement(random_tag_pt);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
