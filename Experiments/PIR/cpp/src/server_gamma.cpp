@@ -383,7 +383,7 @@ static int PerEpochOperations_gamma(){
         else {
             /* 15.c.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
+            //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Inserted item: " + to_string(i) + " of L to SDB at location: " + std::to_string(res.location()));
         }
 
         if (((i+1) % 100000000) == 0){
@@ -392,7 +392,6 @@ static int PerEpochOperations_gamma(){
     }
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Shuffled database creation complete");
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "TODO: Check whether ith item of DK and L are really placed in proper location of SDB");
 
     // 16.c. Nothing is required to be done for clearing the shelter content
 

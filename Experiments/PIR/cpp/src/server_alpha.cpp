@@ -37,6 +37,9 @@ static uint64_t touched_lcation_alpha[sqrt_N] = {0};
 #define B 512 // Block size in bits, can be adjusted as needed
 // And number of bits determine the evalution time drastically
 static shelter_element sh[sqrt_N]; // Database to store values, each entry is a tuple.
+static shelter_element sh_perf[40960]; // For performance measurement only
+static mpz_class M_perf[40960]; // For performance measurement only
+static char y_alpha_bits_buf_perf[(40960+7)/8];
 static uint64_t K; // Current number of entries in the shelter, or the number of processed requests
 static KukuTable *HTable = nullptr;
 
@@ -90,6 +93,7 @@ static int TestShelterDPFSearch_alpha();
 static int TestClientProcessing_alpha();
 
 static int Perf_avg_online_server_time_alpha();
+static int Old_Perf_avg_online_server_time_alpha();
 
 // Function definitions
 static int InitSrv_alpha(){
@@ -448,7 +452,7 @@ static int PerEpochOperations_alpha(){
         else {
             /* 15.a.5 Insert at the location of the shuffled database, determined by the query result */
             insert_sdb_entry(sdb, res.location(), sdb_entry);
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + to_string(i) + " insertion location: " + std::to_string(res.location()));
+            //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + to_string(i) + " insertion location: " + std::to_string(res.location()));
         }
 
         if (((i+1) % 100000000) == 0){
@@ -1488,19 +1492,175 @@ static int TestShelterDPFSearch_alpha() {
 static int Perf_avg_online_server_time_alpha() {
     // Set up variables
     Fss fClient, fServer;
+    ServerKeyEq K_alpha;
+    ServerKeyEq k1;
+    /* On average half of the shelter elements will be populated */
+    int average_shelter_size = (40960/2);//(sqrt_N/2);    
+
+    mpz_class d_masked_alpha = 0;
+    bool fnd_alpha = false;
+    std::vector<bool> fnd_alpha_thread(NUM_CPU_CORES, false);
+    std::vector<mpz_class> d_masked_alpha_thread(NUM_CPU_CORES);
+    mpz_class m_delta = 0;
+    std::vector<bool> fnd_delta_thread(NUM_CPU_CORES, false);
+    bool fnd_delta = false;
+    std::vector<mpz_class> m_delta_thread(NUM_CPU_CORES);     
+
+    /* Generate a dummy delta value to update the shelter tags */
+    mpz_class Del_abc = rng.get_z_bits(P_BITS);
+    /* Suppose we want to search for a random tag */
+    mpz_class tmp = rng.get_z_range(average_shelter_size);
+    uint64_t dpf_random_test_index = tmp.get_ui();
+    mpz_class T_sh_short = sh_perf[dpf_random_test_index].tag_short;
+    std::chrono::high_resolution_clock::time_point t0;
+    double processingTime_us = 0.0;    
+
+
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
+
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate a shelter");
+
+    /* Populate the shelter, with random elements */
+    for(size_t k = 0; k < average_shelter_size; k++) {
+        sh_perf[k].element = rng.get_z_bits(NUM_BYTES_PER_SDB_ELEMENT*8);
+
+        /* Generate the tags and keep them in the variable, which will be used for DPF search */
+        sh_perf[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh_perf[k].tag_short = sh_perf[k].tag % r; // Create a random short tag
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to randomly populate the mask");
+
+    /* Populate the mask database, with random elements */
+    for(size_t k = 0; k < average_shelter_size; k++) {
+        M_perf[k] = rng.get_z_bits(NUM_BYTES_PER_SDB_ELEMENT*8);
+    }
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter and mask database of size: "  + to_string(average_shelter_size));
+
+    t0 = std::chrono::high_resolution_clock::now();
+
+    /*******************************************************************************************************
+        In this experiment, only considering the required time for two expensive operations.
+        Executing DPF search on large number of shelter elements and updating all the existing shelter tags.
+        In comparison, other operations takes very less amount of time and does not depend on N.
+        Approximate the time required for those operations from other experiments.
+    ********************************************************************************************************/
+
+    // Initialize client, use 64 bits in domain as example
+    initializeClient(&fClient, R_BITS, 2); // If bit length is not set properly, then incorrect answer will be returned
+
+    // Equality FSS test
+    generateTreeEq(&fClient, &K_alpha, &k1, T_sh_short, 1);//So that the point function will evaluate as 1 at location i, and zero elsewhere
+
+    // Initialize server
+    initializeServer(&fServer, &fClient);
+    
+    memset(y_alpha_bits_buf_perf, 0, sizeof(y_alpha_bits_buf_perf));
+
+    /* Perform the DPF searching on the shelter */
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            d_masked_alpha_thread[t] = 0;
+        }
+
+        #pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < average_shelter_size)
+            {
+                /* Optimized by combining step 5.a, 7.a and 8.a */
+                if (evaluateEq(&fServer, &K_alpha, sh_perf[k + j].tag_short)) {
+                    mpz_xor(d_masked_alpha_thread[j].get_mpz_t(), d_masked_alpha_thread[j].get_mpz_t(), sh_perf[k+j].element.get_mpz_t());
+
+                    /* Same as XORing */
+                    fnd_alpha_thread[j] = !fnd_alpha_thread[j];
+
+                    /* 6.a.1 Instead of sending the bits one by one, strore them in a single array */
+                    y_alpha_bits_buf_perf[(k+j)/8] |= (1 << ((k+j) % 8));
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            mpz_xor(d_masked_alpha.get_mpz_t(), d_masked_alpha.get_mpz_t(), d_masked_alpha_thread[t].get_mpz_t());
+        }
+    }
+    for (int t = 0; t < NUM_CPU_CORES; ++t)
+    {
+        fnd_alpha ^= fnd_alpha_thread[t];
+    }
+
+    /* Now perform the Server_delta's mask searching operation */
+    for (size_t k = 0; k < average_shelter_size; k += NUM_CPU_CORES)
+    {
+        for (int t = 0; t < NUM_CPU_CORES; ++t){
+            m_delta_thread[t] = 0;
+        }
+
+        #pragma omp parallel for
+        for (int j = 0; j < NUM_CPU_CORES; ++j)
+        {
+            if ((k + j) < average_shelter_size)
+            {
+                if (y_alpha_bits_buf_perf[(k + j) / 8] & (1 << ((k + j) % 8))) {
+                    mpz_xor(m_delta_thread[j].get_mpz_t(), m_delta_thread[j].get_mpz_t(), M_perf[k+j].get_mpz_t());
+
+                    /* Same as XORing */
+                    fnd_delta_thread[j] = !fnd_delta_thread[j];
+                }
+            }
+        }
+        for (int t = 0; t < NUM_CPU_CORES; ++t)
+        {
+            mpz_xor(m_delta.get_mpz_t(), m_delta.get_mpz_t(), m_delta_thread[t].get_mpz_t());
+        }
+    }
+    for (int t = 0; t < NUM_CPU_CORES; ++t)
+    {
+        fnd_delta ^= fnd_delta_thread[t];
+    }
+
+    {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+        processingTime_us = static_cast<double>(elapsed_us); // microseconds
+    }
+
+    /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
+
+    std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+
+
+    return 1;
+}
+
+
+static int Old_Perf_avg_online_server_time_alpha() {
+    // Set up variables
+    Fss fClient, fServer;
     ServerKeyEq k0;
     ServerKeyEq k1;
     int ret = 0;
     size_t received_sz = 0;
     /* On average half of the shelter elements will be populated */
-    int average_shelter_size = (sqrt_N/2);
+    int average_shelter_size = (40960/2);//(sqrt_N/2);
     std::string DPF_search_test_shelter_location = std::string("/dev/shm/");
     /* Generate a dummy delta value to update the shelter tags */
     mpz_class Del_abc = rng.get_z_bits(P_BITS);
     /* Suppose we want to search for a random tag */
     mpz_class tmp = rng.get_z_range(average_shelter_size);
     uint64_t dpf_random_test_index = tmp.get_ui();
-    mpz_class T_sh_short = sh[dpf_random_test_index].tag_short;
+    mpz_class T_sh_short = sh_perf[dpf_random_test_index].tag_short;
     std::chrono::high_resolution_clock::time_point t0;
     double processingTime_us = 0.0;    
 
@@ -1521,21 +1681,21 @@ static int Perf_avg_online_server_time_alpha() {
         // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
         Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
         /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
-        if (Serial::SerializeToFile(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) != true)
+        if (Serial::SerializeToFile(DPF_search_test_shelter_location + "sh_perf[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) != true)
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to serialize element FHE ciphertext to file");
         }
         /* Just notedown the ciphertext size */
         if (k == 0){
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct")));
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Size of the FHE-ciphertext: "+ std::to_string(std::filesystem::file_size(DPF_search_test_shelter_location + "sh_perf[" + std::to_string(k) + "].ct")));
         }
 
 
-        sh[k].element = import_from_file_to_mpz_class(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct");
+        sh_perf[k].element = import_from_file_to_mpz_class(DPF_search_test_shelter_location + "sh_perf[" + std::to_string(k) + "].ct");
 
         /* Generate the tags and keep them in the variable, which will be used for DPF search */
-        sh[k].tag = ElGamal_randomGroupElement(); // Create a random tag
-        sh[k].tag_short = sh[k].tag % r; // Create a random short tag
+        sh_perf[k].tag = ElGamal_randomGroupElement(); // Create a random tag
+        sh_perf[k].tag_short = sh_perf[k].tag % r; // Create a random short tag
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Starting to test DPF-search on the shelter of size: "  + to_string(average_shelter_size));
@@ -1573,12 +1733,12 @@ static int Perf_avg_online_server_time_alpha() {
         {
             if ((k + j) < average_shelter_size)
             {
-                if (evaluateEq(&fServer, &k0, sh[k + j].tag_short)) {
-                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
+                if (evaluateEq(&fServer, &k0, sh_perf[k + j].tag_short)) {
+                    mpz_xor(thread_sums[j].get_mpz_t(), thread_sums[j].get_mpz_t(), sh_perf[k+j].element.get_mpz_t());
                 }
                 /* Simulate the time required for shelter tag update operation */
-                sh[k + j].tag = (sh[k + j].tag * Del_abc) % p;
-                sh[k + j].tag_short = sh[k + j].tag % r;                
+                sh_perf[k + j].tag = (sh_perf[k + j].tag * Del_abc) % p;
+                sh_perf[k + j].tag_short = sh_perf[k + j].tag % r;                
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t){
@@ -1596,7 +1756,7 @@ static int Perf_avg_online_server_time_alpha() {
     /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
 
     std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "(Old solution) Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 
 
     return 1;
@@ -1631,6 +1791,7 @@ int main(int argc, char *argv[])
             }else{
                 if (std::string("srv_avg_online_time").compare(std::string(argv[2]))==0){
                     (void)Perf_avg_online_server_time_alpha();
+                    (void)Old_Perf_avg_online_server_time_alpha();
                 }
             }
         } else {
