@@ -51,15 +51,19 @@ using namespace kuku;
 
 #define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
 
-//#define SERVER_ALPHA_IP "192.168.16.126" // IP address of the server_alpha
-//#define SERVER_BETA_IP  "192.168.16.34"//"192.168.16.245" // IP address of the server_beta
-//#define SERVER_GAMMA_IP "192.168.16.132" // IP address of the server_gamma
-
+#if 1 /* Using real machines */
+#define SERVER_ALPHA_IP     "192.168.16.126" // IP address of the server_alpha
+#define SERVER_BETA_IP      "192.168.16.34"// IP address of the server_beta
+#define SERVER_GAMMA_IP     "192.168.16.132" // IP address of the server_gamma
+#define SERVER_DELTA_IP     "192.168.16.126" // IP address of the server_delta. In our setup, we are using same machine for server_alpha and server_delta.
+#define SERVER_EPSILON_IP   "192.168.16.132" // IP address of the server_epsilon. In our setup, we are using same machine for server_gamma and server_epsilon.
+#else /* Performing all the experiments in the same machine */
 #define SERVER_ALPHA_IP     "127.0.0.1" // IP address of the server_alpha
 #define SERVER_BETA_IP      "127.0.0.1"//"192.168.16.245" // IP address of the server_beta
 #define SERVER_GAMMA_IP     "127.0.0.1" // For the time being
 #define SERVER_DELTA_IP     "127.0.0.1" // For the time being
 #define SERVER_EPSILON_IP   "127.0.0.1" // For the time being
+#endif
 
 #define ALPHA_LISTENING_TO_DELTA_PORT   1234 // Port of alpha to listen to delta
 #define ALPHA_LISTENING_TO_EPSILON_PORT 1235 // Port of alpha to listen to epsilon
