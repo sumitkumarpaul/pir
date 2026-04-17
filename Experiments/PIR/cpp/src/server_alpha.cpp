@@ -636,6 +636,7 @@ static int ObliviouslySearchShelter_alpha() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_alpha: " + std::to_string(fnd_alpha));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_alpha's share of the masked content is: " + d_masked_alpha.get_str(16));
 
     /* 6.a.2 Send the entire array to the server delta. The size is converted to the byte */
     (void)sendAll(sock_alpha_delta_con, y_alpha_bits_buf, ((K + 7)/8));
@@ -958,7 +959,6 @@ start:
 
         /* 13.a Caculate updated t_hat tag value of the ith element */
         sh[i].tag_short = sh[i].tag % r;
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "sh["+ std::to_string(i) + "].tag_short: " + sh[i].tag_short.get_str());
 
         /* 14.a Dectection of collision */
         if (t_star_hat == sh[i].tag_short) {
@@ -1232,6 +1232,7 @@ static int ObliDecReturn_alpha(){
     sh[K].element = shelter_element;
     sh[K].tag = T_star_hat;
     sh[K].tag_short = t_star_hat;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of sh[" + std::to_string(K) + "].element = " + sh[K].element.get_str(16));
 
     return 0;
 }

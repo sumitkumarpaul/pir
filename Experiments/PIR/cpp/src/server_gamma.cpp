@@ -521,6 +521,7 @@ static int ObliviouslySearchShelter_gamma() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_gamma: " + std::to_string(fnd_gamma));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_gamma's share of the masked content is: " + d_masked_gamma.get_str(16));
 
     /* 6.c.2 Send the entire array to the server epsilon. The size is converted to the byte */
     (void)sendAll(sock_gamma_to_epsilon_con, y_gamma_bits_buf, ((K + 7)/8));
@@ -728,8 +729,7 @@ static int ObliDecReturn_gamma(){
     sh[K].element = shelter_element;
     sh[K].tag = T_star_hat;
     sh[K].tag_short = t_star_hat;
-
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Stored masked shelter element is(HEX): " + shelter_element.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of sh[" + std::to_string(K) + "].element = " + sh[K].element.get_str(16));
 
     ret = 0;
 
@@ -894,7 +894,6 @@ start:
         sh[i].tag = ((sh[i].tag * Del_a_Del_b_Del_c) % p);
         /* 13.c Compute t_hat tag of the i^th shelter element */
         sh[i].tag_short = sh[i].tag % r;
-        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "sh["+ std::to_string(i) + "].tag_short: " + sh[i].tag_short.get_str());
         
         if (t_star_hat == sh[i].tag_short) {
             /* 14.c Inform the tag collision */
