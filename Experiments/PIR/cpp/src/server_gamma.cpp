@@ -221,6 +221,15 @@ static int OneTimeInit_gamma() {
     }
     Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
 
+    // Receive bitOne_ct
+    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bitOne_ct from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(bitOne_ct, std::string(net_buf, received_sz));  
+
     //Save parameters to local files
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin", q);
@@ -234,6 +243,8 @@ static int OneTimeInit_gamma() {
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
+
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received all the one-time initialized parameters from Server Beta and exported all of them into file");
 
@@ -266,6 +277,7 @@ static int PerEpochOperations_gamma(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 
@@ -463,7 +475,7 @@ static int ObliviouslySearchShelter_gamma() {
     int ret = 0;
     size_t received_sz = 0;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_gamma_ct_element, fnd_gamma_ct_tag, d_masked_gamma_ct;
+    Ciphertext<DCRTPoly> fnd_gamma_ct, fnd_gamma_ct_element, fnd_gamma_ct_tag, d_masked_gamma_ct;
 
     // 3.c Initialize with zeros
     mpz_class d_masked_gamma = 0;
@@ -527,13 +539,20 @@ static int ObliviouslySearchShelter_gamma() {
     (void)sendAll(sock_gamma_to_epsilon_con, y_gamma_bits_buf, ((K + 7)/8));
 
     /* 11.1 Generate FHE ciphertext of the S_gamma's part of the masked shelter search element */
-    d_masked_gamma_ct = FHE_Enc_SDBElement(d_masked_gamma);
+    //d_masked_gamma_ct = FHE_Enc_SDBElement(d_masked_gamma);
+    d_masked_gamma_ct = FHE_bitwise_Enc_SDBElement(d_masked_gamma);
+
+    /* Initialize with zeros */
+    fnd_gamma_ct_element = vectorOnesforElement_ct + vectorOnesforElement_ct;// Initialize with 0. Since 1+1 = 0. Faster than encrypting plaintext
+    fnd_gamma_ct_tag = vectorOnesforTag_ct + vectorOnesforTag_ct;
+    fnd_gamma_ct = bitOne_ct + bitOne_ct;
+
 
     /* 11.2 Determine fnd_gamma_ct for both element and tag. One can be used to select the element portion and another tag portion */
     if (fnd_gamma == true){
-        FHE_EncOfOnes(fnd_gamma_ct_element, fnd_gamma_ct_tag);
-    }else{
-        FHE_EncOfZeros(fnd_gamma_ct_element, fnd_gamma_ct_tag);
+        fnd_gamma_ct_element = fnd_gamma_ct_element + vectorOnesforElement_ct;// Adding 1 to 0 will make it 1
+        fnd_gamma_ct_tag = fnd_gamma_ct_tag + vectorOnesforTag_ct;
+        fnd_gamma_ct = fnd_gamma_ct + bitOne_ct;
     }
 
     // Step 11.3.1 Send ciphertext of fnd_gamma_ct_element to S_alpha
@@ -937,6 +956,7 @@ static int ProcessClientRequest_gamma(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Loaded one-time initialization materials");
 

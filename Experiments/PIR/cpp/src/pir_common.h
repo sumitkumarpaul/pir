@@ -35,7 +35,7 @@
 #include "ciphertext-ser.h"
 #include "cryptocontext-ser.h"
 #include "key/key-ser.h"
-#include "scheme/bgvrns/bgvrns-ser.h"
+#include "scheme/bfvrns/bfvrns-ser.h"
 
 using namespace lbcrypto;
 using namespace kuku;
@@ -47,7 +47,8 @@ using namespace kuku;
 #define LOG_LEVEL_DEBUG     3
 #define LOG_LEVEL_TRACE     4
 
-#define SET_LOG_LEVEL LOG_LEVEL_ERROR
+#define SET_LOG_LEVEL LOG_LEVEL_TRACE
+#define TEMP_CODE_FOR_VERIFICATION (1)
 
 #define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
 
@@ -146,6 +147,7 @@ extern PrivateKey<DCRTPoly> sk_F;
 extern CryptoContext<DCRTPoly> FHEcryptoContext;
 extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
+extern Ciphertext<DCRTPoly> bitOne_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
 extern Ciphertext<DCRTPoly> fnd_ct_element;
 extern Ciphertext<DCRTPoly> fnd_ct_tag;
@@ -203,17 +205,19 @@ extern int sendAll(int sock, const char* data, size_t sz);
 
 // FHE related functions
 extern int FHE_keyGen();
+extern Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& selBit_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index);
-extern Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
-extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
+extern Ciphertext<DCRTPoly> FHE_bitwise_Enc_SDBElement(const mpz_class block_content_and_index);
+extern void FHE_bitwise_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
+extern Ciphertext<DCRTPoly> FHE_bitwise_Enc_Tag(const mpz_class tag);
+extern void FHE_bitwise_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
+extern Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
+extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
 extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
-extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct);
-extern void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforElement_ct, Ciphertext<DCRTPoly>& ZerosforTag_ct);
-extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforTag_ct);
-extern void FHE_EncOfZeros(Ciphertext<DCRTPoly>& ZerosforTag_ct);
+extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct, Ciphertext<DCRTPoly>& OneforBit_ct);
 extern mpz_class import_from_file_to_mpz_class(const std::string& filename);
 extern void export_to_file_from_mpz_class(const std::string& filename, const mpz_class& value);
 

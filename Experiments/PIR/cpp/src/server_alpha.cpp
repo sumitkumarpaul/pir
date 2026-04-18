@@ -48,8 +48,6 @@ static mpz_class T_star, T_star_hat, t_star_hat;
 static mpz_class a;
 static mpz_class SR_sh_ct_mpz;
 static std::fstream sdb;
-static Ciphertext<DCRTPoly> vectorZeroesforElement_ct;
-static Ciphertext<DCRTPoly> vectorZerosforTag_ct;
 static mpz_class random_sdb_element_pt, random_tag_pt;
 static Ciphertext<DCRTPoly> random_sdb_element_ct, random_tag_ct;
 
@@ -248,6 +246,15 @@ static int OneTimeInit_alpha() {
     }
     Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
 
+    // Receive bitOne_ct
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bitOne_ct from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromString(bitOne_ct, std::string(net_buf, received_sz));    
+
     //Save parameters to local files
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin", q);
@@ -261,6 +268,7 @@ static int OneTimeInit_alpha() {
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received all the one-time initialized parameters from Server Beta and exported all of them into file");
     
@@ -335,6 +343,7 @@ static int PerEpochOperations_alpha(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
@@ -644,10 +653,15 @@ static int ObliviouslySearchShelter_alpha() {
     /* 10.1 Generate FHE ciphertext of the S_alpha's part of the masked shelter search element */
     d_masked_alpha_ct = FHE_Enc_SDBElement(d_masked_alpha);
     /* 10.2 Determine fnd_alpha_ct for both element and tag. One can be used to select the element portion and another tag portion */
+    
+    fnd_alpha_ct_element = vectorOnesforElement_ct + vectorOnesforElement_ct;// Initialize with 0. Since 1+1 = 0. Faster than encrypting plaintext
+    fnd_alpha_ct_tag = vectorOnesforTag_ct + vectorOnesforTag_ct;
+    fnd_alpha_ct = bitOne_ct + bitOne_ct;
+
     if (fnd_alpha == true){
-        FHE_EncOfOnes(fnd_alpha_ct_element, fnd_alpha_ct_tag);
-    }else{
-        FHE_EncOfZeros(fnd_alpha_ct_element, fnd_alpha_ct_tag);
+        fnd_alpha_ct_element = fnd_alpha_ct_element + vectorOnesforElement_ct;// Adding 1 to 0 will make it 1
+        fnd_alpha_ct_tag = fnd_alpha_ct_tag + vectorOnesforTag_ct;
+        fnd_alpha_ct = fnd_alpha_ct + bitOne_ct;
     }
 
     // 11.3.2 Receive fnd_gamma_ct_element from S_gamma
@@ -1005,7 +1019,9 @@ static int ProcessClientRequest_alpha(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
-    FHE_EncOfZeros(vectorZeroesforElement_ct, vectorZerosforTag_ct);/* Initialize shelter search result with not-found */
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
+
+    #warning these are not required now
     /* Create randoms for refreshing operations */
     /* SDBElement having size NUM_BYTES_PER_SDB_ELEMENT*8-bits */
     random_sdb_element_pt = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
@@ -1075,9 +1091,10 @@ static int ProcessClientRequest_alpha(){
                 goto exit;
             }
         } else {
-            /* For the first request set the fnd_ct to encryption of Zeros */
-            FHE_EncOfZeros(fnd_ct_element, fnd_ct_tag);
-            SR_sh_ct = vectorZeroesforElement_ct;
+            fnd_ct_element = vectorOnesforElement_ct + vectorOnesforElement_ct;// Making 1 + 1 = 0. Faster than encrypting 0. No noise growth, since only addition.
+            fnd_ct_tag = vectorOnesforTag_ct + vectorOnesforTag_ct;
+            fnd_ct = bitOne_ct + bitOne_ct;
+            SR_sh_ct = fnd_ct_element;//i.e., set with 0s
         }
 
         ret = SelShuffDBSearchTag_alpha();
@@ -1333,6 +1350,7 @@ static int TestShelterDPFSearch_alpha() {
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     // First, receive sk_F from the server Beta
     ret = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);

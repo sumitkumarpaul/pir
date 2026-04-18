@@ -75,6 +75,7 @@ static void Test_FHE_DBElement();
 static void TestSelShuffDBSearchTag_beta();
 static int TestShelterDPFSearch_beta();
 static int TestClientProcessing_beta();
+static void Test_binFHE();
 #if TEST_SHUFF_DB_FETCH
 static void TestShuffDBFetch_beta();
 #endif
@@ -146,6 +147,7 @@ static int SendInitializedParamsToAllServers(){
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server alpha");
 
@@ -161,6 +163,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(bitOne_ct).c_str(), Serial::SerializeToString(bitOne_ct).size());
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server gamma");
 
@@ -176,6 +179,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
     (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
+    (void)sendAll(sock_beta_gamma_con, Serial::SerializeToString(bitOne_ct).c_str(), Serial::SerializeToString(bitOne_ct).size());
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server delta");
 
@@ -214,7 +218,7 @@ static int OneTimeInit_beta(){
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated FHE key-pair");
     }
 
-    FHE_EncOfOnes(vectorOnesforElement_ct, vectorOnesforTag_ct);
+    FHE_EncOfOnes(vectorOnesforElement_ct, vectorOnesforTag_ct, bitOne_ct);
 
     //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
     ret = SendInitializedParamsToAllServers();
@@ -354,6 +358,7 @@ static int PerEpochOperations_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
@@ -1068,6 +1073,7 @@ static int ProcessClientRequest_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
     
     /* Load the mask database into the RAM location for faster access */
     mdb.open(mdb_filename, std::ios::in | std::ios::binary);
@@ -1607,6 +1613,7 @@ static void Test_FHE_DBElement() {
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
@@ -2056,6 +2063,93 @@ static void TestPKEOperations_beta() {
     return;
 }
 
+static void Test_binFHE(){
+    mpz_class tmp, tmp1, tmp2, tmp3;//TODO Verification only
+    Ciphertext<DCRTPoly> tmp_ct, tmp_ct1, tmp_ct2, tmp_ct3;
+
+    OneTimeInit_beta();
+
+    /* Experiment with tags */
+    mpz_ui_pow_ui(tmp1.get_mpz_t(), 2, (P_BITS));
+    tmp1 -= 1;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "tmp1 is: " + tmp1.get_str(16));
+
+    tmp_ct1 = FHE_bitwise_Enc_Tag(tmp1);
+    FHE_bitwise_Dec_Tag(tmp_ct1, tmp1);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, tmp1 becomes: " + tmp1.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The size of the FHE ciphertext string format is: " + std::to_string(Serial::SerializeToString(tmp_ct1).size()));
+    if (Serial::SerializeToFile("/dev/shm/tmp_alpha", tmp_ct1, SerType::BINARY) == true){
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The size of the FHE ciphertext in binary format is: " + std::to_string(std::filesystem::file_size("/dev/shm/tmp_alpha")));
+    }
+
+    tmp_ct2 = tmp_ct1 + tmp_ct1;//Must perform bitwise XOR operation
+    FHE_bitwise_Dec_Tag(tmp_ct2, tmp2);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, tmp1^tmp1 becomes: " + tmp2.get_str(16));
+
+    tmp2 = rng.get_z_bits((P_BITS));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "One randomly generated tag is: " + tmp2.get_str(16));
+    
+    tmp_ct2 = FHE_bitwise_Enc_Tag(tmp2);
+    FHE_bitwise_Dec_Tag(tmp_ct2, tmp2);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After bitwise encrypting and then decrypting, the random tag becomes: " + tmp2.get_str(16));
+
+    tmp_ct3 = tmp_ct1 + tmp_ct2;//XOR
+    FHE_bitwise_Dec_Tag(tmp_ct3, tmp3);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, (random tag)^tmp1 becomes: " + tmp3.get_str(16));
+    
+    tmp_ct = FHE_Select(bitOne_ct, tmp_ct2, tmp_ct3);
+    FHE_bitwise_Dec_Tag(tmp_ct, tmp);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decryption of the select result is: " + tmp.get_str(16));
+
+    tmp_ct = FHE_Select((bitOne_ct + bitOne_ct), tmp_ct2, tmp_ct3);
+    FHE_bitwise_Dec_Tag(tmp_ct, tmp);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decryption of the second select result is: " + tmp.get_str(16));
+
+    /* Experiment with shelter elements */
+    mpz_ui_pow_ui(tmp1.get_mpz_t(), 2, (NUM_BYTES_PER_SDB_ELEMENT*8));
+    tmp1 -= 1;
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "tmp1 is: " + tmp1.get_str(16));
+
+    tmp_ct1 = FHE_bitwise_Enc_SDBElement(tmp1);
+    FHE_bitwise_Dec_SDBElement(tmp_ct1, tmp1);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, tmp1 becomes: " + tmp1.get_str(16));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The size of the FHE ciphertext string format is: " + std::to_string(Serial::SerializeToString(tmp_ct1).size()));
+    if (Serial::SerializeToFile("/dev/shm/tmp_alpha", tmp_ct1, SerType::BINARY) == true){
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The size of the FHE ciphertext in binary format is: " + std::to_string(std::filesystem::file_size("/dev/shm/tmp_alpha")));
+    }
+
+    tmp_ct2 = tmp_ct1 + tmp_ct1;//Must perform bitwise XOR operation
+    FHE_bitwise_Dec_SDBElement(tmp_ct2, tmp2);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, tmp1^tmp1 becomes: " + tmp2.get_str(16));
+
+    tmp2 = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "One randomly generated element is: " + tmp2.get_str(16));
+    
+    tmp_ct2 = FHE_bitwise_Enc_SDBElement(tmp2);
+    FHE_bitwise_Dec_SDBElement(tmp_ct2, tmp2);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After bitwise encrypting and then decrypting, the random element becomes: " + tmp2.get_str(16));
+
+    tmp_ct3 = tmp_ct1 + tmp_ct2;//XOR
+    FHE_bitwise_Dec_SDBElement(tmp_ct3, tmp3);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "After decrypting, (random element)^tmp1 becomes: " + tmp3.get_str(16));
+
+    tmp_ct = FHE_Select(bitOne_ct, tmp_ct2, tmp_ct3);
+    FHE_bitwise_Dec_SDBElement(tmp_ct, tmp);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decryption of the select result is: " + tmp.get_str(16));
+
+    tmp_ct = FHE_Select((bitOne_ct + bitOne_ct), tmp_ct2, tmp_ct3);
+    FHE_bitwise_Dec_SDBElement(tmp_ct, tmp);
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Decryption of the second select result is: " + tmp.get_str(16));
+
+}
 static void TestSrv_beta()
 {
     //TestPKEOperations_beta();
@@ -2066,6 +2160,7 @@ static void TestSrv_beta()
     TestShuffDBFetch_beta();
 #endif
     //Test_FHE_DBElement();
+    Test_binFHE();
 }
 
 #if TEST_SHUFF_DB_FETCH
