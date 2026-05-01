@@ -234,7 +234,7 @@ static int ObliviouslySearchShelter_delta() {
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_delta's share of the mask is: " + m_delta.get_str(16));
 
     // 12.1 Compute the FHE ciphertext of m_delta
-    m_delta_ct = FHE_Enc_SDBElement(m_delta);
+    m_delta_ct = FHE_bitwise_Enc_SDBElement(m_delta);
 
     /* 12.2 Send the ciphertext to server alpha */
     (void)sendAll(sock_delta_to_alpha, Serial::SerializeToString(m_delta_ct).c_str(), Serial::SerializeToString(m_delta_ct).size());
@@ -348,7 +348,7 @@ static int Perf_avg_online_server_time_delta() {
     /* Populate the shelter, with random elements */
     for(size_t k = 0; k < average_shelter_size; k++) {
         // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-        Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+        Ciphertext<DCRTPoly> tmp_ct = FHE_bitwise_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
         /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
         if (Serial::SerializeToFile(DPF_search_test_shelter_location + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) != true)
         {

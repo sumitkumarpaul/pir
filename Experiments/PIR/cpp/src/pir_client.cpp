@@ -270,8 +270,6 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     mpz_class extracted_part, received_part, m_C_part, mask;
     *p_received_index = 0;
 
-    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
-    InitBitZeroingMask();
 
     /* Step 1.a: Generate random mask */
     m_C = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
@@ -282,7 +280,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     mpz_and(m_C.get_mpz_t(), m_C.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
 
     /* Step 2.1: Generate ciphertext of the random mask */
-    m_C_ct = FHE_Enc_SDBElement(m_C);
+    m_C_ct = FHE_bitwise_Enc_SDBElement(m_C);
 
     /* Step 2.2: Send corresponding ciphertext to server gamma */
     (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(m_C_ct).c_str(), Serial::SerializeToString(m_C_ct).size());

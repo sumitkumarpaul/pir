@@ -159,7 +159,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, r.get_str().c_str(), r.get_str().size());
     (void)sendAll(sock_beta_alpha_con, pk_E.get_str().c_str(), pk_E.get_str().size());
     (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
+    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin");
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforElement_ct).c_str(), Serial::SerializeToString(vectorOnesforElement_ct).size());
     (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(vectorOnesforTag_ct).c_str(), Serial::SerializeToString(vectorOnesforTag_ct).size());
@@ -186,6 +186,8 @@ static int SendInitializedParamsToAllServers(){
     //Send parameters to Server Delta
     (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
     (void)sendAll(sock_beta_delta_con, Serial::SerializeToString(pk_F).c_str(), Serial::SerializeToString(pk_F).size());
+
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server epsilon");
 
     //Send parameters to Server Epsilon
     (void)sendAll(sock_beta_epsilon_con, Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size());
@@ -384,10 +386,7 @@ static int PerEpochOperations_beta(){
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin", E_q_Rho.first);
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
 
-    /* 3. Create Mask database */
-    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
-    InitBitZeroingMask();
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Initialize Bit Zeroing mask");    
+    /* 3. Create Mask database */ 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
     mdb.open(mdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
@@ -399,7 +398,7 @@ static int PerEpochOperations_beta(){
 
         memset(mask_entry.element, 0, sizeof(mask_entry.element));
         mask = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
-        /* TODO: To avoid overflow, certain bits are required to be zero */
+        
         mpz_and(mask.get_mpz_t(), mask.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
         mpz_export(mask_entry.element, &count, 1, 1, 1, 0, mask.get_mpz_t());
         #pragma omp critical
@@ -408,7 +407,7 @@ static int PerEpochOperations_beta(){
         }
     }
 
-    // 4. We are skipping this in the implementation. We are transferring them manually, in chuncks
+    // 4. We are skipping transferring individual shares this in the implementation. We are transferring all of them in chuncks, manually by using scp command.
 
     // 5.1 build SS = {1, 2, ..., (N + sqrt_N))}
     uint64_t M = N + sqrt_N;
@@ -447,8 +446,6 @@ static int PerEpochOperations_beta(){
             mpz_class d, d_alpha, d_gamma;
             plain_db_entry read_entry;
             mpz_init(tmp);
-            mpz_class d_part, d_alpha_part, d_gamma_part;
-            mpz_class mask;
             uint64_t I;
             mpz_class mpz_I;
             unsigned char net_buf_local[(P_BITS/8)];
@@ -497,7 +494,8 @@ static int PerEpochOperations_beta(){
             /* 10.1 First create a random number as the secret-share for server_alpha */
             #pragma omp critical
             {
-                d_alpha = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE + log_N) - 1); /* Since the secret share must be almost half of the original number, make it one bit smaller */
+                /* d_alpha is a randomly generated value and d_gamma is: d^d_alpha. Hence, d_alpha^d_gamma becomes d */
+                d_alpha = rng.get_z_bits(NUM_BYTES_PER_SDB_ELEMENT*8);
             }
 
             /* 10.2.Convert T_I to cuckoo hash key and save that to the buffer */
@@ -521,27 +519,7 @@ static int PerEpochOperations_beta(){
             }
 
             /* 10.4 Create the second share for server_gamma */
-            // d_gamma = (d - d_alpha);/* Another share */ But this is creating error while combining homomorphically
-
-            // PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "For I = " + std::to_string(I) + " value of d: " + d.get_str(16) + " and d_alpha: " + d_alpha.get_str(16));
-
-            d_gamma = mpz_class(0);
-            mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-
-            for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
-            {
-                /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
-                d_alpha_part = (d_alpha & mask);
-                d_part = (d & mask);
-
-                /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
-                d_gamma_part = (d_part - d_alpha_part) & mask;
-
-                /* Append the part at the proper location */
-                d_gamma = (d_gamma | d_gamma_part);
-
-                mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
-            }
+            mpz_xor(d_gamma.get_mpz_t(), d.get_mpz_t(), d_alpha.get_mpz_t());
 
             /* Store the d_gamma share in the local buffer */
             mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
@@ -554,10 +532,6 @@ static int PerEpochOperations_beta(){
                 memcpy(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], (net_buf_local + 1), NUM_BYTES_PER_SDB_ELEMENT);
             }
         }
-
-        //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "d_gamma: " + d_gamma.get_str(16) + " exported size: " + std::to_string(send_size));
-
-        //(void)sendAll(sock_beta_gamma_con, net_buf, send_size);
 
         // 11. Remove chosen element from SS (order not preserved)
         // This step is not required, since SS[] is already shuffled and we are choosing all the indices only once, one by one
@@ -611,8 +585,8 @@ static int PerEpochOperations_beta(){
     (void)sendAll(sock_beta_epsilon_con, completed_reinit_for_epoch_message.c_str(), completed_reinit_for_epoch_message.size());
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Completed PerEpochOperations for new epoch");
+
 exit:
-    //mpz_clear(tmp);
     pdb.close();
     mdb.close();
     D_alpha.close();
@@ -816,57 +790,6 @@ static int ObliviouslySearchShelter_beta() {
     serializedFssSize = serializeFssAndServerKeyEq(fServer, K_gamma, net_buf, sizeof(net_buf));
     (void)sendAll(sock_beta_gamma_con, net_buf, serializedFssSize);
 
-    /************************ Refresh fnd_ct_element ciphertext ***********************/
-
-    /* Receive the ciphertext fnd_ct_element */
-    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_ct_element from Server Alpha");
-        return -1;
-    }
-    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
-
-    /* Decrypt then re-encrypt and send */
-    FHE_Dec_SDBElement(tmp_ct, tmp_pt);
-    tmp_ct = FHE_Enc_SDBElement(tmp_pt);
-
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
-
-    /* Additional steps for refreshing ciphertexts */
-    /************************ Refresh fnd_ct_tag ciphertext ***********************/
-
-    /* Receive the ciphertext fnd_ct_tag */
-    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_ct_tag from Server Alpha");
-        return -1;
-    }
-    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
-    
-    /* Decrypt then re-encrypt and send */
-    FHE_Dec_Tag(tmp_ct, tmp_pt);
-    tmp_ct = FHE_Enc_Tag(tmp_pt);
-
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());
-
-    /************************ Refresh SR_sh_ct ciphertext ***********************/
-
-    /* Receive the ciphertext SR_sh_ct */
-    ret = recvAll(sock_beta_alpha_con, net_buf, sizeof(net_buf), &received_sz);
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive SR_sh_ct from Server Alpha");
-        return -1;
-    }
-    Serial::DeserializeFromString(tmp_ct, std::string(net_buf, received_sz));
-
-    /* Decrypt then re-encrypt and send */
-    FHE_Dec_SDBElement(tmp_ct, tmp_pt);
-    tmp_ct = FHE_Enc_SDBElement(tmp_pt);
-
-    (void)sendAll(sock_beta_alpha_con, Serial::SerializeToString(tmp_ct).c_str(), Serial::SerializeToString(tmp_ct).size());    
 
     return ret;
 }
@@ -903,10 +826,10 @@ static int ObliDecReturn_beta(){
     Serial::DeserializeFromString(masked_requested_element_gamma_ct, std::string(net_buf, received_sz));    
        
     /* Step 4.1. Decrypt masked_requested_element_client_ct */
-    FHE_Dec_SDBElement(masked_requested_element_client_ct, masked_requested_element_client_pt);
+    FHE_bitwise_Dec_SDBElement(masked_requested_element_client_ct, masked_requested_element_client_pt);
 
     /* Step 4.2. Decrypt masked_requested_element_gamma_ct */
-    FHE_Dec_SDBElement(masked_requested_element_gamma_ct, masked_requested_element_gamma_pt);
+    FHE_bitwise_Dec_SDBElement(masked_requested_element_gamma_ct, masked_requested_element_gamma_pt);
 
     /* Step 5.1. Apply the mask to the decrypted element */
     mpz_import(tmp, sizeof(M[K].element), 1, 1, 1, 0, M[K].element);
@@ -1072,6 +995,8 @@ static int ProcessClientRequest_beta(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+
+
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
     
@@ -1090,9 +1015,12 @@ static int ProcessClientRequest_beta(){
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
-    /* Initialize bit zeroing mask. It is required to ensure that each 16th bit of the random is 0. This ensures protection against overflow. */
-    InitBitZeroingMask();
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Initialize Bit Zeroing mask");    
+    #if TEMP_CODE_FOR_VERIFICATION
+    #warning Ideally the cryptocontext should be self-sufficient for multikey evaluation
+    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin");
+    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Sent materials for enabling multikey evaluation");
+    #endif
 
     //Always initialize them
     K = 0;
@@ -1260,7 +1188,7 @@ static int SelShuffDBSearchTag_beta(){
 
     /* 12.1 Decrypt the FHE-ciphertext */
     mpz_class T_star_h_alpha2_h_beta0;
-    FHE_Dec_Tag(FHE_ct_T_star_h_alpha2_h_beta0, T_star_h_alpha2_h_beta0);
+    FHE_bitwise_Dec_Tag(FHE_ct_T_star_h_alpha2_h_beta0, T_star_h_alpha2_h_beta0);
 
     /* 12.2Remove h_{\beta 0} */
     mpz_class T_star_h_alpha2 = (T_star_h_alpha2_h_beta0*h_beta0_1) % p;
@@ -1596,7 +1524,7 @@ static void TestBlindedExponentiation2() {
     }
 }
 
-// Test function for FHE_Enc_SDBElement and FHE_Dec_SDBElement
+// Test function for FHE_bitwise_Enc_SDBElement and FHE_bitwise_Dec_SDBElement
 static void Test_FHE_DBElement() {
     /* First of all retrieve all the one-time initialized materials from the saved location */
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
@@ -1633,36 +1561,35 @@ static void Test_FHE_DBElement() {
     //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen block 1 content: " + block_1_content.get_str() + "\nblock 1 index: " + block_1_index.get_str() + "\nblock 2 content: " + block_2_content.get_str() + "\nblock 2 index: " + block_2_index.get_str() + "\ntag 1: " + tag_1.get_str()+ "\ntag 2: " + tag_2.get_str());
 
     // Encrypt
-    Ciphertext<DCRTPoly> ct_element_1 = FHE_Enc_SDBElement((block_1_content << log_N) | block_1_index);
-    Ciphertext<DCRTPoly> ct_element_2 = FHE_Enc_SDBElement((block_2_content << log_N) | block_2_index);
-    Ciphertext<DCRTPoly> ct_tag_1 = FHE_Enc_Tag(tag_1);
-    Ciphertext<DCRTPoly> ct_tag_2 = FHE_Enc_Tag(tag_2);
+    Ciphertext<DCRTPoly> ct_element_1 = FHE_bitwise_Enc_SDBElement((block_1_content << log_N) | block_1_index);
+    Ciphertext<DCRTPoly> ct_element_2 = FHE_bitwise_Enc_SDBElement((block_2_content << log_N) | block_2_index);
+    Ciphertext<DCRTPoly> ct_tag_1 = FHE_bitwise_Enc_Tag(tag_1);
+    Ciphertext<DCRTPoly> ct_tag_2 = FHE_bitwise_Enc_Tag(tag_2);
     
-    Ciphertext<DCRTPoly> selectElementBits_ct = FHE_Enc_SDBElement(mpz_class(0));
-    Ciphertext<DCRTPoly> selectTagBits_ct = FHE_Enc_Tag(mpz_class(0));
+    Ciphertext<DCRTPoly> selectElementBits_ct = bitOne_ct ;//Test with bit value 1
+    Ciphertext<DCRTPoly> selectTagBits_ct = bitOne_ct ;//Test with bit value 1
     // Also tested with 1, which is 0b...000000000000001000000000000001
-    //Ciphertext<DCRTPoly> selectElementBits_ct = vectorOnesforElement_ct;
-    //Ciphertext<DCRTPoly> selectTagBits_ct = vectorOnesforTag_ct;
-    //Ciphertext<DCRTPoly> selectTagBits_ct = vectorOnesforTag_ct;
+    //Ciphertext<DCRTPoly> selectElementBits_ct = bitOne_ct + bitOne_ct;//Test tag with bit value 1+1 = 0
+    //Ciphertext<DCRTPoly> selectTagBits_ct = bitOne_ct + bitOne_ct;//Test tag with bit value 1+1 = 0
 
 
     // Decrypt
     mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_content, dec_selected_index, dec_content_and_index;
-    FHE_Dec_SDBElement(ct_element_1, dec_content_and_index);
+    FHE_bitwise_Dec_SDBElement(ct_element_1, dec_content_and_index);
     dec_block_1_content = (dec_content_and_index >> log_N);
     dec_block_1_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
 
-    FHE_Dec_SDBElement(ct_element_2, dec_content_and_index);
+    FHE_bitwise_Dec_SDBElement(ct_element_2, dec_content_and_index);
     dec_block_2_content = (dec_content_and_index >> log_N);
     dec_block_2_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
     
-    FHE_Dec_Tag(ct_tag_1, dec_tag_1);
-    FHE_Dec_Tag(ct_tag_2, dec_tag_2);
-    FHE_Dec_Tag(selectTagBits_ct, dec_fnd);
-    Ciphertext<DCRTPoly> ct_selected_element = FHE_SelectElement(selectElementBits_ct, ct_element_1, ct_element_2);
-    Ciphertext<DCRTPoly> ct_selected_tag = FHE_SelectTag(selectTagBits_ct, ct_tag_1, ct_tag_2);
-    FHE_Dec_Tag(ct_selected_tag, dec_selected_tag);
-    FHE_Dec_SDBElement(ct_selected_element, dec_content_and_index);
+    FHE_bitwise_Dec_Tag(ct_tag_1, dec_tag_1);
+    FHE_bitwise_Dec_Tag(ct_tag_2, dec_tag_2);
+    FHE_bitwise_Dec_Tag(selectTagBits_ct, dec_fnd);
+    Ciphertext<DCRTPoly> ct_selected_element = FHE_Select(selectElementBits_ct, ct_element_1, ct_element_2);
+    Ciphertext<DCRTPoly> ct_selected_tag = FHE_Select(selectTagBits_ct, ct_tag_1, ct_tag_2);
+    FHE_bitwise_Dec_Tag(ct_selected_tag, dec_selected_tag);
+    FHE_bitwise_Dec_SDBElement(ct_selected_element, dec_content_and_index);
     dec_selected_content = (dec_content_and_index >> log_N);
     dec_selected_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
 
@@ -1698,19 +1625,19 @@ static void Test_FHE_DBElement() {
     }
 
     if (dec_selected_tag == tag_1) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the tags..!!..Ha ha..Thank you..:) :) :) :) :)");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the tags..!!");
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the tags:( Expected: " + tag_1.get_str() + " but got: " + dec_selected_tag.get_str());
     }
 
     if (dec_selected_content == block_1_content) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block content..!!..Ha ha..Thank you..:) :) :) :) :)");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block content..!!");
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block content :( Expected: " + block_1_content.get_str() + " but got: " + dec_selected_content.get_str());
     }
 
     if (dec_selected_index == block_1_index) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block index..!!..Ha ha..Thank you..:) :) :) :) :)");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Homomorphic selection works for the block index..!!");
     } else {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Homomorphic selection is not working for the block index :( Expected: " + block_1_index.get_str() + " but got: " + dec_selected_index.get_str());
     }
@@ -1884,7 +1811,7 @@ static void TestPKEOperations_beta() {
     }
 
     mpz_class decrypted_tag;
-    FHE_Dec_Tag(ct_tag_local, decrypted_tag);
+    FHE_bitwise_Dec_Tag(ct_tag_local, decrypted_tag);
 
     if (decrypted_tag != tag_local) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted tag: " + decrypted_tag.get_str() + " does not match with expected value: " + tag_local.get_str() + " !!");
@@ -2052,7 +1979,7 @@ static void TestPKEOperations_beta() {
         PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Server Beta: Decrypted m4 matches with expected value");
     }
 
-    FHE_Dec_Tag(ct_tag_local, decrypted_tag);
+    FHE_bitwise_Dec_Tag(ct_tag_local, decrypted_tag);
 
     if (decrypted_tag != tag_local) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Beta: Decrypted tag: " + decrypted_tag.get_str() + " does not match with expected value: " + tag_local.get_str() + " !!");
@@ -2067,7 +1994,42 @@ static void Test_binFHE(){
     mpz_class tmp, tmp1, tmp2, tmp3;//TODO Verification only
     Ciphertext<DCRTPoly> tmp_ct, tmp_ct1, tmp_ct2, tmp_ct3;
 
+    #if 0
     OneTimeInit_beta();
+    #else
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+    if (Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY))
+    {
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
+    }
+
+    #warning FHEcryptoContext must be transferred by Server_beta to other servers, during initialization. Otherwise, they cannot use it for homomorphic evaluations
+    FHEcryptoContext->EvalMultKeyGen(sk_F);
+    //Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size();
+    Serial::DeserializeFromString(FHEcryptoContext, Serial::SerializeToString(FHEcryptoContext).c_str());
+    //Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    //Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    
+    #endif
 
     /* Experiment with tags */
     mpz_ui_pow_ui(tmp1.get_mpz_t(), 2, (P_BITS));
@@ -2223,15 +2185,15 @@ static void TestShuffDBFetch_beta(){
         mpz_class d = mpz_class(tmp);
 
         /* FHE encrypt both the shares */
-        Ciphertext<DCRTPoly> ct_d_alpha = FHE_Enc_SDBElement(d_alpha);
-        Ciphertext<DCRTPoly> ct_d_gamma = FHE_Enc_SDBElement(d_gamma);
+        Ciphertext<DCRTPoly> ct_d_alpha = FHE_bitwise_Enc_SDBElement(d_alpha);
+        Ciphertext<DCRTPoly> ct_d_gamma = FHE_bitwise_Enc_SDBElement(d_gamma);
 
         /* Homorphically add those shares */
         Ciphertext<DCRTPoly> ct_d = ct_d_alpha + ct_d_gamma;
 
         /* Decrypt the resulting ciphertext */
         mpz_class dec_block_and_index, dec_block, dec_index;
-        FHE_Dec_SDBElement(ct_d, dec_block_and_index);
+        FHE_bitwise_Dec_SDBElement(ct_d, dec_block_and_index);
 
         dec_index = (dec_block_and_index & ((1U << log_N) - 1U));
         dec_block = (dec_block_and_index >> log_N);

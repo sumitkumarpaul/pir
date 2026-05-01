@@ -359,6 +359,80 @@ int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz) {
     return 0;
 }
 
+// Send all the data of the file
+int sendFile(int sock,  char* buf, size_t max_sz, const std::string& filename) {
+    std::streamsize size;
+    int ret = -1;
+
+    std::ifstream file(filename, std::ios::binary);  // Open file in binary mode
+
+    if (!file) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot open the file for sending");
+        goto exit;
+    }
+
+    // Move to the end to determine the file size
+    file.seekg(0, std::ios::end);
+    size = file.tellg();  
+    file.seekg(0, std::ios::beg);  // Move back to the beginning
+
+    if (size <= 0) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "File size is 0");
+        goto exit;
+    }
+
+    if (size >= max_sz) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "File is larger than the maximum buffer size: " + std::to_string(max_sz));
+        goto exit;
+    }
+
+    // Read file content into buffer
+    file.read(buf, size);
+
+    if (!file) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error while reading the file into the buffer");
+        goto exit;
+    }
+
+    ret = sendAll(sock, buf, size);
+
+exit:
+    file.close();
+
+    return ret;
+}
+
+// Receive all the data into a file
+int recvFile(int sock, char* buf, size_t max_sz, const std::string& filename) {
+    int ret = -1;
+    size_t received_sz;
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) throw std::runtime_error("Cannot save data to the file: " + filename);
+
+    ret = recvAll(sock, buf, max_sz, &received_sz);
+
+    if (ret != 0){
+        goto exit;
+    }
+
+    if (buf && received_sz > 0) {
+        file.write(reinterpret_cast<const char*>(buf), received_sz);
+    }
+
+    if (!file) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error while writing into the file");
+        ret = -1;
+        goto exit;
+    }
+
+exit:
+    file.close();
+
+    return ret;
+
+}
+
 // FHE related functions
 int FHE_keyGen(){
     ////////////////////////////////////////////////////////////
@@ -386,8 +460,6 @@ int FHE_keyGen(){
     // Initialize Public Key Containers
     keyPair = FHEcryptoContext->KeyGen();
 
-    FHEcryptoContext->EvalMultKeyGen(keyPair.secretKey);
-
     if (!keyPair.good()) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "FHE Key generation failed!");
         return -1;
@@ -395,6 +467,8 @@ int FHE_keyGen(){
         pk_F = keyPair.publicKey;
         sk_F = keyPair.secretKey;
     }
+
+    FHEcryptoContext->EvalMultKeyGen(sk_F);
 
     return 0;
 }
@@ -499,87 +573,6 @@ void FHE_bitwise_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag) {
     }
 }
 
-Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index) {
-    std::vector<int64_t> SDBElementVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
-    mpz_class rem;
-
-    /* Add the block content */
-    mpz_class tmp = block_content_and_index;
-
-    for (unsigned i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; ++i) {
-        rem = tmp & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-        SDBElementVector.push_back(static_cast<int64_t>(rem.get_ui()));
-
-        tmp >>= PLAINTEXT_FHE_BLOCK_SIZE;
-    }
-
-    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakeCoefPackedPlaintext(SDBElementVector);
-
-    /* Let's not compress at this moment, since it might take extra time, as well as can break functionality */
-#if REDUCE_CT_SIZE
-    return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 1);/* Size is reduced, but effect is not verified */
-#else
-    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
-#endif
-}
-
-// Decrypts a ciphertext, unpacks the packed vector, and reconstructs the concatenation of block_content and block_index as mpz_class
-void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index) {
-    Plaintext pt;
-    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
-    pt->SetLength(TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT);
-    const std::vector<int64_t>& packed = pt->GetCoefPackedValue();
-
-    block_content_and_index = 0;
-
-    for (int i = TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1; i >= 0; --i) {
-        block_content_and_index <<= PLAINTEXT_FHE_BLOCK_SIZE;
-
-        //The most significant plaintext component, can never be more than 11-bit long. In the case of PLAINTEXT_FHE_BLOCK_SIZE = 14, B= 512, log_N=31
-        if(i == (TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT - 1)){
-            block_content_and_index = packed[i] & 0x7FF;//TODO: Use generalized macro
-        }else{
-            block_content_and_index |= (packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1));
-        }
-    }
-}
-
-// Encrypt the tag
-Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag) {
-    std::vector<int64_t> TagVector;/* FHE can encrypt 15-bits. But we must use int64_t vector, since this is what the existing function takes */
-    
-    mpz_class tmp = tag;
-    for (unsigned i = 0; i < NUM_FHE_BLOCKS_PER_TAG; ++i) {
-        mpz_class rem;
-        mpz_fdiv_r_2exp(rem.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // rem = tmp % 2^15
-        TagVector.push_back(static_cast<int64_t>(rem.get_ui()));
-        mpz_fdiv_q_2exp(tmp.get_mpz_t(), tmp.get_mpz_t(), PLAINTEXT_FHE_BLOCK_SIZE); // tmp >>= 15
-    }
-
-    Plaintext FHEPackedPlaintext = FHEcryptoContext->MakeCoefPackedPlaintext(TagVector);
-
-#if REDUCE_CT_SIZE
-    return FHEcryptoContext->Compress(FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext), 2);/* Compression with value 1 is not working */
-#else
-    return FHEcryptoContext->Encrypt(pk_F, FHEPackedPlaintext);
-#endif
-}
-
-// Decrypt the tag
-void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag) {
-    Plaintext pt;
-    FHEcryptoContext->Decrypt(sk_F, ct, &pt);
-    pt->SetLength(NUM_FHE_BLOCKS_PER_TAG);
-    const std::vector<int64_t>& packed = pt->GetCoefPackedValue();
-
-    // Reconstruct block_content from first NUM_FHE_BLOCKS_PER_TAG elements
-    tag = 0;
-    for (int i = NUM_FHE_BLOCKS_PER_TAG - 1; i >= 0; --i) {
-        tag <<= PLAINTEXT_FHE_BLOCK_SIZE;
-        tag += packed[i] & ((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-    }
-}
-
 Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& selBit_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
     ////////////////////////////////////////////////////////////
     // Select(a,b, select_bit) = select_bit ? a : b
@@ -587,72 +580,6 @@ Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& selBit_ct, const Cip
     ////////////////////////////////////////////////////////////
 
     return (((bitOne_ct - selBit_ct) * A_ct) + (selBit_ct * B_ct));
-}
-
-// selElementBits_ct must be encryption of select bit but extended over TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT
-Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& selElementBits_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
-    ////////////////////////////////////////////////////////////
-    // Homomorphic selection between two ciphertexts w/o any relinearization
-    // Select(a,b, select_bit) = select_bit ? a : b
-    //                         = ((1 - select_bit) * a) + (select_bit * b)
-    ////////////////////////////////////////////////////////////
-    
-    auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforElement_ct, selElementBits_ct);
-    //FHEcryptoContext->ModReduceInPlace(fnd_not_ct);
-
-    auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
-    //FHEcryptoContext->ModReduceInPlace(A_not_ct);
-
-    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selElementBits_ct, B_ct);
-    //FHEcryptoContext->ModReduceInPlace(B_mul_fnd_ct);
-
-    auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
-    //FHEcryptoContext->ModReduceInPlace(C_ct);
-
-    return C_ct;
-}
-
-// Performs bitwise XOR operation between two ciphertexts.
-// Note: Both the ciphertexts must be from the plaintext of same vector length
-Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
-    mpz_class tmp;
-
-    auto A_add_B_ct = FHEcryptoContext->EvalAdd(A_ct, B_ct);
-    //FHEcryptoContext->ModReduceInPlace(A_add_B_ct);
-    
-    auto A_mul_B_ct = FHEcryptoContext->EvalMultNoRelin(A_ct, B_ct);
-    //FHEcryptoContext->ModReduceInPlace(A_mul_B_ct);
-
-    auto two_A_mul_B_ct = FHEcryptoContext->EvalAdd(A_mul_B_ct, A_mul_B_ct);
-    //FHEcryptoContext->ModReduceInPlace(two_A_mul_B_ct);
-
-    auto A_XOR_B_ct = FHEcryptoContext->EvalSub(A_add_B_ct, two_A_mul_B_ct);
-    //FHEcryptoContext->ModReduceInPlace(A_XOR_B_ct);
-
-    return A_XOR_B_ct;
-}
-
-// selectTagBits_ct must be encryption of select bit but extended over NUM_FHE_BLOCKS_PER_TAG
-Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& selectTagBits_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct){
-    ////////////////////////////////////////////////////////////
-    // Homomorphic selection between two ciphertexts w/o any relinearization
-    // Select(a,b, select_bit) = select_bit ? a : b
-    //                         = ((1 - select_bit) * a) + (select_bit * b)
-    ////////////////////////////////////////////////////////////
-    
-    auto fnd_not_ct = FHEcryptoContext->EvalSub(vectorOnesforTag_ct, selectTagBits_ct);
-    
-
-    auto A_not_ct = FHEcryptoContext->EvalMultNoRelin(fnd_not_ct, A_ct);
-    
-
-    auto B_mul_fnd_ct = FHEcryptoContext->EvalMultNoRelin(selectTagBits_ct, B_ct);
-    
-
-    auto C_ct = FHEcryptoContext->EvalAdd(A_not_ct, B_mul_fnd_ct);
-    //FHEcryptoContext->ModReduceInPlace(C_ct);
-
-    return C_ct;
 }
 
 void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct, Ciphertext<DCRTPoly>& OneforBit_ct){
@@ -674,9 +601,6 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
     OnesforElement_ct = FHEcryptoContext->Compress(OnesforElement_ct, 2);/* Compression with value 1 is not working */
 #endif
 
-
-    //FHEcryptoContext->ModReduceInPlace(OnesforElement_ct);
-
     vectorOfOnes.clear();
     // Use a for loop to add elements to the vector
     for (int i = 0; i < P_BITS; ++i) {
@@ -688,8 +612,6 @@ void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>
 #if REDUCE_CT_SIZE
     OnesforTag_ct = FHEcryptoContext->Compress(OnesforTag_ct, 2);/* Compression with value 1 is not working */
 #endif
-
-    //FHEcryptoContext->ModReduceInPlace(OnesforTag_ct);
 
     return;
 }
@@ -1141,14 +1063,4 @@ bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path) {
         vec.push_back(el);
     }
     return true;
-}
-
-void InitBitZeroingMask(){
-    bit_zeroing_mask = mpz_class(0);
-
-    /* 0x1FFF is a 2 byte value. Hence, run the loop half of NUM_BYTES_PER_SDB_ELEMENT */
-    for (int i = 0; i < (NUM_BYTES_PER_SDB_ELEMENT/2); i++){
-        bit_zeroing_mask <<= 16;
-        bit_zeroing_mask |= 0xFFFF;
-    }
 }

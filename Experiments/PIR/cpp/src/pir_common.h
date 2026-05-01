@@ -50,9 +50,9 @@ using namespace kuku;
 #define SET_LOG_LEVEL LOG_LEVEL_TRACE
 #define TEMP_CODE_FOR_VERIFICATION (1)
 
-#define NET_BUF_SZ  12000000 //Size of the buffer used during transferring data over network
+#define NET_BUF_SZ  16000000 //Size of the buffer used during transferring data over network
 
-#if 1 /* Using real machines */
+#if 0 /* Using real machines */
 #define SERVER_ALPHA_IP     "192.168.16.126" // IP address of the server_alpha
 #define SERVER_BETA_IP      "192.168.16.34"// IP address of the server_beta
 #define SERVER_GAMMA_IP     "192.168.16.132" // IP address of the server_gamma
@@ -149,8 +149,6 @@ extern Ciphertext<DCRTPoly> vectorOnesforElement_ct;
 extern Ciphertext<DCRTPoly> vectorOnesforTag_ct;
 extern Ciphertext<DCRTPoly> bitOne_ct;
 extern Ciphertext<DCRTPoly> fnd_ct;
-extern Ciphertext<DCRTPoly> fnd_ct_element;
-extern Ciphertext<DCRTPoly> fnd_ct_tag;
 extern Ciphertext<DCRTPoly> SR_sh_ct;
 extern Ciphertext<DCRTPoly> requested_element_ct;
 
@@ -202,21 +200,16 @@ extern void InitConnectingSocket(const std::string& server_ip, int port, int* p_
 extern int InitListeningSocket(int port, int* p_server_fd);//No corresponding finish function, only call close()
 extern int recvAll(int sock, char* data, size_t max_sz, size_t* received_sz);
 extern int sendAll(int sock, const char* data, size_t sz);
+extern int recvFile(int sock, char* buf, size_t max_sz, const std::string& filename);
+extern int sendFile(int sock,  char* buf, size_t max_sz, const std::string& filename);
 
 // FHE related functions
 extern int FHE_keyGen();
 extern Ciphertext<DCRTPoly> FHE_Select(const Ciphertext<DCRTPoly>& selBit_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
-extern Ciphertext<DCRTPoly> FHE_Enc_SDBElement(const mpz_class block_content_and_index);
-extern void FHE_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
 extern Ciphertext<DCRTPoly> FHE_bitwise_Enc_SDBElement(const mpz_class block_content_and_index);
 extern void FHE_bitwise_Dec_SDBElement(const Ciphertext<DCRTPoly>& ct, mpz_class& block_content_and_index);
 extern Ciphertext<DCRTPoly> FHE_bitwise_Enc_Tag(const mpz_class tag);
 extern void FHE_bitwise_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
-extern Ciphertext<DCRTPoly> FHE_bitwise_XOR(const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
-extern Ciphertext<DCRTPoly> FHE_Enc_Tag(const mpz_class tag);
-extern void FHE_Dec_Tag(const Ciphertext<DCRTPoly>& ct, mpz_class& tag);
-extern Ciphertext<DCRTPoly> FHE_SelectElement(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
-extern Ciphertext<DCRTPoly> FHE_SelectTag(const Ciphertext<DCRTPoly>& fnd_ct, const Ciphertext<DCRTPoly>& A_ct, const Ciphertext<DCRTPoly>& B_ct);
 extern void FHE_EncOfOnes(Ciphertext<DCRTPoly>& OnesforElement_ct, Ciphertext<DCRTPoly>& OnesforTag_ct, Ciphertext<DCRTPoly>& OneforBit_ct);
 extern mpz_class import_from_file_to_mpz_class(const std::string& filename);
 extern void export_to_file_from_mpz_class(const std::string& filename, const mpz_class& value);
@@ -239,5 +232,3 @@ extern size_t serializeFssAndServerKeyEq(const Fss& fss, const ServerKeyEq& key,
 
 extern bool save_mpz_vector(const std::vector<mpz_class>& vec, const std::string& path);
 extern bool load_mpz_vector(std::vector<mpz_class>& vec, const std::string& path);
-
-extern void InitBitZeroingMask();

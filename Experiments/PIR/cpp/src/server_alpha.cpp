@@ -48,8 +48,6 @@ static mpz_class T_star, T_star_hat, t_star_hat;
 static mpz_class a;
 static mpz_class SR_sh_ct_mpz;
 static std::fstream sdb;
-static mpz_class random_sdb_element_pt, random_tag_pt;
-static Ciphertext<DCRTPoly> random_sdb_element_ct, random_tag_ct;
 
 
 
@@ -211,13 +209,12 @@ static int OneTimeInit_alpha() {
     pk_E_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_alpha_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin");
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
 
     // Receive pk_F
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -264,7 +261,7 @@ static int OneTimeInit_alpha() {
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin", pk_E);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin", pk_E_q);
 
-    Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    //Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
@@ -587,7 +584,7 @@ static int ObliviouslySearchShelter_alpha() {
     size_t received_sz = 0;
     int ret_recv;
     size_t dserializedFssSize;
-    Ciphertext<DCRTPoly> fnd_alpha_ct_element, fnd_alpha_ct_tag, d_masked_alpha_ct, fnd_gamma_ct_element, fnd_gamma_ct_tag, d_masked_gamma_ct, m_delta_ct, m_epsilon_ct, d_masked_ct, m_ct;
+    Ciphertext<DCRTPoly> fnd_alpha_ct, fnd_gamma_ct, d_masked_alpha_ct, d_masked_gamma_ct, m_delta_ct, m_epsilon_ct, d_masked_ct, m_ct;
 
     // 3.a.1 Initialize with zeros
     mpz_class d_masked_alpha = 0;
@@ -651,38 +648,25 @@ static int ObliviouslySearchShelter_alpha() {
     (void)sendAll(sock_alpha_delta_con, y_alpha_bits_buf, ((K + 7)/8));
 
     /* 10.1 Generate FHE ciphertext of the S_alpha's part of the masked shelter search element */
-    d_masked_alpha_ct = FHE_Enc_SDBElement(d_masked_alpha);
+    d_masked_alpha_ct = FHE_bitwise_Enc_SDBElement(d_masked_alpha);
     /* 10.2 Determine fnd_alpha_ct for both element and tag. One can be used to select the element portion and another tag portion */
     
-    fnd_alpha_ct_element = vectorOnesforElement_ct + vectorOnesforElement_ct;// Initialize with 0. Since 1+1 = 0. Faster than encrypting plaintext
-    fnd_alpha_ct_tag = vectorOnesforTag_ct + vectorOnesforTag_ct;
-    fnd_alpha_ct = bitOne_ct + bitOne_ct;
+    fnd_alpha_ct = bitOne_ct + bitOne_ct;//Initialize with 0
 
     if (fnd_alpha == true){
-        fnd_alpha_ct_element = fnd_alpha_ct_element + vectorOnesforElement_ct;// Adding 1 to 0 will make it 1
-        fnd_alpha_ct_tag = fnd_alpha_ct_tag + vectorOnesforTag_ct;
-        fnd_alpha_ct = fnd_alpha_ct + bitOne_ct;
+        fnd_alpha_ct = fnd_alpha_ct + bitOne_ct; // Change it to 1
     }
 
-    // 11.3.2 Receive fnd_gamma_ct_element from S_gamma
+    // 11.3.2 Receive fnd_gamma_ct from S_gamma
     ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_gamma_ct_element from Server Gamma");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_gamma_ct from Server Gamma");
         return -1;
     }
-    Serial::DeserializeFromString(fnd_gamma_ct_element, std::string(net_buf, received_sz));
+    Serial::DeserializeFromString(fnd_gamma_ct, std::string(net_buf, received_sz));
 
-    // 11.4.2 Receive fnd_gamma_ct_tag from S_gamma
-    ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive fnd_gamma_ct_tag from Server Gamma");
-        return -1;
-    }
-    Serial::DeserializeFromString(fnd_gamma_ct_tag, std::string(net_buf, received_sz));
-
-    // 11.5.2 Receive d_masked_gamma_ct from S_gamma
+    // 11.4.2 Receive d_masked_gamma_ct from S_gamma
     ret_recv = recvAll(sock_alpha_to_gamma, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -709,78 +693,20 @@ static int ObliviouslySearchShelter_alpha() {
     }
     Serial::DeserializeFromString(m_epsilon_ct, std::string(net_buf, received_sz));
 
-    /* Step 14.1 Homomorphically compute fnd_ct = fnd_alpha_ct XOR fnd_alpha_ct = (fnd_alpha_ct + fnd_alpha_ct) - 2*(fnd_alpha_ct*fnd_alpha_ct) */
-    fnd_ct_element = FHE_bitwise_XOR(fnd_alpha_ct_element, fnd_gamma_ct_element);
-    fnd_ct_tag = FHE_bitwise_XOR(fnd_alpha_ct_tag, fnd_gamma_ct_tag);
+    /* Step 14.1 Homomorphically adding is bitwise XORing in plaintext */
+    fnd_ct = fnd_alpha_ct + fnd_gamma_ct;
 
-    /****************** Refresh fnd_ct_element ******************/
-    /* Mask the actual ciphertext using the random */
-    fnd_ct_element = (fnd_ct_element + random_sdb_element_ct);
-
-    /* Send to server beta for a refresh operation */
-    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
-
-    /* Receive the refreshed ciphertext */
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed fnd_ct_element from Server Beta");
-        return -1;
-    }
-    Serial::DeserializeFromString(fnd_ct_element, std::string(net_buf, received_sz));
-
-    /* Remove the random to get back the usable ciphertext */
-    fnd_ct_element = (fnd_ct_element - random_sdb_element_ct); 
-
-    /* Additional steps for refreshing ciphertexts */
-    /****************** Refresh fnd_ct_tag ******************/
-    /* Homomorphically mask the ciphertext  */
-    fnd_ct_tag = (fnd_ct_tag + random_tag_ct);
-    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(fnd_ct_tag).c_str(), Serial::SerializeToString(fnd_ct_tag).size());
-    
-    /* Receive refreshed fnd_ct_tag */
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed fnd_ct_tag from Server Beta");
-        return -1;
-    }
-    Serial::DeserializeFromString(fnd_ct_tag, std::string(net_buf, received_sz));
-
-    /* Remove the random to get back the usable ciphertext */
-    fnd_ct_tag = (fnd_ct_tag - random_tag_ct);    
 
     /* Step 14.2 Homomorphically combine shelter element shares */
-    #warning Previously it was a XORing in mpz_class. Now it is homomorphic XOR. Check whether it is performing the same.
-    d_masked_ct = FHE_bitwise_XOR(d_masked_alpha_ct, d_masked_gamma_ct);
+    d_masked_ct = d_masked_alpha_ct + d_masked_gamma_ct;
 
     /* Step 14.3 Homomorphically combine mask shares */
-    #warning Similar concern as previous
-    m_ct = FHE_bitwise_XOR(m_delta_ct, m_epsilon_ct);
-
+    m_ct = m_delta_ct + m_epsilon_ct;
+    
     /* Step 14.4 Homomorphically unmask the shelter respose */
     #warning Here check whether unmasking is happening properly. Because we did masking within a loop.
     SR_sh_ct = d_masked_ct + m_ct;
-
-    /****************** Refresh SR_sh_ct, because it has a part of m_ct (which has undergone one multiplication) ******************/
-    /* Mask the actual ciphertext using the random */
-    SR_sh_ct = (SR_sh_ct + random_sdb_element_ct);
-
-    /* Send to server beta for a refresh operation */
-    (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
-
-    /* Receive the refreshed ciphertext */
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive refreshed SR_sh_ct from Server Beta");
-        return -1;
-    }
-    Serial::DeserializeFromString(SR_sh_ct, std::string(net_buf, received_sz));
-
-    /* Remove the random to get back the usable ciphertext */
-    SR_sh_ct = (SR_sh_ct - random_sdb_element_ct);     
-
+    
     return 0;
 }
 
@@ -840,13 +766,13 @@ static int FetchCombineSelect_alpha(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "SR_D_alpha_mpz is: " + SR_D_alpha_mpz.get_str(16));
 
     /* 2.2 Compute FHE-ciphertext SR_D_alpha_ct */
-    SR_D_alpha_ct = FHE_Enc_SDBElement(SR_D_alpha_mpz);
+    SR_D_alpha_ct = FHE_bitwise_Enc_SDBElement(SR_D_alpha_mpz);
 
     /* 2.3 Send SR_D_alpha_ct to server Gamma */
     (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_D_alpha_ct).c_str(), Serial::SerializeToString(SR_D_alpha_ct).size());
 
-    /* 5.1.1 Send fnd_ct_element to server gamma */
-    (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(fnd_ct_element).c_str(), Serial::SerializeToString(fnd_ct_element).size());
+    /* 5.1.1 Send fnd_ct to server gamma */
+    (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(fnd_ct).c_str(), Serial::SerializeToString(fnd_ct).size());
 
     /* 5.2.1 Send SR_sh_ct to server gamma */
     (void)sendAll(sock_alpha_to_gamma, Serial::SerializeToString(SR_sh_ct).c_str(), Serial::SerializeToString(SR_sh_ct).size());
@@ -1016,18 +942,23 @@ static int ProcessClientRequest_alpha(){
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
     pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    
+    #if TEMP_CODE_FOR_VERIFICATION
+    ret = recvFile(sock_alpha_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_ALPHA + "sk_F.bin");
+    if (ret != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive material from Server Beta");
+        return -1;
+    }
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "sk_F.bin", sk_F, SerType::BINARY);
+    FHEcryptoContext->EvalMultKeyGen(sk_F);
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Enabled multikey evaluation with the received secret key");
+    #endif
+
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
-
-    #warning these are not required now
-    /* Create randoms for refreshing operations */
-    /* SDBElement having size NUM_BYTES_PER_SDB_ELEMENT*8-bits */
-    random_sdb_element_pt = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
-    random_sdb_element_ct = FHE_Enc_SDBElement(random_sdb_element_pt);
-    random_tag_pt = rng.get_z_bits((P_BITS));
-    random_tag_ct = FHE_Enc_SDBElement(random_tag_pt);
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded one-time initialization materials");
 
@@ -1091,10 +1022,8 @@ static int ProcessClientRequest_alpha(){
                 goto exit;
             }
         } else {
-            fnd_ct_element = vectorOnesforElement_ct + vectorOnesforElement_ct;// Making 1 + 1 = 0. Faster than encrypting 0. No noise growth, since only addition.
-            fnd_ct_tag = vectorOnesforTag_ct + vectorOnesforTag_ct;
             fnd_ct = bitOne_ct + bitOne_ct;
-            SR_sh_ct = fnd_ct_element;//i.e., set with 0s
+            SR_sh_ct = vectorOnesforElement_ct + vectorOnesforElement_ct;//i.e., set with encryption of all 0s
         }
 
         ret = SelShuffDBSearchTag_alpha();
@@ -1188,7 +1117,7 @@ static int SelShuffDBSearchTag_alpha(){
     mpz_class T_I_h_alpha2_h_beta0 = (T_I_h_beta0 * h_alpha2) % p;
 
     /* 6.2 FHE Encrypt T_I.h_{\\alpha 2}.h_{\\beta 0} */
-    Ciphertext<DCRTPoly> FHE_ct_T_I_h_alpha2_h_beta0 = FHE_Enc_Tag(T_I_h_alpha2_h_beta0);
+    Ciphertext<DCRTPoly> FHE_ct_T_I_h_alpha2_h_beta0 = FHE_bitwise_Enc_Tag(T_I_h_alpha2_h_beta0);
 
     /* 9.a Send h_{\alpha 2} to server gamma */
     (void)sendAll(sock_alpha_to_gamma, h_alpha2.get_str().c_str(), h_alpha2.get_str().size());
@@ -1204,7 +1133,7 @@ static int SelShuffDBSearchTag_alpha(){
     Serial::DeserializeFromString(FHE_ct_T_phi_h_alpha2_h_beta0, std::string(net_buf, received_sz));
 
     /* 11.a.1 Homomorphically select T_*h_{\\alpha 2}h_{\\beta 0} */
-    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_SelectTag(fnd_ct_tag, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
+    Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_Select(fnd_ct, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
 
     /* 11.a.2 Send FHE_ct_T_star_h_alpha2_h_beta0 to server beta for decryption */
     (void)sendAll(sock_alpha_to_beta, Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_star_h_alpha2_h_beta0).size());
@@ -1258,7 +1187,7 @@ static void TestSelShuffDBSearchTag_alpha(){
     int ret = -1;
     mpz_class test_T_I = ElGamal_randomGroupElement();
     /* For testing purpose, either choose as ciphertext of 0s */
-    //fnd_ct = FHE_Enc_Tag(mpz_class(0));
+    //fnd_ct = FHE_bitwise_Enc_Tag(mpz_class(0));
     /* Or, the ciphertext of 1 */
     fnd_ct = vectorOnesforTag_ct;
 
@@ -1291,7 +1220,7 @@ static void TestPKEOperations_alpha(){
 
     // Generate random tag of P_BITS bits
     mpz_class tag = rng.get_z_bits(P_BITS);
-    Ciphertext<DCRTPoly> ct_tag = FHE_Enc_Tag(tag);
+    Ciphertext<DCRTPoly> ct_tag = FHE_bitwise_Enc_Tag(tag);
 
     (void)sendAll(sock_alpha_to_beta, m1.get_str().c_str(), m1.get_str().size());
     (void)sendAll(sock_alpha_to_beta, m2.get_str().c_str(), m2.get_str().size());
@@ -1368,7 +1297,7 @@ static int TestShelterDPFSearch_alpha() {
         //if (!std::filesystem::exists(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct")) {
         if (1) {
             // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-            Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+            Ciphertext<DCRTPoly> tmp_ct = FHE_bitwise_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
             /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
             if (Serial::SerializeToFile(SHELTER_STORING_LOCATION + "sh[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) == true)
             {
@@ -1485,7 +1414,7 @@ static int TestShelterDPFSearch_alpha() {
         }
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Here");
         
-        FHE_Dec_SDBElement(fin_ct, dec_content_and_index);
+        FHE_bitwise_Dec_SDBElement(fin_ct, dec_content_and_index);
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Here");
         
         dec_block_content = (dec_content_and_index >> log_N);
@@ -1698,7 +1627,7 @@ static int Old_Perf_avg_online_server_time_alpha() {
     /* Populate the shelter, with random elements */
     for(size_t k = 0; k < average_shelter_size; k++) {
         // Generate random block_content of PLAINTEXT_PIR_BLOCK_DATA_SIZE bits of random | k as the block index
-        Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
+        Ciphertext<DCRTPoly> tmp_ct = FHE_bitwise_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(k));
         /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
         if (Serial::SerializeToFile(DPF_search_test_shelter_location + "sh_perf[" + std::to_string(k) + "].ct", tmp_ct, SerType::BINARY) != true)
         {
@@ -1884,7 +1813,7 @@ static int TestClientProcessing_alpha(){
     /************************************************************************************************ */
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Client timing part 2 starts here");
     
-    Ciphertext<DCRTPoly> tmp_ct = FHE_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(2864));
+    Ciphertext<DCRTPoly> tmp_ct = FHE_bitwise_Enc_SDBElement((rng.get_z_bits(PLAINTEXT_PIR_BLOCK_DATA_SIZE) << log_N) | mpz_class(2864));
     /* Store the ciphertexts to serialized form to a file, which resides in the RAM */
     if (Serial::SerializeToFile("/dev/shm/tmp.ct", tmp_ct, SerType::BINARY) != true){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of tmp_ct");
