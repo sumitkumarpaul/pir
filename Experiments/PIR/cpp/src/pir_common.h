@@ -140,8 +140,6 @@ extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
 
-extern mpz_class bit_zeroing_mask;
-
 extern PublicKey<DCRTPoly> pk_F;
 extern PrivateKey<DCRTPoly> sk_F;
 extern CryptoContext<DCRTPoly> FHEcryptoContext;

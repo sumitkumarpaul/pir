@@ -15,7 +15,6 @@ std::pair<mpz_class, mpz_class> E_q_Rho;
 mpz_class pk_E, pk_E_q;
 mpz_class sk_E, sk_E_q;
 
-mpz_class bit_zeroing_mask;
 
 // FHE related
 PublicKey<DCRTPoly> pk_F;

@@ -399,7 +399,6 @@ static int PerEpochOperations_beta(){
         memset(mask_entry.element, 0, sizeof(mask_entry.element));
         mask = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
         
-        mpz_and(mask.get_mpz_t(), mask.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
         mpz_export(mask_entry.element, &count, 1, 1, 1, 0, mask.get_mpz_t());
         #pragma omp critical
         {
@@ -835,27 +834,11 @@ static int ObliDecReturn_beta(){
     mpz_import(tmp, sizeof(M[K].element), 1, 1, 1, 0, M[K].element);
     shelter_mask = mpz_class(tmp);
     
-    /* Apply mask via mathematical +. Since we are using + & - to perform masking homomorphically */
-    masked_shelter_element_gamma = mpz_class(0);
-    bit_mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-    for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
-    {
-        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
-        shelter_mask_part = (shelter_mask & bit_mask);
-        masked_requested_element_gamma_pt_part = (masked_requested_element_gamma_pt & bit_mask);
-
-        /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
-        masked_shelter_element_gamma_part = (masked_requested_element_gamma_pt_part - shelter_mask_part) & bit_mask;
-
-        /* Append the part at the proper location */
-        masked_shelter_element_gamma = (masked_shelter_element_gamma | masked_shelter_element_gamma_part);
-
-        bit_mask = bit_mask << PLAINTEXT_FHE_BLOCK_SIZE;
-    }
+    /* Apply mask by */
+    mpz_xor(masked_shelter_element_gamma.get_mpz_t(), masked_requested_element_gamma_pt.get_mpz_t(), shelter_mask.get_mpz_t());
     
     /* Step 5.2.1: Send the masked decryption result to server_gamma */
     (void)sendAll(sock_beta_gamma_con, masked_shelter_element_gamma.get_str().c_str(), masked_shelter_element_gamma.get_str().size());
-
 
     /* Step 9.1: Send the decryption result to the client */
     (void)sendAll(sock_beta_client_con, masked_requested_element_client_pt.get_str().c_str(), masked_requested_element_client_pt.get_str().size());

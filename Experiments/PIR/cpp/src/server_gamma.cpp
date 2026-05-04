@@ -605,6 +605,10 @@ static int FetchCombineSelect_gamma(){
             }
         }
         touched_lcation_gamma[K] = L_i;
+
+        if (i == K){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "No location in the shuffled database touched twice yet.");
+        }
     }
 #endif
 
@@ -671,8 +675,6 @@ static int ObliDecReturn_gamma(){
     /* TODO: Check which one is correct */
     //m_gamma = rng.get_z_bits((PLAINTEXT_PIR_BLOCK_DATA_SIZE +  log_N));
     m_gamma = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
-    /* Make sure every 16-th bit is 0, this will ensure that it will not overflow during operations */
-    mpz_and(m_gamma.get_mpz_t(), m_gamma.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
 
     /* Step 2.3: Receive the ciphertext of the mask */
     ret_recv = recvAll(sock_gamma_client_con, net_buf, sizeof(net_buf), &received_sz);
@@ -686,8 +688,7 @@ static int ObliDecReturn_gamma(){
     /* Step 3.1: Homomorphically apply the mask. */
     /* In paper it is mentioned XOR, but here we are using -, since performing XOR homorphically will be inefficient.
        Also it is verified that it will not make overflow. */
-    #warning Ensure, it does not cause overflow or underflow
-    masked_requested_element_client_ct = requested_element_ct - m_C_ct;
+    masked_requested_element_client_ct = requested_element_ct + m_C_ct;
 
     /* Step 3.2: Generate ciphertext of the random mask */
     m_gamma_ct = FHE_bitwise_Enc_SDBElement(m_gamma);
@@ -714,23 +715,7 @@ static int ObliDecReturn_gamma(){
 
     /* Step 6.Remove local mask (m_gamma)  */
     /* Similar to the logic of the client, we are removing the mask */
-    shelter_element = mpz_class(0);
-    mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-
-    for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
-    {
-        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of masked_requested_element_gamma and mask_gamma */
-        m_gamma_part = (m_gamma & mask);
-        received_part = (received_element & mask);
-
-        /* Undo the masking by + and take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
-        extracted_part = (received_part + m_gamma_part) & mask;
-
-        /* Append the part at the proper location */
-        shelter_element = (shelter_element | extracted_part);
-
-        mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
-    }
+    mpz_xor(shelter_element.get_mpz_t(), received_element.get_mpz_t(), m_gamma.get_mpz_t());
 
     /* Step 7.1: Send the shelter element to the server alpha */
     (void)sendAll(sock_gamma_to_alpha_con, shelter_element.get_str().c_str(), shelter_element.get_str().size());

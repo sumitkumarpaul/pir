@@ -756,6 +756,9 @@ static int FetchCombineSelect_alpha(){
             }
         }
         touched_lcation_alpha[K] = L_i;
+        if (i == K){
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "No location in the shuffled database touched twice yet.");
+        }
     }
 #endif
 

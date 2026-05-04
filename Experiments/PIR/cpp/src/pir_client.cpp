@@ -274,11 +274,6 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     /* Step 1.a: Generate random mask */
     m_C = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The bit zeroing mask is(HEX): " + bit_zeroing_mask.get_str(16));
-
-    /* TODO: To ensure overflow. Certain bits are required to be zero */
-    mpz_and(m_C.get_mpz_t(), m_C.get_mpz_t(), bit_zeroing_mask.get_mpz_t());
-
     /* Step 2.1: Generate ciphertext of the random mask */
     m_C_ct = FHE_bitwise_Enc_SDBElement(m_C);
 
@@ -298,62 +293,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     /* 10. Remove mask */
     /* Similar but reverse logic of per-epoch operations for server beta */
-    extracted_element = mpz_class(0);
-    mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-
-    for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
-    {
-        /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
-        m_C_part = (m_C & mask);
-        received_part = (received_element & mask);
-
-        /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
-        extracted_part = (received_part + m_C_part) & mask;
-
-        /* Append the part at the proper location */
-        extracted_element = (extracted_element | extracted_part);
-
-        mask = mask << PLAINTEXT_FHE_BLOCK_SIZE;
-    }
-
-    #if 1 /* TODO: For testing masked shelter element */
-    {
-        mpz_class masked_shelter_element_gamma, shelter_mask;
-        mpz_class bit_mask, shelter_mask_part, extracted_element_part, masked_shelter_element_gamma_part;
-
-        shuffled_db_entry mask_entry;
-        std::fstream mdb;
-        std::string mdb_filename = std::string("/mnt/sumit/PIR_BETA/PER_EPOCH_MATERIALS/MaskDB.bin");
-        mpz_t tmp;
-        mpz_init(tmp);
-        mdb.open(mdb_filename, std::ios::in | std::ios::binary);
-        read_mdb_entry(mdb, 0, mask_entry);
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Extracted element is: " + extracted_element.get_str());
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Extracted element is(HEX): " + extracted_element.get_str(16));
-        mpz_import(tmp, sizeof(mask_entry.element), 1, 1, 1, 0, mask_entry.element);
-        shelter_mask = mpz_class(tmp);
-
-        masked_shelter_element_gamma = mpz_class(0);
-        bit_mask = mpz_class((1 << PLAINTEXT_FHE_BLOCK_SIZE) - 1);
-        for (unsigned int i = 0; i < TOTAL_NUM_FHE_BLOCKS_PER_ELEMENT; i++)
-        {
-            /* Extract least significant PLAINTEXT_FHE_BLOCK_SIZE-bits of d and d_alpha */
-            shelter_mask_part = (shelter_mask & bit_mask);
-            extracted_element_part = (extracted_element & bit_mask);
-
-            /* Compute the difference between two parts. And take only PLAINTEXT_FHE_BLOCK_SIZE-bits */
-            masked_shelter_element_gamma_part = (extracted_element_part - shelter_mask_part) & bit_mask;
-
-            /* Append the part at the proper location */
-            masked_shelter_element_gamma = (masked_shelter_element_gamma | masked_shelter_element_gamma_part);
-
-            bit_mask = bit_mask << PLAINTEXT_FHE_BLOCK_SIZE;
-        }
-
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Corresponding masked item should be(HEX): " + masked_shelter_element_gamma.get_str(16));
-        mdb.close();
-    }
-    #endif
+    mpz_xor(extracted_element.get_mpz_t(), received_element.get_mpz_t(), m_C.get_mpz_t());
 
     /* Extract result */
     extracted_element_content = (extracted_element >> log_N);
@@ -363,13 +303,6 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received index is (DEC): " + extracted_element_index.get_str());
 
     *p_received_index = extracted_element_index.get_ui();
-
-    #if 0/* TODO: Probably this part is not required */
-    /* !!!!! [Updated flow to refresh ciphertext] This is an additional step for refreshing ciphertext while updating shelter */
-    refreshed_ct = FHE_Enc_SDBElement(extracted_element);
-    /* Send refreshed ciphertext to Server Gamma */
-    (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(refreshed_ct).c_str(), Serial::SerializeToString(refreshed_ct).size());    
-    #endif
 
 exit:
     return ret;
