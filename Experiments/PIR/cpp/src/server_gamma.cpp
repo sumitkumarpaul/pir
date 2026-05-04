@@ -931,15 +931,22 @@ static int ProcessClientRequest_gamma(){
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     
     #if TEMP_CODE_FOR_VERIFICATION
-    ret = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_GAMMA + "sk_F.bin");
+    ret = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_GAMMA + "emkeyfile.bin");
     if (ret != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive material from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive emkeyfile from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "sk_F.bin", sk_F, SerType::BINARY);
-    FHEcryptoContext->EvalMultKeyGen(sk_F);
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Enabled multikey evaluation with the received secret key");
+    std::ifstream emkeys(ONE_TIME_MATERIALS_LOCATION_GAMMA + "emkeyfile.bin", std::ios::in | std::ios::binary);
+    if (!emkeys.is_open()) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Cannot read the serialized multikey file");
+        return -1;
+    }
+    if (FHEcryptoContext->DeserializeEvalMultKey(emkeys, SerType::BINARY) == false) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Cannot dserialized multikey file");
+        return -1;
+    }
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Enabled multikey evaluation");
     #endif
 
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);

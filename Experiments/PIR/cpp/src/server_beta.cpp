@@ -999,9 +999,31 @@ static int ProcessClientRequest_beta(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
 
     #if TEMP_CODE_FOR_VERIFICATION
-    #warning Ideally the cryptocontext should be self-sufficient for multikey evaluation
-    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin");
-    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin");
+    {
+        FHEcryptoContext->EvalMultKeyGen(sk_F);
+
+        std::ofstream emkeyfile(ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin", std::ios::out | std::ios::binary);
+        if (emkeyfile.is_open())
+        {
+            if (FHEcryptoContext->SerializeEvalMultKey(emkeyfile, SerType::BINARY) == false)
+            {
+                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of the eval mult keys to the file");
+                ret = -1;
+                goto exit;
+            }
+            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The eval mult keys have been serialized");
+
+            emkeyfile.close();
+        }
+        else
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error serializing eval mult keys");
+            ret = -1;
+            goto exit;
+        }
+    }  
+    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
+    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Sent materials for enabling multikey evaluation");
     #endif
 
