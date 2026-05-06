@@ -33,6 +33,7 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 #define PER_EPOCH_MATERIALS_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/PER_EPOCH_MATERIALS/")
 #define MASK_LOCATION_EPSILON std::string("/mnt/sumit/PIR_EPSILON/")
 std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_EPSILON+"MaskDB.bin";
+#define TMP_FILE std::string("/dev/shm/tmp_epsilon")
 
 
 // Function declarations
@@ -85,22 +86,22 @@ static int OneTimeInit_epsilon() {
 
     // Receive all the parameters from server beta
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_epsilon_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
 
     // Receive pk_F
-    ret_recv = recvAll(sock_epsilon_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_epsilon_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, pk_F, SerType::BINARY);
 
     //Save parameters to local files
     if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_EPSILON + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY)){
@@ -246,7 +247,8 @@ static int ObliviouslySearchShelter_epsilon() {
     m_epsilon_ct = FHE_bitwise_Enc_SDBElement(m_epsilon);
 
     /* 12.2 Send the ciphertext to server alpha */
-    (void)sendAll(sock_epsilon_to_alpha, Serial::SerializeToString(m_epsilon_ct).c_str(), Serial::SerializeToString(m_epsilon_ct).size());
+    Serial::SerializeToFile(TMP_FILE, m_epsilon_ct, SerType::BINARY);
+    (void)sendFile(sock_epsilon_to_alpha, net_buf, sizeof(net_buf), TMP_FILE);    
 
     return 0;
 }

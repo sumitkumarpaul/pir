@@ -32,6 +32,7 @@ static uint64_t K; // Current number of entries in the shelter, or the number of
 #define ONE_TIME_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/ONE_TIME_MATERIALS/")
 #define PER_EPOCH_MATERIALS_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/PER_EPOCH_MATERIALS/")
 #define MASK_LOCATION_DELTA std::string("/mnt/sumit/PIR_DELTA/")
+#define TMP_FILE std::string("/dev/shm/tmp_delta")
 std::string mdb_filename = PER_EPOCH_MATERIALS_LOCATION_DELTA+"MaskDB.bin";
 
 
@@ -81,22 +82,22 @@ static int OneTimeInit_delta() {
 
     // Receive all the parameters from server beta
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_delta_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
 
     // Receive pk_F
-    ret_recv = recvAll(sock_delta_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_delta_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, pk_F, SerType::BINARY);
 
     //Save parameters to local files
     if (!Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_DELTA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY)){
@@ -237,7 +238,8 @@ static int ObliviouslySearchShelter_delta() {
     m_delta_ct = FHE_bitwise_Enc_SDBElement(m_delta);
 
     /* 12.2 Send the ciphertext to server alpha */
-    (void)sendAll(sock_delta_to_alpha, Serial::SerializeToString(m_delta_ct).c_str(), Serial::SerializeToString(m_delta_ct).size());
+    Serial::SerializeToFile(TMP_FILE, m_delta_ct, SerType::BINARY);
+    (void)sendFile(sock_delta_to_alpha, net_buf, sizeof(net_buf), TMP_FILE);    
 
     return 0;
 }

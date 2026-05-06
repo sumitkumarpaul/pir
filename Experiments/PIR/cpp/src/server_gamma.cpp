@@ -33,6 +33,7 @@ static uint64_t touched_lcation_gamma[sqrt_N] = {0};
 #define NUM_CPU_CORES 16
 //#define SHELTER_STORING_LOCATION std::string("/mnt/sumit/dummy_shelter/")
 #define SHELTER_STORING_LOCATION std::string("/dev/shm/")
+#define TMP_FILE std::string("/dev/shm/tmp_gamma")
 
 // The value of N will determine the bitlength during the client initialization
 #define NUM_TAG_BITS 3072 // 16 bits can represent up to 65536, which is more than enough for N=50000
@@ -186,49 +187,49 @@ static int OneTimeInit_gamma() {
     pk_E_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
 
     // Receive pk_F
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, pk_F, SerType::BINARY);
 
     // Receive vectorOnesforElement_ct
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforElement_ct from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(vectorOnesforElement_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, vectorOnesforElement_ct, SerType::BINARY);
 
     // Receive vectorOnesforTag_ct
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive vectorOnesforTag_ct from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(vectorOnesforTag_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, vectorOnesforTag_ct, SerType::BINARY);
 
     // Receive bitOne_ct
-    ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive bitOne_ct from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(bitOne_ct, std::string(net_buf, received_sz));  
+    Serial::DeserializeFromFile(TMP_FILE, bitOne_ct, SerType::BINARY);
 
     //Save parameters to local files
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin", p);
@@ -551,10 +552,12 @@ static int ObliviouslySearchShelter_gamma() {
     }
 
     // Step 11.3.1 Send ciphertext of fnd_gamma_ct to S_alpha
-    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(fnd_gamma_ct).c_str(), Serial::SerializeToString(fnd_gamma_ct).size());
+    Serial::SerializeToFile(TMP_FILE, fnd_gamma_ct, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);    
     
     // Step 11.4.1 Send d_masked_gamma_ct to S_alpha
-    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(d_masked_gamma_ct).c_str(), Serial::SerializeToString(d_masked_gamma_ct).size());
+    Serial::SerializeToFile(TMP_FILE, d_masked_gamma_ct, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);    
 
     return 0;
 }
@@ -614,13 +617,13 @@ static int FetchCombineSelect_gamma(){
 
 
     /* 2.4 Receive the FHE ciphertext SR_D_alpha_ct  */
-    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    ret = recvFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext SR_D_gamma_ct from Server Alpha");
         goto exit;
     }
-    Serial::DeserializeFromString(SR_D_alpha_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, SR_D_alpha_ct, SerType::BINARY);
 
     /* 3.1 First convert from shuffled_db_entry to mpz_class */
     mpz_import(tmp, NUM_BYTES_PER_SDB_ELEMENT, 1, 1, 1, 0, SR_D_gamma.element);
@@ -635,22 +638,22 @@ static int FetchCombineSelect_gamma(){
     SR_D_ct = (SR_D_alpha_ct + SR_D_gamma_ct);
 
     /* 5.1.2 Receive fnd_ct  */
-    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    ret = recvFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext fnd_ct from Server Alpha");
         goto exit;
     }
-    Serial::DeserializeFromString(fnd_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, fnd_ct, SerType::BINARY);
 
     /* 5.2.2 Receive SR_sh_ct  */
-    ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
+    ret = recvFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHE Ciphertext SR_sh_ct from Server Alpha");
         goto exit;
     }
-    Serial::DeserializeFromString(SR_sh_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, SR_sh_ct, SerType::BINARY);
 
     /* 6. Select the ciphertext of the requested element */
     requested_element_ct = FHE_Select(fnd_ct, SR_D_ct, SR_sh_ct);
@@ -677,13 +680,13 @@ static int ObliDecReturn_gamma(){
     m_gamma = rng.get_z_bits((NUM_BYTES_PER_SDB_ELEMENT*8));
 
     /* Step 2.3: Receive the ciphertext of the mask */
-    ret_recv = recvAll(sock_gamma_client_con, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_gamma_client_con, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive m_C_ct from Client");
         goto exit;
     }
-    Serial::DeserializeFromString(m_C_ct, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, m_C_ct, SerType::BINARY);
 
     /* Step 3.1: Homomorphically apply the mask. */
     /* In paper it is mentioned XOR, but here we are using -, since performing XOR homorphically will be inefficient.
@@ -697,10 +700,12 @@ static int ObliDecReturn_gamma(){
     masked_requested_element_gamma_ct = requested_element_ct - m_gamma_ct;
 
     /* Step 3.4.1: Send the masked_requested_element_client_ct to server beta */
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(masked_requested_element_client_ct).c_str(), Serial::SerializeToString(masked_requested_element_client_ct).size());
+    Serial::SerializeToFile(TMP_FILE, masked_requested_element_client_ct, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);    
 
     /* Step 3.5.1: Send the masked_requested_element_gamma_ct to server beta */
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(masked_requested_element_gamma_ct).c_str(), Serial::SerializeToString(masked_requested_element_gamma_ct).size());
+    Serial::SerializeToFile(TMP_FILE, masked_requested_element_gamma_ct, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);    
 
     /* 5.2.2. Receive the masked shelter element */
     ret_recv = recvAll(sock_gamma_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -1136,7 +1141,9 @@ static void TestPKEOperations_gamma(){
     (void)sendAll(sock_gamma_to_beta, c41.get_str().c_str(), c41.get_str().size());
     (void)sendAll(sock_gamma_to_beta, c42.get_str().c_str(), c42.get_str().size());
     (void)sendAll(sock_gamma_to_beta, tag.get_str().c_str(), tag.get_str().size());
-    (void)sendAll(sock_gamma_to_beta, Serial::SerializeToString(ct_tag).c_str(), Serial::SerializeToString(ct_tag).size());
+    Serial::SerializeToFile(TMP_FILE, ct_tag, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), TMP_FILE);    
+
 
     return;
 }
@@ -1379,7 +1386,8 @@ static int SelShuffDBSearchTag_gamma(){
     Ciphertext<DCRTPoly> FHE_ct_T_phi_h_alpha2_h_beta0 = FHE_bitwise_Enc_Tag(T_phi_h_alpha2_h_beta0);
 
     /* 10.c.3 Send the ciphertext to server alpha */
-    (void)sendAll(sock_gamma_to_alpha_con, Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).c_str(), Serial::SerializeToString(FHE_ct_T_phi_h_alpha2_h_beta0).size());
+    Serial::SerializeToFile(TMP_FILE, FHE_ct_T_phi_h_alpha2_h_beta0, SerType::BINARY);
+    (void)sendFile(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);    
 
     // 14.c.1 Receive T_* from the server alpha
     ret = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);

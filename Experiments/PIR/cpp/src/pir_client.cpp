@@ -14,6 +14,7 @@
 #include "pir_common.h"
 
 #define MATERIALS_LOCATION_CLIENT std::string("/mnt/sumit/PIR_CLIENT/")
+#define TMP_FILE std::string("/dev/shm/tmp_client")
 
 static int sock_client_to_alpha = -1, sock_client_to_beta = -1, sock_client_to_gamma = -1;
 static char net_buf[NET_BUF_SZ] = {0};
@@ -122,23 +123,23 @@ static int OneTimeInit_client() {
     pk_E_q = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
-    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_client_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive FHEcryptoContext from Server Beta");
         return -1;
     }
 
-    Serial::DeserializeFromString(FHEcryptoContext, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
 
     // Receive pk_F
-    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    ret_recv = recvFile(sock_client_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret_recv != 0)
     {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_F from Server Beta");
         return -1;
     }
-    Serial::DeserializeFromString(pk_F, std::string(net_buf, received_sz));
+    Serial::DeserializeFromFile(TMP_FILE, pk_F, SerType::BINARY);
 
     // Receive E_q_Rho.first
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -278,7 +279,8 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
     m_C_ct = FHE_bitwise_Enc_SDBElement(m_C);
 
     /* Step 2.2: Send corresponding ciphertext to server gamma */
-    (void)sendAll(sock_client_to_gamma, Serial::SerializeToString(m_C_ct).c_str(), Serial::SerializeToString(m_C_ct).size());
+    Serial::SerializeToFile(TMP_FILE, m_C_ct, SerType::BINARY);
+    (void)sendFile(sock_client_to_gamma, net_buf, sizeof(net_buf), TMP_FILE);    
 
     /* 9.2 Receive decryption result */
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
