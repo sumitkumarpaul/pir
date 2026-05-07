@@ -193,7 +193,7 @@ static int ObliviouslySearchShelter_delta() {
         return -1;
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Alpha");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Alpha, the received size is: " + std::to_string(received_sz));
     printf("Received bits are: ");
     for (size_t k = 0; k < received_sz; k++)
     {
@@ -205,6 +205,7 @@ static int ObliviouslySearchShelter_delta() {
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t){
             m_delta_thread[t] = 0;
+            fnd_delta_thread[t] = false;
         }
 
         #pragma omp parallel for
@@ -215,21 +216,19 @@ static int ObliviouslySearchShelter_delta() {
                 if (y_alpha_bits_buf[(k + j) / 8] & (1 << ((k + j) % 8))) {
                     mpz_xor(m_delta_thread[j].get_mpz_t(), m_delta_thread[j].get_mpz_t(), M[k+j].get_mpz_t());
 
-                    /* Same as XORing */
-                    fnd_delta_thread[j] = !fnd_delta_thread[j];
+                    #pragma omp critical
+                    {
+                        fnd_delta_thread[j] = fnd_delta_thread[j]^true;
+                    }
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
             mpz_xor(m_delta.get_mpz_t(), m_delta.get_mpz_t(), m_delta_thread[t].get_mpz_t());
+            fnd_delta ^= fnd_delta_thread[t];
         }
     }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_delta ^= fnd_delta_thread[t];
-    }
-    printf("\n");
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_delta: " + std::to_string(fnd_delta));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_delta's share of the mask is: " + m_delta.get_str(16));

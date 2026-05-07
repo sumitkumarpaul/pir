@@ -201,7 +201,7 @@ static int ObliviouslySearchShelter_epsilon() {
         return -1;
     }
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Gamma");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Gamma, the received size is: " + std::to_string(received_sz));
     printf("Received bits are: ");
     for (size_t k = 0; k < received_sz; k++)
     {
@@ -214,6 +214,7 @@ static int ObliviouslySearchShelter_epsilon() {
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t){
             m_epsilon_thread[t] = 0;
+            fnd_epsilon_thread[t] = false;
         }
 
         #pragma omp parallel for
@@ -224,21 +225,19 @@ static int ObliviouslySearchShelter_epsilon() {
                 if (y_gamma_bits_buf[(k + j) / 8] & (1 << ((k + j) % 8))) {
                     mpz_xor(m_epsilon_thread[j].get_mpz_t(), m_epsilon_thread[j].get_mpz_t(), M[k+j].get_mpz_t());
 
-                    /* Same as XORing */
-                    fnd_epsilon_thread[j] = !fnd_epsilon_thread[j];
+                    #pragma omp critical
+                    {
+                        fnd_epsilon_thread[j] = fnd_epsilon_thread[j]^true;
+                    }
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
             mpz_xor(m_epsilon.get_mpz_t(), m_epsilon.get_mpz_t(), m_epsilon_thread[t].get_mpz_t());
+            fnd_epsilon ^= fnd_epsilon_thread[t];
         }
     }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_epsilon ^= fnd_epsilon_thread[t];
-    }
-    printf("\n");
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed processing the mask database. Value of fnd_epsilon: " + std::to_string(fnd_epsilon));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Value of the S_epsilon's share of the mask is: " + m_epsilon.get_str(16));

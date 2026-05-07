@@ -613,6 +613,7 @@ static int ObliviouslySearchShelter_alpha() {
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t){
             d_masked_alpha_thread[t] = 0;
+            fnd_alpha_thread[t] = false;
         }
 
         #pragma omp parallel for
@@ -624,22 +625,23 @@ static int ObliviouslySearchShelter_alpha() {
                 if (evaluateEq(&fServer, &K_alpha, sh[k + j].tag_short)) {
                     mpz_xor(d_masked_alpha_thread[j].get_mpz_t(), d_masked_alpha_thread[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
 
-                    /* Same as XORing */
-                    fnd_alpha_thread[j] = !fnd_alpha_thread[j];
-
-                    /* 6.a.1 Instead of sending the bits one by one, strore them in a single array */
-                    y_alpha_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
+                    /* Since actual memory bytes are accessed by multiple threads */
+                    #pragma omp critical
+                    {
+                        fnd_alpha_thread[j] = fnd_alpha_thread[j]^true;
+    
+                        /* 6.a.1 Instead of sending the bits one by one, strore them in a single array */
+                        y_alpha_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
+                    }
                 }
             }
         }
+
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
             mpz_xor(d_masked_alpha.get_mpz_t(), d_masked_alpha.get_mpz_t(), d_masked_alpha_thread[t].get_mpz_t());
+            fnd_alpha ^= fnd_alpha_thread[t];
         }
-    }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_alpha ^= fnd_alpha_thread[t];
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_alpha: " + std::to_string(fnd_alpha));

@@ -504,6 +504,7 @@ static int ObliviouslySearchShelter_gamma() {
     {
         for (int t = 0; t < NUM_CPU_CORES; ++t){
             d_masked_gamma_thread[t] = 0;
+            fnd_gammma_thread[t] = false;
         }
 
 #pragma omp parallel for
@@ -515,22 +516,21 @@ static int ObliviouslySearchShelter_gamma() {
                 if (evaluateEq(&fServer, &K_gamma, sh[k + j].tag_short)) {
                     mpz_xor(d_masked_gamma_thread[j].get_mpz_t(), d_masked_gamma_thread[j].get_mpz_t(), sh[k+j].element.get_mpz_t());
 
-                    /* Same as XORing */
-                    fnd_gammma_thread[j] = !fnd_gammma_thread[j];
-
-                    /* 6.c.1 Instead of sending the bits one by one, strore them in a single array */
-                    y_gamma_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
+                    /* Since actual memory bytes are accessed by multiple threads */
+                    #pragma omp critical
+                    {
+                        fnd_gammma_thread[j] = fnd_gammma_thread[j]^true;
+                        /* 6.c.1 Instead of sending the bits one by one, strore them in a single array */
+                        y_gamma_bits_buf[(k+j)/8] |= (1 << ((k+j) % 8));
+                    }
                 }
             }
         }
         for (int t = 0; t < NUM_CPU_CORES; ++t)
         {
             mpz_xor(d_masked_gamma.get_mpz_t(), d_masked_gamma.get_mpz_t(), d_masked_gamma_thread[t].get_mpz_t());
+            fnd_gamma ^= fnd_gammma_thread[t];
         }
-    }
-    for (int t = 0; t < NUM_CPU_CORES; ++t)
-    {
-        fnd_gamma ^= fnd_gammma_thread[t];
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Completed DPF evaluation. Value of fnd_gamma: " + std::to_string(fnd_gamma));
