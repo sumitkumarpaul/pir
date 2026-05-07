@@ -576,6 +576,7 @@ static int FetchCombineSelect_gamma(){
     Ciphertext<DCRTPoly> SR_D_alpha_ct, SR_D_gamma_ct, SR_D_ct;
 
     /* 1.a.1 Convert T_* to cuckoo hash key */
+    memset(net_buf, 0, (P_BITS / 8));
     mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
     // Create a temporary array to satisfy the function signature
     std::array<unsigned char, 16> temp;
@@ -1399,7 +1400,7 @@ static int SelShuffDBSearchTag_gamma(){
     }
 
     T_star = mpz_class(std::string(net_buf, received_sz));
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is (HEX): " + T_star.get_str(16));
 
     return ret;
 }

@@ -512,6 +512,7 @@ static int PerEpochOperations_beta(){
             }
 
             /* 10.2.Convert T_I to cuckoo hash key and save that to the buffer */
+            memset(net_buf_local, 0, (P_BITS / 8));
             mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, T_I.get_mpz_t());
             convert_buf_to_item_type2((const unsigned char*)net_buf_local, (P_BITS/8), TMP_KEY_BUF[(iter+j) % NUM_ITEMS_IN_TMP_BUF]);
             //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Iteration: " + std::to_string(iter+j) + " item: " + std::to_string(I));

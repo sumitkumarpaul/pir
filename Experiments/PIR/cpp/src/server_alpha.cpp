@@ -727,6 +727,7 @@ static int FetchCombineSelect_alpha(){
     Ciphertext<DCRTPoly> SR_D_alpha_ct;
 
     /* 1.a.1 Convert T_* to cuckoo hash key */
+    memset(net_buf, 0, (P_BITS / 8));
     mpz_export(net_buf, NULL, 1, 1, 1, 0, T_star.get_mpz_t());
     // Create a temporary array to satisfy the function signature
     std::array<unsigned char, 16> temp;
@@ -1167,7 +1168,7 @@ static int SelShuffDBSearchTag_alpha(){
     /* 14.a.1 Extract T_* */
     T_star = (T_star_h_alpha2 * h_alpha2_1) % p;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is: " + T_star.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Selected T_* is (HEX): " + T_star.get_str(16));
 
     /* 14.a.2 Send T_* to server gamma */
     (void)sendAll(sock_alpha_to_gamma, T_star.get_str().c_str(), T_star.get_str().size());
@@ -1262,9 +1263,9 @@ static void TestSrv_alpha()
 {
     //TestPKEOperations_alpha();
     //TestSelShuffDBSearchTag_alpha();
-    TestShelterDPFSearch_alpha();
+    //TestShelterDPFSearch_alpha();
     //TestClientProcessing_alpha();
-    //TestHTableSerDser_alpha();
+    TestHTableSerDser_alpha();
 
     return;
 }
@@ -1889,6 +1890,21 @@ static int TestHTableSerDser_alpha(){
     QueryResult res;
     std::fstream DK;
     item_type Kuku_key;
+    std::ifstream importedHFile;
+
+    importedHFile.open(HTable_filename, std::ios::binary);
+    if (!importedHFile) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to open H file at location: " + HTable_filename);
+        goto exit;
+    }
+
+    HTable = KukuTable::deserialize(importedHFile).release();
+    importedHFile.close();
+    if (HTable == nullptr) {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Cannot import the hash table");
+        goto exit;
+    }
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha: Loaded hash table into the RAM");
 
     DK.open(DK_filename, std::ios::in | std::ios::binary);
     if (!DK) {
@@ -1900,6 +1916,18 @@ static int TestHTableSerDser_alpha(){
     for (uint64_t i = 0; i < M; i++){
         DK.read(reinterpret_cast<char*>(Kuku_key.data()), sizeof(item_type));
         res = HTable->query(Kuku_key);
+        
+        {
+            std::cout << std::hex << std::setfill('0');
+            for (auto byte : Kuku_key)
+            {
+                // The +byte trick promotes the char to an int for printing
+                std::cout << std::setw(2) << static_cast<int>(byte);
+            }
+            // Reset to decimal mode if you plan to print more later
+            std::cout << std::dec << std::endl;
+        }
+
         if (!res)
         {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Query failed for the item number: " + to_string(i));
