@@ -527,9 +527,11 @@ static int PerEpochOperations_beta(){
             /* For some numbers, gmp exporting an additional byte. This is a corresponding fix */
             if (send_size != NUM_BYTES_PER_SDB_ELEMENT)
             {
-                /* For some reason, for dummy elements exporting d_gamma takes one more byte and that is causing the problem. Hence, first exporting that to a different buffer and then copy the content from there. */
-                mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
-                memcpy(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], (net_buf_local + 1), NUM_BYTES_PER_SDB_ELEMENT);
+                /* Shift d_alpha so that it matches the bit length of NUM_BYTES_PER_SDB_ELEMENT */
+                d_alpha = d_alpha << ((NUM_BYTES_PER_SDB_ELEMENT - send_size)*8);
+                /* Export this new d_alpha*/
+                mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
+                /* No need to do anything with d_gamma, as next it will get adjusted naturally */
             }
 
             /* 10.4 Create the second share for server_gamma */
@@ -541,9 +543,15 @@ static int PerEpochOperations_beta(){
             /* For some numbers, gmp exporting an additional byte. This is a corresponding fix */
             if (send_size != NUM_BYTES_PER_SDB_ELEMENT)
             {
-                /* For some reason, for dummy elements exporting d_gamma takes one more byte and that is causing the problem. Hence, first exporting that to a different buffer and then copy the content from there. */
-                mpz_export(net_buf_local, &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());
-                memcpy(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], (net_buf_local + 1), NUM_BYTES_PER_SDB_ELEMENT);
+                /* Shift d_gamma so that it matches the bit length of NUM_BYTES_PER_SDB_ELEMENT */
+                d_gamma = d_gamma << ((NUM_BYTES_PER_SDB_ELEMENT - send_size)*8);
+
+                /* Accordingly calculate the new value of d_alpha */
+                mpz_xor(d_alpha.get_mpz_t(), d.get_mpz_t(), d_gamma.get_mpz_t());
+
+                /* Export both d_alpha and d_gamma, again */
+                mpz_export(&TMP_D_ALPHA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_alpha.get_mpz_t());
+                mpz_export(&TMP_D_GAMMA_BUF[(NUM_BYTES_PER_SDB_ELEMENT * ((iter+j) % NUM_ITEMS_IN_TMP_BUF))], &send_size, 1, 1, 1, 0, d_gamma.get_mpz_t());                
             }
         }
 
