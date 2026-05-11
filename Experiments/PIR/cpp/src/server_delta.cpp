@@ -128,7 +128,7 @@ static int FinSrv_delta(){
         sock_delta_to_alpha = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Delta");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized Server Delta");
 
     return ret;
 }
@@ -194,12 +194,16 @@ static int ObliviouslySearchShelter_delta() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Alpha, the received size is: " + std::to_string(received_sz));
-    printf("Received bits are: ");
-    for (size_t k = 0; k < received_sz; k++)
+
+    if (SET_LOG_LEVEL >= LOG_LEVEL_TRACE)
     {
-        printf("%02x", y_alpha_bits_buf[k]);
+        printf("Received bits are: ");
+        for (size_t k = 0; k < received_sz; k++)
+        {
+            printf("%02x", y_alpha_bits_buf[k]);
+        }
+        printf("\n");
     }
-    printf("\n");
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
     {
@@ -426,7 +430,7 @@ static int Perf_avg_online_server_time_delta() {
     /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
 
     std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 #endif
 
     return 1;

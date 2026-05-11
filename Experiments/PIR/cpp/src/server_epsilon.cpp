@@ -136,7 +136,7 @@ static int FinSrv_epsilon(){
         sock_epsilon_to_gamma = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Epsilon");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized Server Epsilon");
 
     return ret;
 }
@@ -202,12 +202,16 @@ static int ObliviouslySearchShelter_epsilon() {
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received the array of bits from Server Gamma, the received size is: " + std::to_string(received_sz));
-    printf("Received bits are: ");
-    for (size_t k = 0; k < received_sz; k++)
+
+    if (SET_LOG_LEVEL >= LOG_LEVEL_TRACE)
     {
-        printf("%02x", y_gamma_bits_buf[k]);
-    }
-    printf("\n");
+        printf("Received bits are: ");
+        for (size_t k = 0; k < received_sz; k++)
+        {
+            printf("%02x", y_gamma_bits_buf[k]);
+        }
+        printf("\n");
+    }    
 
 
     for (size_t k = 0; k < K; k += NUM_CPU_CORES)
@@ -436,7 +440,7 @@ static int Perf_avg_online_server_time_epsilon() {
     /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
 
     std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 #endif
 
     return 1;

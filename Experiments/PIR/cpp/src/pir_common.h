@@ -40,14 +40,14 @@
 using namespace lbcrypto;
 using namespace kuku;
 
+#define LOG_LEVEL_NONE      0
+#define LOG_LEVEL_SPECIAL   1
+#define LOG_LEVEL_ERROR     2
+#define LOG_LEVEL_INFO      3
+#define LOG_LEVEL_DEBUG     4
+#define LOG_LEVEL_TRACE     5
 
-#define LOG_LEVEL_SPECIAL   0
-#define LOG_LEVEL_ERROR     1
-#define LOG_LEVEL_INFO      2
-#define LOG_LEVEL_DEBUG     3
-#define LOG_LEVEL_TRACE     4
-
-#define SET_LOG_LEVEL LOG_LEVEL_TRACE
+#define SET_LOG_LEVEL LOG_LEVEL_ERROR
 #define TEMP_CODE_FOR_VERIFICATION (1)
 
 #define NET_BUF_SZ  16000000 //Size of the buffer used during transferring data over network

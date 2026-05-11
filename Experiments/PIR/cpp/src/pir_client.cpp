@@ -193,7 +193,7 @@ static int FinClient(){
         sock_client_to_gamma = -1;
     }    
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized the client");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized the client");
 
     return ret;
 }
@@ -211,7 +211,7 @@ static int ShelterTagDetermination_Client(uint64_t I){
     size_t received_sz = 0;
     int ret_recv = 0;
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Request fetching start");
     
     /* Step 1 */
     E_q_Rho_pow_I = ElGamal_q_exp_ct(E_q_Rho, mpz_class(I), pk_E_q);
@@ -289,7 +289,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive the decryption result from the Server Beta");
         return -1;
     }
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Completed receiving requested item");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed receiving requested item");
 
     received_element = mpz_class(std::string(net_buf, received_sz));
 
@@ -346,7 +346,7 @@ int main(int argc, char *argv[])
         ObliDecReturn_Client(&received_index);
 
         if (received_index == I){
-            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Success..index of the received block matches with requested index: " + std::to_string(I));
+            PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Success..index of the received block matches with requested index: " + std::to_string(I));
             ret = 0;
         } else {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Received index is: " + std::to_string(received_index) + " which does not matches with requested index: " + std::to_string(I));

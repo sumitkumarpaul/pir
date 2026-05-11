@@ -1103,7 +1103,7 @@ static int FinSrv_gamma(){
         sock_gamma_client_con = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Gamma");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized Server Gamma");
 
     return ret;
 }

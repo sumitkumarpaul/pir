@@ -300,7 +300,7 @@ static int CreateRandomDatabase(){
     size_t count;
     plain_db_entry random_entry, read_entry;
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION_BETA);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Creating database with random content:"+ DATABASE_LOCATION_BETA);
     pdb.open(pdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
 
     for (uint64_t i = 0; i < N; ++i) {
@@ -331,7 +331,7 @@ static int CreateRandomDatabase(){
 
     pdb.close();
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Database creation complete");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Database creation complete");
 
     return ret;
 }
@@ -401,7 +401,7 @@ static int PerEpochOperations_beta(){
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
 
     /* 3. Create Mask database */ 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
     mdb.open(mdb_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
     #pragma omp parallel for
@@ -662,7 +662,7 @@ static int FinSrv_beta(){
         close(sock_beta_client_con);
         sock_beta_client_con = -1;
     }
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Beta");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized Server Beta");
 
     return ret;
 }

@@ -310,7 +310,7 @@ static int FinSrv_alpha(){
         sock_alpha_client_con = -1;
     }
 
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Finalized Server Alpha");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Finalized Server Alpha");
 
     return ret;
 }
@@ -1605,7 +1605,7 @@ static int Perf_avg_online_server_time_alpha() {
     /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
 
     std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 
 
     return 1;
@@ -1723,7 +1723,7 @@ static int Old_Perf_avg_online_server_time_alpha() {
     /* Consider the additional time required for other non-intensive tasks. Those can be found from other experiments */
 
     std::cout << "Processing time is: " << processingTime_us << "us" << std::endl;
-    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "(Old solution) Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "(Old solution) Online time consumption by the server in the average scenario is: " + std::to_string(processingTime_us) + "us");
 
 
     return 1;
