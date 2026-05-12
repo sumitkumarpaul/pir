@@ -1,0 +1,7 @@
+N=1024
+sqrt_N=32
+B=512
+p=3072
+r=64
+log_dir="./logs"
+bin_dir="../build"
