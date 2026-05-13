@@ -449,7 +449,6 @@ static int PerEpochOperations_beta(){
 
     for (uint64_t iter = 0; iter < M;) {
         #pragma omp parallel for
-        #warning multi-threaded shuffling is required to be confirmed
         for (uint64_t j = 0; (j < NUM_ITEMS_IN_TMP_BUF); ++j)
         {
             size_t send_size = 0;
@@ -1607,11 +1606,11 @@ static void Test_FHE_DBElement() {
     mpz_class dec_block_1_content, dec_block_1_index, dec_block_2_content, dec_block_2_index, dec_tag_1, dec_tag_2, dec_fnd, dec_selected_tag, dec_selected_content, dec_selected_index, dec_content_and_index;
     FHE_bitwise_Dec_SDBElement(ct_element_1, dec_content_and_index);
     dec_block_1_content = (dec_content_and_index >> log_N);
-    dec_block_1_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+    dec_block_1_index = (dec_content_and_index & ((1UL << log_N) - 1UL)); 
 
     FHE_bitwise_Dec_SDBElement(ct_element_2, dec_content_and_index);
     dec_block_2_content = (dec_content_and_index >> log_N);
-    dec_block_2_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+    dec_block_2_index = (dec_content_and_index & ((1UL << log_N) - 1UL)); 
     
     FHE_bitwise_Dec_Tag(ct_tag_1, dec_tag_1);
     FHE_bitwise_Dec_Tag(ct_tag_2, dec_tag_2);
@@ -1621,7 +1620,7 @@ static void Test_FHE_DBElement() {
     FHE_bitwise_Dec_Tag(ct_selected_tag, dec_selected_tag);
     FHE_bitwise_Dec_SDBElement(ct_selected_element, dec_content_and_index);
     dec_selected_content = (dec_content_and_index >> log_N);
-    dec_selected_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+    dec_selected_index = (dec_content_and_index & ((1UL << log_N) - 1UL)); 
 
     // Verify
     if (block_1_content != dec_block_1_content) {

@@ -1038,7 +1038,6 @@ static int ProcessClientRequest_gamma(){
             goto exit;
         }
         
-        #warning Ensure changing of the sequence works
         ret = ShelterTagUpdate_gamma();
         if (ret != 0){
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Problem during the Shelter Update stage..!!");

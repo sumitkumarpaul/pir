@@ -299,7 +299,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
 
     /* Extract result */
     extracted_element_content = (extracted_element >> log_N);
-    extracted_element_index = (extracted_element & ((1U << log_N) - 1U));
+    extracted_element_index = (extracted_element & ((1UL << log_N) - 1UL));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received element is (HEX): " + extracted_element.get_str(16));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Extracted block content is (HEX): " + extracted_element_content.get_str(16));
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Received index is (DEC): " + extracted_element_index.get_str());

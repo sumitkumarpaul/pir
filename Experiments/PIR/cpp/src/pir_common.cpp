@@ -479,7 +479,6 @@ Ciphertext<DCRTPoly> FHE_bitwise_Enc_SDBElement(const mpz_class block_content_an
     /* Add the block content */
     mpz_class tmp = block_content_and_index;
 
-    #warning TODO: Check whether the encryption scheme can encrypt, these many elements within the vector?
     for (unsigned i = 0; i < (NUM_BYTES_PER_SDB_ELEMENT*8); ++i) {
         /* Extract the least significant bit and push to the vector */
         if ((tmp & mpz_class(0x01)) == mpz_class(0x01)){
@@ -529,7 +528,6 @@ Ciphertext<DCRTPoly> FHE_bitwise_Enc_Tag(const mpz_class tag) {
     /* Add the block content */
     mpz_class tmp = tag;
 
-    #warning TODO: Check whether the encryption scheme can encrypt, these many elements within the vector?
     for (unsigned i = 0; i < (P_BITS); ++i) {
         /* Extract the least significant bit and push to the vector */
         if ((tmp & mpz_class(0x01)) == mpz_class(0x01)){

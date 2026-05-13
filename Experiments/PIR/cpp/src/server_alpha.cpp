@@ -707,7 +707,6 @@ static int ObliviouslySearchShelter_alpha() {
     m_ct = m_delta_ct + m_epsilon_ct;
     
     /* Step 14.4 Homomorphically unmask the shelter respose */
-    #warning Here check whether unmasking is happening properly. Because we did masking within a loop.
     SR_sh_ct = d_masked_ct + m_ct;
     
     return 0;
@@ -1437,7 +1436,7 @@ static int TestShelterDPFSearch_alpha() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Here");
         
         dec_block_content = (dec_content_and_index >> log_N);
-        dec_block_index = (dec_content_and_index & ((1U << log_N) - 1U)); 
+        dec_block_index = (dec_content_and_index & ((1UL << log_N) - 1UL)); 
 
         if (dec_block_index != mpz_class(DPF_SEARCH_INDEX_K)) {
             PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Decrypted block index does not match the expected index. Expected: " + std::to_string(DPF_SEARCH_INDEX_K) + ", but got: " + dec_block_index.get_str());
