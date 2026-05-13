@@ -2,7 +2,7 @@
 
 # Define the path to your config file
 CONFIG_FILE="config.txt"
-
+FAIL_COUNT=0
 
 # ==========================================
 # 1. Define test functions
@@ -21,10 +21,25 @@ access_all_blocks() {
 
     for (( i=1; i<=N; i++ )); do
         $EXECUTABLE "$i"
+        # Check exit code
+        exit_code=$?
+
+        if [ $exit_code -ne 0 ]; then
+            echo -e "[FAIL] Block index: $i\n"
+            # Increment the failure counter
+            ((FAIL_COUNT++))
+        fi
         echo -ne "Progress: $i out of $N blocks are tested\r" >&3
     done
     echo "">&3
     echo "All the blocks are tested!">&3
+
+    if [ $FAIL_COUNT -eq 0 ]; then
+        echo "SUCCESS: All block are fetched successfully."
+        echo "Verify the logs of all three servers. There must not be any error messages."
+    else
+        echo "FAILURE: There were $FAIL_COUNT error(s) found during execution."
+    fi    
 }
 
 # 2. Load the configuration file

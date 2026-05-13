@@ -2,6 +2,7 @@
 
 # Define the path to your config file
 CONFIG_FILE="config.txt"
+FAIL_COUNT=0
 
 
 # ==========================================
@@ -23,6 +24,15 @@ access_all_blocks() {
         #Wait for some time and then start server_alpha
         sleep 1
         $EXECUTABLE "process_request"
+        
+        # Check exit code
+        exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+            echo -e "[FAIL] Epoch number: $i\n"
+            # Increment the failure counter
+            ((FAIL_COUNT++))
+        fi
+        
         j=$(echo "scale=4; $i * $sqrt_N" | bc -l)
         echo -ne "Progress: $j out of $N blocks are tested\r" >&3
     done
