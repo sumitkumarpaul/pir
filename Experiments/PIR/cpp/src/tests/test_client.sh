@@ -7,8 +7,20 @@ FAIL_COUNT=0
 # ==========================================
 # 1. Define test functions
 # ==========================================
-access_random_block() {
-    echo -e "\nTest A1: Accessing a random block from the remote database:\n"
+access_one_random_block() {
+    echo -e "\nTest A1: Accessing one random block from the remote database:\n"
+    RANDOM_INDEX=$(shuf -i 1-"$N" -n 1)
+
+    $EXECUTABLE "$RANDOM_INDEX"
+    # Check exit code
+    exit_code=$?
+
+    if [ $exit_code -ne 0 ]; then
+        echo -e "[FAIL] Tried to access random block index: $RANDOM_INDEX\n"
+    else
+        echo -e "[PASS] Successfully accessed random block index: $RANDOM_INDEX\n"
+    fi
+
 }
 
 access_specific_block() {
@@ -123,7 +135,7 @@ echo -e "\n"
 case $choice in
     A1)
         # Call the show_date function
-        access_random_block
+        access_one_random_block
         ;;
     A2)
         # Call the show_disk_space function

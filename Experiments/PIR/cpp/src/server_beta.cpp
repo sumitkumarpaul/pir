@@ -150,6 +150,28 @@ static int SendInitializedParamsToAllServers(){
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
+    FHEcryptoContext->EvalMultKeyGen(sk_F);
+
+    std::ofstream emkeyfile(ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin", std::ios::out | std::ios::binary);
+    if (emkeyfile.is_open())
+    {
+        if (FHEcryptoContext->SerializeEvalMultKey(emkeyfile, SerType::BINARY) == false)
+        {
+            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of the eval mult keys to the file");
+            ret = -1;
+            goto exit;
+        }
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The eval mult keys have been serialized");
+
+        emkeyfile.close();
+    }
+    else
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error serializing eval mult keys");
+        ret = -1;
+        goto exit;
+    }
+
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server alpha");
 
     //Send parameters to Server Alpha
@@ -169,6 +191,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
     Serial::SerializeToFile(TMP_FILE, bitOne_ct, SerType::BINARY);
     (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
+    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server gamma");
 
@@ -189,7 +212,9 @@ static int SendInitializedParamsToAllServers(){
     Serial::SerializeToFile(TMP_FILE, vectorOnesforTag_ct, SerType::BINARY);
     (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), TMP_FILE);    
     Serial::SerializeToFile(TMP_FILE, bitOne_ct, SerType::BINARY);
-    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), TMP_FILE);    
+    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), TMP_FILE);
+    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
+
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Sending initialized parameters to server delta");
 
@@ -206,8 +231,9 @@ static int SendInitializedParamsToAllServers(){
     (void)sendFile(sock_beta_epsilon_con, net_buf, sizeof(net_buf), TMP_FILE);    
     Serial::SerializeToFile(TMP_FILE, pk_F, SerType::BINARY);
     (void)sendFile(sock_beta_epsilon_con, net_buf, sizeof(net_buf), TMP_FILE);    
+exit:
 
-    return 0;
+    return ret;
 }
 
 static int OneTimeInit_beta(){
@@ -570,6 +596,10 @@ static int PerEpochOperations_beta(){
         memset(TMP_D_GAMMA_BUF, 0, (NUM_BYTES_PER_SDB_ELEMENT * NUM_ITEMS_IN_TMP_BUF));
 
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Number of flushed item is: " + std::to_string(iter));
+
+        if (((iter+1) % 100000000) == 0){
+            PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Prepared " + to_string(iter+1) + " items");
+        }
         /* We are skipping step 11. We are transferring them manually, in chuncks. */
     }
 
@@ -1019,35 +1049,6 @@ static int ProcessClientRequest_beta(){
     }
 
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Loaded one-time initialization materials");
-
-    #if TEMP_CODE_FOR_VERIFICATION
-    {
-        FHEcryptoContext->EvalMultKeyGen(sk_F);
-
-        std::ofstream emkeyfile(ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin", std::ios::out | std::ios::binary);
-        if (emkeyfile.is_open())
-        {
-            if (FHEcryptoContext->SerializeEvalMultKey(emkeyfile, SerType::BINARY) == false)
-            {
-                PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error writing serialization of the eval mult keys to the file");
-                ret = -1;
-                goto exit;
-            }
-            PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "The eval mult keys have been serialized");
-
-            emkeyfile.close();
-        }
-        else
-        {
-            PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Error serializing eval mult keys");
-            ret = -1;
-            goto exit;
-        }
-    }  
-    (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
-    (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "emkeyfile.bin");
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta: Sent materials for enabling multikey evaluation");
-    #endif
 
     //Always initialize them
     K = 0;

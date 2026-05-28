@@ -231,6 +231,13 @@ static int OneTimeInit_gamma() {
     }
     Serial::DeserializeFromFile(TMP_FILE, bitOne_ct, SerType::BINARY);
 
+    ret_recv = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_GAMMA + "emkeyfile.bin");
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive emkeyfile from Server Beta");
+        return -1;
+    }
+
     //Save parameters to local files
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin", q);
@@ -936,13 +943,6 @@ static int ProcessClientRequest_gamma(){
     pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E_q.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     
-    #if TEMP_CODE_FOR_VERIFICATION
-    ret = recvFile(sock_gamma_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_GAMMA + "emkeyfile.bin");
-    if (ret != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive emkeyfile from Server Beta");
-        return -1;
-    }
     std::ifstream emkeys(ONE_TIME_MATERIALS_LOCATION_GAMMA + "emkeyfile.bin", std::ios::in | std::ios::binary);
     if (!emkeys.is_open()) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Server Gamma: Cannot read the serialized multikey file");
@@ -953,7 +953,6 @@ static int ProcessClientRequest_gamma(){
         return -1;
     }
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma: Enabled multikey evaluation");
-    #endif
 
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_GAMMA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);

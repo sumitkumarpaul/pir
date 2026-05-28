@@ -8,12 +8,18 @@ FAIL_COUNT=0
 # ==========================================
 # 1. Define test functions
 # ==========================================
-access_random_block() {
-    echo -e "\nTest A1: Client is accessing a random block:\n"
+access_one_random_block() {
+    echo -e "\nTest A1: Client is accessing one random block:\n"
+
+    # Run the server, and kill it after 15 seconds
+    timeout 15 $EXECUTABLE "process_request"
 }
 
 access_specific_block() {
     echo -e "\nTest A2: Client is accessing a specific block:\n"
+
+    # Run the server, and kill it after 15 seconds
+    timeout 15 $EXECUTABLE "process_request"
 }
 
 access_all_blocks() {
@@ -121,7 +127,7 @@ echo -e "\n"
 case $choice in
     A1)
         # Call the show_date function
-        access_random_block
+        access_one_random_block
         ;;
     A2)
         # Call the show_disk_space function
