@@ -293,7 +293,6 @@ static int ProcessClientRequest_epsilon(){
 
     PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Current epoch is completed. Please re-perform the per-epoch initialization");
 
-
 exit:
     mdb.close();
     /* Close any dangling connections */

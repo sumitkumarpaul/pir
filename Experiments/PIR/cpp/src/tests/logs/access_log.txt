@@ -1,0 +1,50 @@
+#############################################################################################################################
+# Following are few logs collected on the client side for showing the end-to-end time.                                      #
+# This end-to-end time is the summation of (client time + network time + server time).                                      #
+# The individual values of client time and server time are presented in the Emperical analysis table of the paper/thesis.   #
+#############################################################################################################################   
+
+
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 990
+[29-05-2026 19:07:07:271] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:07:07:712] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 12
+[29-05-2026 19:07:20:711] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:07:21:432] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 23
+[29-05-2026 19:07:27:516] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:07:28:187] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 23
+[29-05-2026 19:07:43:781] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:07:44:498] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 53
+[29-05-2026 19:07:53:582] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:07:54:252] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 999
+[29-05-2026 19:08:01:635] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:08:02:343] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 11
+[29-05-2026 19:08:08:357] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:08:09:114] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 11
+[29-05-2026 19:16:44:283] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:16:44:752] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 23
+[29-05-2026 19:16:53:764] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:16:54:527] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 99
+[29-05-2026 19:17:01:281] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:17:02:027] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 53
+[29-05-2026 19:17:13:176] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:17:13:897] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 1024
+[29-05-2026 19:17:21:514] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:17:22:182] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 2345
+[29-05-2026 19:17:31:082] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:17:31:748] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ ./pir_client 3456
+[29-05-2026 19:17:39:740] [pir_client.cpp:214] ***** Request fetching start
+[29-05-2026 19:17:40:476] [pir_client.cpp:292] ***** Completed receiving requested item
+ubuntu@server-beta:/mnt/sumit/pir/Experiments/PIR/cpp/src/build$ 

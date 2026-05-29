@@ -2052,12 +2052,8 @@ static void Test_binFHE(){
         PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Success..!!");
     }
 
-    #warning FHEcryptoContext must be transferred by Server_beta to other servers, during initialization. Otherwise, they cannot use it for homomorphic evaluations
     FHEcryptoContext->EvalMultKeyGen(sk_F);
-    //Serial::SerializeToString(FHEcryptoContext).c_str(), Serial::SerializeToString(FHEcryptoContext).size();
     Serial::DeserializeFromString(FHEcryptoContext, Serial::SerializeToString(FHEcryptoContext).c_str());
-    //Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
-    //Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     
     #endif
 

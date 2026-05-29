@@ -211,7 +211,7 @@ static int ShelterTagDetermination_Client(uint64_t I){
     size_t received_sz = 0;
     int ret_recv = 0;
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Request fetching start");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
     
     /* Step 1 */
     E_q_Rho_pow_I = ElGamal_q_exp_ct(E_q_Rho, mpz_class(I), pk_E_q);
@@ -289,7 +289,7 @@ static int ObliDecReturn_Client(uint64_t* p_received_index) {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive the decryption result from the Server Beta");
         return -1;
     }
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Completed receiving requested item");
+    PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Completed receiving requested item");
 
     received_element = mpz_class(std::string(net_buf, received_sz));
 

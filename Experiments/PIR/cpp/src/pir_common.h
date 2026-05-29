@@ -48,11 +48,11 @@ using namespace kuku;
 #define LOG_LEVEL_TRACE     5
 
 #define SET_LOG_LEVEL LOG_LEVEL_ERROR
-#define TEMP_CODE_FOR_VERIFICATION (1)
+#define TEMP_CODE_FOR_VERIFICATION (0)
 
 #define NET_BUF_SZ  16000000 //Size of the buffer used during transferring data over network
 
-#if 0 /* Using real machines */
+#if 1 /* Using real machines */
 #define SERVER_ALPHA_IP     "192.168.16.126" // IP address of the server_alpha
 #define SERVER_BETA_IP      "192.168.16.34"// IP address of the server_beta
 #define SERVER_GAMMA_IP     "192.168.16.132" // IP address of the server_gamma
@@ -101,7 +101,7 @@ extern std::string reinit_shelter_update_message;
 /* Regarding testing */
 #define TEST_SHELTER_FOUND (0) /* Forcefully make the shelter search successful */
 #define TEST_SHUFF_DB_FETCH (0) /* This will take a lot of memory */
-#define TEST_VERIFY_PRIVACY (1)  /* To verify that no location is touched twice */
+#define TEST_VERIFY_PRIVACY (0)  /* To verify that no location is touched twice */
 #if TEST_VERIFY_PRIVACY
 #warning Enabling this macro will affect performance.
 #endif
