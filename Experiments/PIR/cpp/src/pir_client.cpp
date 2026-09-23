@@ -86,14 +86,14 @@ static int OneTimeInit_client() {
     }
     g = mpz_class(std::string(net_buf, received_sz));
 
-    // Receive g_q
+    // Receive g_dashed
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g_q from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive g_dashed from Server Beta");
         return -1;
     }
-    g_q = mpz_class(std::string(net_buf, received_sz));
+    g_dashed = mpz_class(std::string(net_buf, received_sz));
 
     // Receive r
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
@@ -163,7 +163,7 @@ static int OneTimeInit_client() {
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "p.bin", p);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "q.bin", q);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g.bin", g);
-    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "r.bin", r);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E.bin", pk_E);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E_q.bin", pk_E_q);

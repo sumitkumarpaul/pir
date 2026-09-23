@@ -53,6 +53,7 @@ static uint64_t TMP_IDX_LOC_MAP[(N+sqrt_N)] = {0};// TODO: Delete this array
 
 // Function declarations
 static void Init_parameters(int p_bits = 3072, int q_bits = 256, int r_bits = 64);// Initializes p, q, g, GG(cyclic group) and r
+static void Init_parameters_for_GG_dashed(int p_bits, int q_bits);
 static int InitSrv_beta();
 static int FinSrv_beta();
 static int OneTimeInit_beta();
@@ -84,47 +85,99 @@ static void TestShuffDBFetch_beta();
 
 static void Perf_avg_online_server_time_beta();
 
+/**************************************************************************/
+/* Initialize p, p', q, q', g, g', GG, GG' and r.                         */
+/*  - GG is a cyclic subgroup of ZZ^*_p. Where p is a prime number.       */
+/*  - g is the generator of GG and q is the (prime) order of GG.          */
+/*  - GG' is a cyclic subgroup of ZZ^*_{q.p'}. Where p' is another prime. */
+/*  - g' is the generator of GG' and q' is the (prime) order of GG'.      */
+/**************************************************************************/
 static void Init_parameters(int p_bits, int q_bits, int r_bits) {
-    mpz_class sg_prime;
-
-    //Choose a safe prime q
-    do{
-        // First randomly choose a (q_bits - 2)-bits long Sophie Germain primes
-        do
-        {
-            sg_prime = rng.get_z_bits(q_bits - 2);
-            mpz_nextprime(sg_prime.get_mpz_t(), sg_prime.get_mpz_t());
-        } while (mpz_sizeinbase(sg_prime.get_mpz_t(), 2) != (q_bits - 2));
-
-        //And check whether this generates a safe-prime or not
-        q = (2*sg_prime) + 1;
-    } while (!mpz_probab_prime_p(q.get_mpz_t(), 25));
-    
-    //Accordingly choose p
-    mpz_class temp;
+    /* Choose q(prime) of size q_bits */
     do {
-        temp = rng.get_z_bits(p_bits - q_bits);
-        p = temp * q + 1;
-    } while (!mpz_probab_prime_p(p.get_mpz_t(), 25));
+        q = rng.get_z_bits(q_bits);
+        mpz_nextprime(q.get_mpz_t(), q.get_mpz_t());
+    } while (mpz_sizeinbase(q.get_mpz_t(), 2) != q_bits);
+    
+    /* Choose p(prime), which is at least p_bits-wide and ZZ^*_p has a cyclic subgroup of order q. */
+    /* To ensure that, we have to choose p, such that q | (p - 1). */
+    mpz_class cofactor;
+    do {
+        cofactor = rng.get_z_bits(p_bits - q_bits);
+        mpz_setbit(cofactor.get_mpz_t(), p_bits - q_bits - 1);// Ensure, the size of cofactor is at-least (p_bits - q_bits)
+        mpz_clrbit(cofactor.get_mpz_t(), 0); // p = cofactor * q + 1 must be odd
+        p = cofactor * q + 1;
+    } while (mpz_sizeinbase(p.get_mpz_t(), 2) < p_bits ||
+             !mpz_probab_prime_p(p.get_mpz_t(), 25));
 
-    //Then determine the generator g, which will define the cyclic group GG
-    mpz_class h, exp;
-    exp = (p - 1) / q;
+    /* Derive the generator of GG. */
+    mpz_class h;
     do {
         h = rng.get_z_range(p - 1) + 1;
-        mpz_powm(g.get_mpz_t(), h.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+        // Note: 'cofactor' comes from the previous calculation
+        mpz_powm(g.get_mpz_t(), h.get_mpz_t(), cofactor.get_mpz_t(), p.get_mpz_t());
     } while (g == 1);
 
-    //Choose 2 as the generator of the multiplicative sub-group ZZ_q*
-    g_q = mpz_class(2);
- 
-    //Randomly choose a prime number r
+    // Initialize parameters for GG'.
+    Init_parameters_for_GG_dashed(p_bits, q_bits);
+
+    // Choose an r_bits-wide prime r.
     do {
         r = rng.get_z_bits(r_bits);
         mpz_nextprime(r.get_mpz_t(), r.get_mpz_t());
     } while (mpz_sizeinbase(r.get_mpz_t(), 2) != r_bits);
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Initialized p,q,g and r");
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Initialized p, p, q, q, g, g' and r");
+    return;
+}
+
+/*
+ * Initialize parameters (p', q', and g') for GG'. Which is a q'-order cyclic subgroup of in ZZ^*_(q.p').
+ The returned g_dashed is the CRT lift that is 1 modulo q and has order q_dashed modulo p_dashed.
+ */
+static void Init_parameters_for_GG_dashed(int p_bits, int q_bits) {
+    /* Choose the order of GG'-q'- greater than q.
+       So that, the security of El-Gamal in GG' remains at least as strong as in GG. */
+    q_dashed = q + 1;
+    mpz_nextprime(q_dashed.get_mpz_t(), q_dashed.get_mpz_t());//We cannot do anything if q_dashed is more than q_bits. No security problem, only performance may get hampered.
+
+    /* Accordingly choose p' of size at least p_bits bits.
+       So that, the security of El-Gamal in GG' remains at least as strong as in GG. */
+    // Choose p' = kq' + 1. 
+    mpz_class k;
+    do {
+        k = rng.get_z_bits(p_bits - q_bits);
+        // Ensure, the size of k is at-least (p_bits - q_bits)
+        mpz_setbit(k.get_mpz_t(), p_bits - q_bits - 1);
+        // Since q' is odd, k must be even for p' to be an odd prime.
+        mpz_clrbit(k.get_mpz_t(), 0);
+        p_dashed = (k * q_dashed) + 1;
+    } while ((mpz_sizeinbase(p_dashed.get_mpz_t(), 2) < p_bits) ||
+             (!mpz_probab_prime_p(p_dashed.get_mpz_t(), 25)));
+
+    /* Pick a generator, g', of GG' */
+    // First choose a generator in ZZ^*_p'
+    mpz_class h, g_p_dashed;
+    do {
+        // Compute a non-identity element
+        h = rng.get_z_range(p_dashed - 1) + 1;
+        // Note: 'k' comes from the previous calculation
+        mpz_powm(g_p_dashed.get_mpz_t(), h.get_mpz_t(), k.get_mpz_t(), p_dashed.get_mpz_t());
+    } while (g_p_dashed == 1);
+
+    // Then find g' such that: g' = 1 (mod q) and
+    // CRT-lift g_p_dashed: g' = 1 (mod q) and
+    // g' = g_p_dashed (mod p').
+    mpz_class q_inv, t;
+    mpz_invert(q_inv.get_mpz_t(), q.get_mpz_t(), p_dashed.get_mpz_t());
+    t = ((g_p_dashed - 1) * q_inv) % p_dashed;
+    g_dashed = 1 + (q * t);
+
+    if (((g_dashed % q) == 1) && ((g_dashed % p_dashed) == g_p_dashed)){
+        PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Successfully chosen g_dashed");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "There is an error, while choosing g_dashed");
+    }
 
     return;
 }
@@ -136,7 +189,7 @@ static int SendInitializedParamsToAllServers(){
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin", q);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin", g);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin", g_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin", r);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin", pk_E);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin", sk_E);
@@ -178,7 +231,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
     (void)sendAll(sock_beta_alpha_con, q.get_str().c_str(), q.get_str().size());
     (void)sendAll(sock_beta_alpha_con, g.get_str().c_str(), g.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, g_q.get_str().c_str(), g_q.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
     (void)sendAll(sock_beta_alpha_con, r.get_str().c_str(), r.get_str().size());
     (void)sendAll(sock_beta_alpha_con, pk_E.get_str().c_str(), pk_E.get_str().size());
     (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
@@ -199,7 +252,7 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
     (void)sendAll(sock_beta_gamma_con, q.get_str().c_str(), q.get_str().size());
     (void)sendAll(sock_beta_gamma_con, g.get_str().c_str(), g.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, g_q.get_str().c_str(), g_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
     (void)sendAll(sock_beta_gamma_con, r.get_str().c_str(), r.get_str().size());
     (void)sendAll(sock_beta_gamma_con, pk_E.get_str().c_str(), pk_E.get_str().size());
     (void)sendAll(sock_beta_gamma_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
@@ -239,7 +292,7 @@ exit:
 static int OneTimeInit_beta(){
     int ret = 0;
 
-    //Initialize p, q, g, GG(cyclic group) and r
+    //Initialize p, p', q, q', g, g', GG, GG' and r
     Init_parameters(P_BITS, Q_BITS, R_BITS);
 
     //Initialize El-Gamal key-pair
@@ -389,7 +442,7 @@ static int PerEpochOperations_beta(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
-    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
@@ -1016,7 +1069,7 @@ static int ProcessClientRequest_beta(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
-    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
@@ -1072,7 +1125,7 @@ static int ProcessClientRequest_beta(){
         (void)sendAll(sock_beta_client_con, p.get_str().c_str(), p.get_str().size());
         (void)sendAll(sock_beta_client_con, q.get_str().c_str(), q.get_str().size());
         (void)sendAll(sock_beta_client_con, g.get_str().c_str(), g.get_str().size());
-        (void)sendAll(sock_beta_client_con, g_q.get_str().c_str(), g_q.get_str().size());
+        (void)sendAll(sock_beta_client_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
         (void)sendAll(sock_beta_client_con, r.get_str().c_str(), r.get_str().size());
         (void)sendAll(sock_beta_client_con, pk_E.get_str().c_str(), pk_E.get_str().size());
         (void)sendAll(sock_beta_client_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
@@ -1472,7 +1525,7 @@ static void TestBlindedExponentiation2() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working. Expected: " + m5.get_str() + " but got: " + decrypted_m5.get_str());
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in ZZ*_q parameters g_q: " + g_q.get_str()+ " pk_E_q: " + pk_E_q.get_str()+ " sk_E_q: " + sk_E_q.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in ZZ*_q parameters g_dashed: " + g_dashed.get_str()+ " pk_E_q: " + pk_E_q.get_str()+ " sk_E_q: " + sk_E_q.get_str());
 
     Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class h = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
@@ -1560,7 +1613,7 @@ static void Test_FHE_DBElement() {
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
-    g_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_q.bin");
+    g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");

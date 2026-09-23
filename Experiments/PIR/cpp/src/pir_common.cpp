@@ -8,7 +8,7 @@
 gmp_randclass rng(gmp_randinit_default);
 
 // Global ElGamal parameters
-mpz_class p, q, r, g, g_q, Rho;
+mpz_class p, p_dashed, q, q_dashed, r, g, g_dashed, Rho;
 std::pair<mpz_class, mpz_class> E_q_Rho;
 
 // El-Gamal encryption keys
@@ -85,11 +85,11 @@ std::pair<mpz_class, mpz_class> ElGamal_keyGen() {
     return std::make_pair(y, x);
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_q_keyGen() {//q and g_q are global parameters and set previously
+std::pair<mpz_class, mpz_class> ElGamal_q_keyGen() {//q and g_dashed are global parameters and set previously
     //Randomness is already initialized during the initialization of the servers
     mpz_class x = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class y;
-    mpz_powm(y.get_mpz_t(), g_q.get_mpz_t(), x.get_mpz_t(), q.get_mpz_t());
+    mpz_powm(y.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), q.get_mpz_t());
 
     return std::make_pair(y, x);
 }
@@ -107,7 +107,7 @@ std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const 
 std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey) {
     mpz_class k = rng.get_z_range(q-1)+1;//Deliberately choosing it in ZZ_q*, instead of ZZ_q
     mpz_class c1, c2;
-    mpz_powm(c1.get_mpz_t(), g_q.get_mpz_t(), k.get_mpz_t(), q.get_mpz_t());
+    mpz_powm(c1.get_mpz_t(), g_dashed.get_mpz_t(), k.get_mpz_t(), q.get_mpz_t());
     mpz_class temp;
     mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), q.get_mpz_t());
     c2 = (message * temp) % q;

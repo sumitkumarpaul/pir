@@ -135,7 +135,8 @@ extern std::string reinit_shelter_update_message;
 extern gmp_randclass rng;
 
 // Global ElGamal parameters
-extern mpz_class p, q, r, g, g_q, Rho;
+extern mpz_class p, p_dashed, q, q_dashed, r, g, g_dashed, Rho;
+
 extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
