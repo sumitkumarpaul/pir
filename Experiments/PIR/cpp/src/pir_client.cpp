@@ -113,14 +113,14 @@ static int OneTimeInit_client() {
     }
     pk_E = mpz_class(std::string(net_buf, received_sz));
 
-    // Receive pk_E_q
+    // Receive pk_E_dashed
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_q from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_dashed from Server Beta");
         return -1;
     }
-    pk_E_q = mpz_class(std::string(net_buf, received_sz));
+    pk_E_dashed = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
     ret_recv = recvFile(sock_client_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
@@ -166,7 +166,7 @@ static int OneTimeInit_client() {
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "r.bin", r);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E.bin", pk_E);
-    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E_q.bin", pk_E_q);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E_dashed.bin", pk_E_dashed);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_1.bin", E_q_Rho.first);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_2.bin", E_q_Rho.second);
 
@@ -214,7 +214,7 @@ static int ShelterTagDetermination_Client(uint64_t I){
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
     
     /* Step 1 */
-    E_q_Rho_pow_I = ElGamal_q_exp_ct(E_q_Rho, mpz_class(I), pk_E_q);
+    E_q_Rho_pow_I = ElGamal_dashed_exp_ct(E_q_Rho, mpz_class(I), pk_E_dashed);
 
     /* Step 2.1 */
     h_C = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
@@ -222,10 +222,10 @@ static int ShelterTagDetermination_Client(uint64_t I){
     mpz_invert(h_C_1.get_mpz_t(), h_C.get_mpz_t(), q.get_mpz_t());
 
     /* Step 2.2.1 */
-    E_q_h_C = ElGamal_q_encrypt(h_C, pk_E_q);
+    E_q_h_C = ElGamal_dashed_encrypt(h_C, pk_E_dashed);
 
     /* Step 2.2.2 */
-    E_q_Rho_pow_I__mul__h_C = ElGamal_q_mult_ct(E_q_Rho_pow_I, E_q_h_C);
+    E_q_Rho_pow_I__mul__h_C = ElGamal_dashed_mult_ct(E_q_Rho_pow_I, E_q_h_C);
 
     /* Step 2.3.1 */
     (void)sendAll(sock_client_to_beta, E_q_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_q_Rho_pow_I__mul__h_C.first.get_str().size());

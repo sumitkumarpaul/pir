@@ -8,12 +8,12 @@
 gmp_randclass rng(gmp_randinit_default);
 
 // Global ElGamal parameters
-mpz_class p, p_dashed, q, q_dashed, r, g, g_dashed, Rho;
+mpz_class p, p_dashed, q, q_dashed, qp_dashed, r, g, g_dashed, Rho;
 std::pair<mpz_class, mpz_class> E_q_Rho;
 
 // El-Gamal encryption keys
-mpz_class pk_E, pk_E_q;
-mpz_class sk_E, sk_E_q;
+mpz_class pk_E, pk_E_dashed;
+mpz_class sk_E, sk_E_dashed;
 
 
 // FHE related
@@ -85,11 +85,11 @@ std::pair<mpz_class, mpz_class> ElGamal_keyGen() {
     return std::make_pair(y, x);
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_q_keyGen() {//q and g_dashed are global parameters and set previously
+std::pair<mpz_class, mpz_class> ElGamal_dashed_keyGen() {//q and g_dashed are global parameters and set previously
     //Randomness is already initialized during the initialization of the servers
-    mpz_class x = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    mpz_class x = rng.get_z_range(q_dashed);//q_dashed is the order of GG'
     mpz_class y;
-    mpz_powm(y.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), q.get_mpz_t());
+    mpz_powm(y.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), qp_dashed.get_mpz_t());
 
     return std::make_pair(y, x);
 }
@@ -104,13 +104,15 @@ std::pair<mpz_class, mpz_class> ElGamal_encrypt(const mpz_class& message, const 
     return std::make_pair(c1, c2);
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey) {
-    mpz_class k = rng.get_z_range(q-1)+1;//Deliberately choosing it in ZZ_q*, instead of ZZ_q
+std::pair<mpz_class, mpz_class> ElGamal_dashed_encrypt(const mpz_class& message, const mpz_class& publicKey) {
+    mpz_class k = rng.get_z_range(q_dashed);
     mpz_class c1, c2;
-    mpz_powm(c1.get_mpz_t(), g_dashed.get_mpz_t(), k.get_mpz_t(), q.get_mpz_t());
+    mpz_powm(c1.get_mpz_t(), g_dashed.get_mpz_t(), k.get_mpz_t(), qp_dashed.get_mpz_t());
     mpz_class temp;
-    mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), q.get_mpz_t());
-    c2 = (message * temp) % q;
+    mpz_powm(temp.get_mpz_t(), publicKey.get_mpz_t(), k.get_mpz_t(), qp_dashed.get_mpz_t());
+    c2 = (message * temp) % qp_dashed;
+
+    #warning TODO: Check whether ElGamal_dashed is working
     return std::make_pair(c1, c2);
 }
 
@@ -123,13 +125,14 @@ mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, con
     return (c2 * inv_temp) % p;
 }
 
-mpz_class ElGamal_q_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
+mpz_class ElGamal_dashed_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey) {
     mpz_class c1 = ciphertext.first;
     mpz_class c2 = ciphertext.second;
     mpz_class temp, inv_temp;
-    mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), q.get_mpz_t());
-    mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), q.get_mpz_t());
-    return (c2 * inv_temp) % q;
+
+    mpz_powm(temp.get_mpz_t(), c1.get_mpz_t(), privateKey.get_mpz_t(), qp_dashed.get_mpz_t());
+    mpz_invert(inv_temp.get_mpz_t(), temp.get_mpz_t(), qp_dashed.get_mpz_t());
+    return (c2 * inv_temp) % qp_dashed;
 }
 
 std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2) {
@@ -138,9 +141,9 @@ std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_c
     return std::make_pair(cm1, cm2);
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_q_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2) {
-    mpz_class cm1 = (ciphertext1.first * ciphertext2.first) % q;
-    mpz_class cm2 = (ciphertext1.second * ciphertext2.second) % q;
+std::pair<mpz_class, mpz_class> ElGamal_dashed_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2) {
+    mpz_class cm1 = (ciphertext1.first * ciphertext2.first) % qp_dashed;
+    mpz_class cm2 = (ciphertext1.second * ciphertext2.second) % qp_dashed;
     return std::make_pair(cm1, cm2);
 }
 
@@ -157,10 +160,10 @@ std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_cl
 #endif
 }
 
-std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
+std::pair<mpz_class, mpz_class> ElGamal_dashed_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey) {
     mpz_class c1, c2;
-    mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), q.get_mpz_t());
-    mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), q.get_mpz_t());
+    mpz_powm(c1.get_mpz_t(), ciphertext.first.get_mpz_t(), exp.get_mpz_t(), qp_dashed.get_mpz_t());
+    mpz_powm(c2.get_mpz_t(), ciphertext.second.get_mpz_t(), exp.get_mpz_t(), qp_dashed.get_mpz_t());
 
 #if 0 /* For the time being donot multiply with ciphertext of 1, since anyway our protocol will multiply with E(h_C) */
     auto [cI1, cI2] = ElGamal_encrypt(mpz_class(1), publicKey);

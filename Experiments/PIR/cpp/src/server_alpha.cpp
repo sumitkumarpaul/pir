@@ -173,6 +173,33 @@ static int OneTimeInit_alpha() {
     }
     g = mpz_class(std::string(net_buf, received_sz));
 
+    // Receive p_dashed
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive p_dashed from Server Beta");
+        return -1;
+    }
+    p_dashed = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive q_dashed
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive q_dashed from Server Beta");
+        return -1;
+    }
+    q_dashed = mpz_class(std::string(net_buf, received_sz));
+
+    // Receive qp_dashed
+    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive qp_dashed from Server Beta");
+        return -1;
+    }
+    qp_dashed = mpz_class(std::string(net_buf, received_sz));
+
     // Receive g_dashed
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
@@ -200,14 +227,14 @@ static int OneTimeInit_alpha() {
     }
     pk_E = mpz_class(std::string(net_buf, received_sz));
 
-    // Receive pk_E_q
+    // Receive pk_E_dashed
     ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_q from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive pk_E_dashed from Server Beta");
         return -1;
     }
-    pk_E_q = mpz_class(std::string(net_buf, received_sz));
+    pk_E_dashed = mpz_class(std::string(net_buf, received_sz));
 
     // Receive FHEcryptoContext
     ret_recv = recvFile(sock_alpha_to_beta, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin");
@@ -267,7 +294,7 @@ static int OneTimeInit_alpha() {
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin", r);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin", pk_E);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin", pk_E_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_dashed.bin", pk_E_dashed);
 
     //Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
@@ -343,7 +370,7 @@ static int PerEpochOperations_alpha(){
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_dashed.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
@@ -956,7 +983,7 @@ static int ProcessClientRequest_alpha(){
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_dashed.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
 
     std::ifstream emkeys(ONE_TIME_MATERIALS_LOCATION_ALPHA + "emkeyfile.bin", std::ios::in | std::ios::binary);
@@ -1291,7 +1318,7 @@ static int TestShelterDPFSearch_alpha() {
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E_dashed.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_ALPHA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);

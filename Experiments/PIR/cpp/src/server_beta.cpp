@@ -155,6 +155,8 @@ static void Init_parameters_for_GG_dashed(int p_bits, int q_bits) {
     } while ((mpz_sizeinbase(p_dashed.get_mpz_t(), 2) < p_bits) ||
              (!mpz_probab_prime_p(p_dashed.get_mpz_t(), 25)));
 
+    qp_dashed = (q * p_dashed);//Modulus used for GG' is (q*p_dashed)
+
     /* Pick a generator, g', of GG' */
     // First choose a generator in ZZ^*_p'
     mpz_class h, g_p_dashed;
@@ -190,11 +192,14 @@ static int SendInitializedParamsToAllServers(){
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin", q);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin", g);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin", g_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p_dashed.bin", p_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q_dashed.bin", q_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "qp_dashed.bin", qp_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin", r);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin", pk_E);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin", sk_E);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin", pk_E_q);
-    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin", sk_E_q);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin", pk_E_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin", sk_E_dashed);
 
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::SerializeToFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
@@ -231,10 +236,13 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_alpha_con, p.get_str().c_str(), p.get_str().size());
     (void)sendAll(sock_beta_alpha_con, q.get_str().c_str(), q.get_str().size());
     (void)sendAll(sock_beta_alpha_con, g.get_str().c_str(), g.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, p_dashed.get_str().c_str(), p_dashed.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, q_dashed.get_str().c_str(), q_dashed.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, qp_dashed.get_str().c_str(), qp_dashed.get_str().size());
     (void)sendAll(sock_beta_alpha_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
     (void)sendAll(sock_beta_alpha_con, r.get_str().c_str(), r.get_str().size());
     (void)sendAll(sock_beta_alpha_con, pk_E.get_str().c_str(), pk_E.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+    (void)sendAll(sock_beta_alpha_con, pk_E_dashed.get_str().c_str(), pk_E_dashed.get_str().size());
     (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin");
     Serial::SerializeToFile(TMP_FILE, pk_F, SerType::BINARY);
     (void)sendFile(sock_beta_alpha_con, net_buf, sizeof(net_buf), TMP_FILE);
@@ -252,10 +260,13 @@ static int SendInitializedParamsToAllServers(){
     (void)sendAll(sock_beta_gamma_con, p.get_str().c_str(), p.get_str().size());
     (void)sendAll(sock_beta_gamma_con, q.get_str().c_str(), q.get_str().size());
     (void)sendAll(sock_beta_gamma_con, g.get_str().c_str(), g.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, p_dashed.get_str().c_str(), p_dashed.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, q_dashed.get_str().c_str(), q_dashed.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, qp_dashed.get_str().c_str(), qp_dashed.get_str().size());
     (void)sendAll(sock_beta_gamma_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
     (void)sendAll(sock_beta_gamma_con, r.get_str().c_str(), r.get_str().size());
     (void)sendAll(sock_beta_gamma_con, pk_E.get_str().c_str(), pk_E.get_str().size());
-    (void)sendAll(sock_beta_gamma_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+    (void)sendAll(sock_beta_gamma_con, pk_E_dashed.get_str().c_str(), pk_E_dashed.get_str().size());
     Serial::SerializeToFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
     (void)sendFile(sock_beta_gamma_con, net_buf, sizeof(net_buf), TMP_FILE);    
     Serial::SerializeToFile(TMP_FILE, pk_F, SerType::BINARY);
@@ -300,8 +311,8 @@ static int OneTimeInit_beta(){
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair");
 
     //Initialize El-Gamal_q key-pair
-    std::tie(pk_E_q, sk_E_q) = ElGamal_q_keyGen();
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair in ZZ*_q");
+    std::tie(pk_E_dashed, sk_E_dashed) = ElGamal_dashed_keyGen();
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Generated El-Gamal key-pair in GG'");
 
     //Initialize FHE key-pair
     ret = FHE_keyGen();
@@ -315,7 +326,7 @@ static int OneTimeInit_beta(){
 
     FHE_EncOfOnes(vectorOnesforElement_ct, vectorOnesforTag_ct, bitOne_ct);
 
-    //TODO send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
+    //send {p, q, r, g, pk_E, pk_F} to other parties over network in serialized format
     ret = SendInitializedParamsToAllServers();
 
     //Other parties must store them in their own pir_common.cpp file
@@ -446,8 +457,8 @@ static int PerEpochOperations_beta(){
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
-    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
+    sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
@@ -472,7 +483,7 @@ static int PerEpochOperations_beta(){
     Rho = rng.get_z_range(((q-1)/2)) + 1;
 
     /* 2. TODO. And then prepare E_q(Rho) */
-    E_q_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
+    E_q_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
 
     /* During each request, the client first fetches this from the server_beta, currently storing them in the disk */
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin", Rho);
@@ -785,7 +796,7 @@ static int ShelterTagDetermination_beta(){
     E_q_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
 
     /* Step 3 */
-    Rho_pow_I__mul__h_C = ElGamal_q_decrypt(E_q_Rho_pow_I__mul__h_C, sk_E_q);
+    Rho_pow_I__mul__h_C = ElGamal_dashed_decrypt(E_q_Rho_pow_I__mul__h_C, sk_E_dashed);
 
     /* Step 4.1 perform g^{Rho_pow_I__mul__h_C} mod p */
     mpz_powm(g_pow_Rho_pow_I__mul__h_C.get_mpz_t(), g.get_mpz_t(), Rho_pow_I__mul__h_C.get_mpz_t(), p.get_mpz_t());
@@ -1073,8 +1084,8 @@ static int ProcessClientRequest_beta(){
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
-    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
+    sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
     E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
     E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
     Rho = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin");
@@ -1128,7 +1139,7 @@ static int ProcessClientRequest_beta(){
         (void)sendAll(sock_beta_client_con, g_dashed.get_str().c_str(), g_dashed.get_str().size());
         (void)sendAll(sock_beta_client_con, r.get_str().c_str(), r.get_str().size());
         (void)sendAll(sock_beta_client_con, pk_E.get_str().c_str(), pk_E.get_str().size());
-        (void)sendAll(sock_beta_client_con, pk_E_q.get_str().c_str(), pk_E_q.get_str().size());
+        (void)sendAll(sock_beta_client_con, pk_E_dashed.get_str().c_str(), pk_E_dashed.get_str().size());
         Serial::SerializeToFile(TMP_FILE, FHEcryptoContext, SerType::BINARY);
         (void)sendFile(sock_beta_client_con, net_buf, sizeof(net_buf), TMP_FILE);        
         Serial::SerializeToFile(TMP_FILE, pk_F, SerType::BINARY);
@@ -1476,6 +1487,32 @@ static void TestBlindedExponentiation1() {
 
 static void TestBlindedExponentiation2() {
     int ret;
+    
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "qp_dashed.bin");
+    g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
+    sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
+    sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
+    E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
+    E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
+    Rho = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin");
+
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+
+
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
     //Choose random message and random exponent
@@ -1525,7 +1562,7 @@ static void TestBlindedExponentiation2() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working. Expected: " + m5.get_str() + " but got: " + decrypted_m5.get_str());
     }
 
-    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in ZZ*_q parameters g_dashed: " + g_dashed.get_str()+ " pk_E_q: " + pk_E_q.get_str()+ " sk_E_q: " + sk_E_q.get_str());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in GG' parameters g_dashed: " + g_dashed.get_str()+ " pk_E_dashed: " + pk_E_dashed.get_str()+ " sk_E_dashed: " + sk_E_dashed.get_str());
 
     Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class h = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
@@ -1539,24 +1576,24 @@ static void TestBlindedExponentiation2() {
     mpz_class I = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are Rho: " + Rho.get_str() + " h: " + h.get_str()+ " h_1: " + h_1.get_str() + " I: " + I.get_str() + " alpha: " + alpha.get_str() + " alpha_1: " + alpha_1.get_str());
 
-    mpz_class Rho_h = (Rho*h)%q;
+    mpz_class Rho_h = (Rho*h)%qp_dashed;
     mpz_class Rho_pow_I;
     mpz_powm(Rho_pow_I.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());
     mpz_class g_pow_Rho_pow_I;
     mpz_powm(g_pow_Rho_pow_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
-    mpz_class Rho_pow_I__h = (Rho_pow_I*h)%q;//(Rho^I)*h
+    mpz_class Rho_pow_I__h = (Rho_pow_I*h)%qp_dashed;//(Rho^I)*h
 
-    std::pair<mpz_class, mpz_class> E_Rho = ElGamal_q_encrypt(Rho, pk_E_q);
-    std::pair<mpz_class, mpz_class> E_h = ElGamal_q_encrypt(h, pk_E_q);
-    std::pair<mpz_class, mpz_class> E_Rho_h = ElGamal_q_mult_ct(E_Rho, E_h);
-    std::pair<mpz_class, mpz_class> E_Rho_pow_I = ElGamal_q_exp_ct(E_Rho, I, pk_E_q);
-    std::pair<mpz_class, mpz_class> E_Rho_pow_I__h = ElGamal_q_mult_ct(E_Rho_pow_I, E_h);
+    std::pair<mpz_class, mpz_class> E_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_h = ElGamal_dashed_encrypt(h, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_Rho_h = ElGamal_dashed_mult_ct(E_Rho, E_h);
+    std::pair<mpz_class, mpz_class> E_Rho_pow_I = ElGamal_dashed_exp_ct(E_Rho, I, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_Rho_pow_I__h = ElGamal_dashed_mult_ct(E_Rho_pow_I, E_h);
 
-    mpz_class decrypted_Rho = ElGamal_q_decrypt(E_Rho, sk_E_q);
-    mpz_class decrypted_Rho_h = ElGamal_q_decrypt(E_Rho_h, sk_E_q);
-    mpz_class decrypted_Rho_pow_I = ElGamal_q_decrypt(E_Rho_pow_I, sk_E_q);
-    mpz_class decrypted_Rho_pow_I__h = ElGamal_q_decrypt(E_Rho_pow_I__h, sk_E_q);
+    mpz_class decrypted_Rho = ElGamal_dashed_decrypt(E_Rho, sk_E_dashed);
+    mpz_class decrypted_Rho_h = ElGamal_dashed_decrypt(E_Rho_h, sk_E_dashed);
+    mpz_class decrypted_Rho_pow_I = ElGamal_dashed_decrypt(E_Rho_pow_I, sk_E_dashed);
+    mpz_class decrypted_Rho_pow_I__h = ElGamal_dashed_decrypt(E_Rho_pow_I__h, sk_E_dashed);
    
     //Server beta decrypts and perform g^{decrypted_Rho_pow_I__h} mod p
     mpz_class g_pow_Rho_pow_I__h;
@@ -1577,27 +1614,27 @@ static void TestBlindedExponentiation2() {
     mpz_class decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1 = ElGamal_decrypt(E_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1, sk_E);
 
     if (decrypted_Rho == Rho) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal encryption works in ZZ*_q");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal encryption works in GG'");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal encryption is not working in ZZ*_q. Expected: " + Rho.get_str() + " but got: " + decrypted_Rho.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal encryption is not working in GG'. Expected: " + Rho.get_str() + " but got: " + decrypted_Rho.get_str());
     }
 
     if (decrypted_Rho_h == Rho_h) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication works in ZZ*_q");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication works in GG'");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication is not working in ZZ*_q. Expected: " + Rho_h.get_str() + " but got: " + decrypted_Rho_h.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication is not working in GG'. Expected: " + Rho_h.get_str() + " but got: " + decrypted_Rho_h.get_str());
     }
 
     if (decrypted_Rho_pow_I == Rho_pow_I) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal exponentiation works in ZZ*_q");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal exponentiation works in GG'");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal exponentiation is not working in ZZ*_q. Expected: " + Rho_pow_I.get_str() + " but got: " + decrypted_Rho_pow_I.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal exponentiation is not working in GG'. Expected: " + Rho_pow_I.get_str() + " but got: " + decrypted_Rho_pow_I.get_str());
     }
 
     if (decrypted_Rho_pow_I__h == Rho_pow_I__h) {
-        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation works in ZZ*_q");
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation works in GG'");
     } else {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working in ZZ*_q. Expected: " + Rho_pow_I__h.get_str() + " but got: " + decrypted_Rho_pow_I__h.get_str());
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working in GG'. Expected: " + Rho_pow_I__h.get_str() + " but got: " + decrypted_Rho_pow_I__h.get_str());
     }
 
     if (decrypted_g_pow_Rho_pow_I__h_alpha_h_1_alpha_1 == g_pow_Rho_pow_I) {
@@ -1617,8 +1654,8 @@ static void Test_FHE_DBElement() {
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
-    pk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_q.bin");
-    sk_E_q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_q.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
+    sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
@@ -2201,7 +2238,8 @@ static void TestSrv_beta()
     TestShuffDBFetch_beta();
 #endif
     //Test_FHE_DBElement();
-    Test_binFHE();
+    //Test_binFHE();
+    TestBlindedExponentiation2();
 }
 
 #if TEST_SHUFF_DB_FETCH

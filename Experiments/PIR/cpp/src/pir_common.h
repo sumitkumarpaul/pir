@@ -135,11 +135,11 @@ extern std::string reinit_shelter_update_message;
 extern gmp_randclass rng;
 
 // Global ElGamal parameters
-extern mpz_class p, p_dashed, q, q_dashed, r, g, g_dashed, Rho;
+extern mpz_class p, p_dashed, q, q_dashed, qp_dashed, r, g, g_dashed, Rho;
 
 extern std::pair<mpz_class, mpz_class> E_q_Rho;
 
-extern mpz_class pk_E, sk_E, pk_E_q, sk_E_q;
+extern mpz_class pk_E, sk_E, pk_E_dashed, sk_E_dashed;
 
 extern PublicKey<DCRTPoly> pk_F;
 extern PrivateKey<DCRTPoly> sk_F;
@@ -186,11 +186,11 @@ extern mpz_class ElGamal_decrypt(const std::pair<mpz_class, mpz_class>& cipherte
 extern std::pair<mpz_class, mpz_class> ElGamal_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
 extern std::pair<mpz_class, mpz_class> ElGamal_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
 
-extern std::pair<mpz_class, mpz_class> ElGamal_q_keyGen();
-extern std::pair<mpz_class, mpz_class> ElGamal_q_encrypt(const mpz_class& message, const mpz_class& publicKey);
-extern mpz_class ElGamal_q_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
-extern std::pair<mpz_class, mpz_class> ElGamal_q_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
-extern std::pair<mpz_class, mpz_class> ElGamal_q_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
+extern std::pair<mpz_class, mpz_class> ElGamal_dashed_keyGen();
+extern std::pair<mpz_class, mpz_class> ElGamal_dashed_encrypt(const mpz_class& message, const mpz_class& publicKey);
+extern mpz_class ElGamal_dashed_decrypt(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& privateKey);
+extern std::pair<mpz_class, mpz_class> ElGamal_dashed_mult_ct(const std::pair<mpz_class, mpz_class>& ciphertext1, const std::pair<mpz_class, mpz_class>& ciphertext2);
+extern std::pair<mpz_class, mpz_class> ElGamal_dashed_exp_ct(const std::pair<mpz_class, mpz_class>& ciphertext, const mpz_class& exp, const mpz_class& publicKey);
 
 // Networking related functions
 extern void FinishAcceptingSocket(int server_fd, int new_socket);
