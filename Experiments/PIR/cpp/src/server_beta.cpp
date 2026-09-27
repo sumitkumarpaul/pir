@@ -1582,7 +1582,7 @@ static void TestBlindedExponentiation2() {
     mpz_class g_pow_Rho_pow_I;
     mpz_powm(g_pow_Rho_pow_I.get_mpz_t(), g.get_mpz_t(), Rho_pow_I.get_mpz_t(), p.get_mpz_t());
 
-    mpz_class Rho_pow_I__h = (Rho_pow_I*h)%qp_dashed;//(Rho^I)*h
+    mpz_class Rho_pow_I__h = (Rho_pow_I*h)%q;//(Rho^I)*h: Since G is a group of order q, Rho_pow_I*h = (Rho_pow_I*h)%q.
 
     std::pair<mpz_class, mpz_class> E_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
     std::pair<mpz_class, mpz_class> E_h = ElGamal_dashed_encrypt(h, pk_E_dashed);
@@ -1593,7 +1593,10 @@ static void TestBlindedExponentiation2() {
     mpz_class decrypted_Rho = ElGamal_dashed_decrypt(E_Rho, sk_E_dashed);
     mpz_class decrypted_Rho_h = ElGamal_dashed_decrypt(E_Rho_h, sk_E_dashed);
     mpz_class decrypted_Rho_pow_I = ElGamal_dashed_decrypt(E_Rho_pow_I, sk_E_dashed);
+    decrypted_Rho_pow_I = decrypted_Rho_pow_I % q;//Change the result from mod qp' to mod q
+
     mpz_class decrypted_Rho_pow_I__h = ElGamal_dashed_decrypt(E_Rho_pow_I__h, sk_E_dashed);
+    decrypted_Rho_pow_I__h = decrypted_Rho_pow_I__h % q;//Change the result from mod qp' to mod q
    
     //Server beta decrypts and perform g^{decrypted_Rho_pow_I__h} mod p
     mpz_class g_pow_Rho_pow_I__h;
