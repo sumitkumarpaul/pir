@@ -304,6 +304,9 @@ static int PerEpochOperations_gamma(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "qp_dashed.bin");
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E.bin");
@@ -964,6 +967,9 @@ static int ProcessClientRequest_gamma(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "qp_dashed.bin");
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E.bin");

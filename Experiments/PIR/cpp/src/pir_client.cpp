@@ -141,23 +141,23 @@ static int OneTimeInit_client() {
     }
     Serial::DeserializeFromFile(TMP_FILE, pk_F, SerType::BINARY);
 
-    // Receive E_q_Rho.first
+    // Receive E_dashed_Rho.first
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho.first from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho.first from Server Beta");
         return -1;
     }
-    E_q_Rho.first = mpz_class(std::string(net_buf, received_sz));
+    E_dashed_Rho.first = mpz_class(std::string(net_buf, received_sz));
 
-    // Receive E_q_Rho.second
+    // Receive E_dashed_Rho.second
     ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho.second from Server Beta");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho.second from Server Beta");
         return -1;
     }
-    E_q_Rho.second = mpz_class(std::string(net_buf, received_sz));
+    E_dashed_Rho.second = mpz_class(std::string(net_buf, received_sz));
 
     //Save parameters to local files
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "p.bin", p);
@@ -167,8 +167,8 @@ static int OneTimeInit_client() {
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "r.bin", r);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E.bin", pk_E);
     export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "pk_E_dashed.bin", pk_E_dashed);
-    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_1.bin", E_q_Rho.first);
-    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_q_Rho_2.bin", E_q_Rho.second);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_dashed_Rho_1.bin", E_dashed_Rho.first);
+    export_to_file_from_mpz_class(MATERIALS_LOCATION_CLIENT + "E_dashed_Rho_2.bin", E_dashed_Rho.second);
 
     Serial::SerializeToFile(MATERIALS_LOCATION_CLIENT + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::SerializeToFile(MATERIALS_LOCATION_CLIENT + "pk_F.bin", pk_F, SerType::BINARY);
@@ -202,10 +202,10 @@ static int FinClient(){
 static int ShelterTagDetermination_Client(uint64_t I){
     int ret = -1;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C_h_alpha0;
-    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I;
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I;
     mpz_class h_C, h_C_1;
-    std::pair<mpz_class, mpz_class> E_q_h_C;
-    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I__mul__h_C;
+    std::pair<mpz_class, mpz_class> E_dashed_h_C;
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I__mul__h_C;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_h_alpha0;
 
     size_t received_sz = 0;
@@ -214,7 +214,7 @@ static int ShelterTagDetermination_Client(uint64_t I){
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
     
     /* Step 1 */
-    E_q_Rho_pow_I = ElGamal_dashed_exp_ct(E_q_Rho, mpz_class(I), pk_E_dashed);
+    E_dashed_Rho_pow_I = ElGamal_dashed_exp_ct(E_dashed_Rho, mpz_class(I), pk_E_dashed);
 
     /* Step 2.1 */
     h_C = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
@@ -222,14 +222,14 @@ static int ShelterTagDetermination_Client(uint64_t I){
     mpz_invert(h_C_1.get_mpz_t(), h_C.get_mpz_t(), q.get_mpz_t());
 
     /* Step 2.2.1 */
-    E_q_h_C = ElGamal_dashed_encrypt(h_C, pk_E_dashed);
+    E_dashed_h_C = ElGamal_dashed_encrypt(h_C, pk_E_dashed);
 
     /* Step 2.2.2 */
-    E_q_Rho_pow_I__mul__h_C = ElGamal_dashed_mult_ct(E_q_Rho_pow_I, E_q_h_C);
+    E_dashed_Rho_pow_I__mul__h_C = ElGamal_dashed_mult_ct(E_dashed_Rho_pow_I, E_dashed_h_C);
 
     /* Step 2.3.1 */
-    (void)sendAll(sock_client_to_beta, E_q_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_q_Rho_pow_I__mul__h_C.first.get_str().size());
-    (void)sendAll(sock_client_to_beta, E_q_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_q_Rho_pow_I__mul__h_C.second.get_str().size());
+    (void)sendAll(sock_client_to_beta, E_dashed_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_dashed_Rho_pow_I__mul__h_C.first.get_str().size());
+    (void)sendAll(sock_client_to_beta, E_dashed_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_dashed_Rho_pow_I__mul__h_C.second.get_str().size());
 
     // Step 6.1 Receive the first component of E_g_pow_Rho_pow_I__mul__h_C_h_alpha0
     ret_recv = recvAll(sock_client_to_alpha, net_buf, sizeof(net_buf), &received_sz);

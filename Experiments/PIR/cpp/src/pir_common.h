@@ -137,7 +137,7 @@ extern gmp_randclass rng;
 // Global ElGamal parameters
 extern mpz_class p, p_dashed, q, q_dashed, qp_dashed, r, g, g_dashed, Rho;
 
-extern std::pair<mpz_class, mpz_class> E_q_Rho;
+extern std::pair<mpz_class, mpz_class> E_dashed_Rho;
 
 extern mpz_class pk_E, sk_E, pk_E_dashed, sk_E_dashed;
 

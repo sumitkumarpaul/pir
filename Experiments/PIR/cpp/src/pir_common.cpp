@@ -9,7 +9,7 @@ gmp_randclass rng(gmp_randinit_default);
 
 // Global ElGamal parameters
 mpz_class p, p_dashed, q, q_dashed, qp_dashed, r, g, g_dashed, Rho;
-std::pair<mpz_class, mpz_class> E_q_Rho;
+std::pair<mpz_class, mpz_class> E_dashed_Rho;
 
 // El-Gamal encryption keys
 mpz_class pk_E, pk_E_dashed;

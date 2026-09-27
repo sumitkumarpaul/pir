@@ -482,13 +482,13 @@ static int PerEpochOperations_beta(){
     // 1. Randomly choose Rho in ZZ_((q-1)/2)*
     Rho = rng.get_z_range(((q-1)/2)) + 1;
 
-    /* 2. TODO. And then prepare E_q(Rho) */
-    E_q_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
+    /* 2. TODO. And then prepare E_dashed(Rho) */
+    E_dashed_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
 
     /* During each request, the client first fetches this from the server_beta, currently storing them in the disk */
     export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin", Rho);
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin", E_q_Rho.first);
-    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin", E_q_Rho.second);
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_dashed_Rho_1.bin", E_dashed_Rho.first);
+    export_to_file_from_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_dashed_Rho_2.bin", E_dashed_Rho.second);
 
     /* 3. Create Mask database */ 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Creating mask database with random contents:"+ MASK_DATABASE_LOCATION_BETA);
@@ -764,7 +764,7 @@ static int ShelterTagDetermination_beta(){
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv = 0;
-    std::pair<mpz_class, mpz_class> E_q_Rho_pow_I__mul__h_C;
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I__mul__h_C;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C;
     mpz_class Rho_pow_I__mul__h_C;
@@ -773,30 +773,30 @@ static int ShelterTagDetermination_beta(){
     mpz_class widehat_T_I;    
 
     /* Step 2.3.2.1 of the sequence diagram */
-    // Receive E_q_Rho_pow_I__mul__h_C.first
+    // Receive E_dashed_Rho_pow_I__mul__h_C.first
     ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho_pow_I__mul__h_C.first from the client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho_pow_I__mul__h_C.first from the client");
         return -1;
     }
     /* From now on, starting client request processing */
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta starts client request processing from this point");
 
-    E_q_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
+    E_dashed_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
 
     /* Step 2.3.2.1 of the sequence diagram */
-    // Receive E_q_Rho_pow_I__mul__h_C.second
+    // Receive E_dashed_Rho_pow_I__mul__h_C.second
     ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_q_Rho_pow_I__mul__h_C.second from the client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho_pow_I__mul__h_C.second from the client");
         return -1;
     }
-    E_q_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
+    E_dashed_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
 
     /* Step 3 */
-    Rho_pow_I__mul__h_C = ElGamal_dashed_decrypt(E_q_Rho_pow_I__mul__h_C, sk_E_dashed);
+    Rho_pow_I__mul__h_C = ElGamal_dashed_decrypt(E_dashed_Rho_pow_I__mul__h_C, sk_E_dashed);
 
     /* Step 4.1 perform g^{Rho_pow_I__mul__h_C} mod p */
     mpz_powm(g_pow_Rho_pow_I__mul__h_C.get_mpz_t(), g.get_mpz_t(), Rho_pow_I__mul__h_C.get_mpz_t(), p.get_mpz_t());
@@ -1080,14 +1080,17 @@ static int ProcessClientRequest_beta(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "qp_dashed.bin");    
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
     pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
     sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
-    E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
-    E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
+    E_dashed_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_dashed_Rho_1.bin");
+    E_dashed_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_dashed_Rho_2.bin");
     Rho = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin");
 
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
@@ -1144,8 +1147,8 @@ static int ProcessClientRequest_beta(){
         (void)sendFile(sock_beta_client_con, net_buf, sizeof(net_buf), TMP_FILE);        
         Serial::SerializeToFile(TMP_FILE, pk_F, SerType::BINARY);
         (void)sendFile(sock_beta_client_con, net_buf, sizeof(net_buf), TMP_FILE);        
-        (void)sendAll(sock_beta_client_con, E_q_Rho.first.get_str().c_str(), E_q_Rho.first.get_str().size());
-        (void)sendAll(sock_beta_client_con, E_q_Rho.second.get_str().c_str(), E_q_Rho.second.get_str().size());
+        (void)sendAll(sock_beta_client_con, E_dashed_Rho.first.get_str().c_str(), E_dashed_Rho.first.get_str().size());
+        (void)sendAll(sock_beta_client_con, E_dashed_Rho.second.get_str().c_str(), E_dashed_Rho.second.get_str().size());
 
         /* Even if for the request number 1, the determined shelter tag is not required to be used.
            Still, we cannot move this function within if (K > 0) block, since the client interaction is involved in this function. */
@@ -1487,6 +1490,8 @@ static void TestBlindedExponentiation1() {
 
 static void TestBlindedExponentiation2() {
     int ret;
+
+    // "one_time_init" must run before this test function
     
     /* First of all retrieve all the one-time initialized materials from the saved location */
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
@@ -1501,9 +1506,6 @@ static void TestBlindedExponentiation2() {
     sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
     pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
     sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
-    E_q_Rho.first = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_1.bin");
-    E_q_Rho.second = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "E_q_Rho_2.bin");
-    Rho = import_from_file_to_mpz_class(PER_EPOCH_MATERIALS_LOCATION_BETA + "Rho.bin");
 
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
     Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
@@ -1584,18 +1586,18 @@ static void TestBlindedExponentiation2() {
 
     mpz_class Rho_pow_I__h = (Rho_pow_I*h)%q;//(Rho^I)*h: Since G is a group of order q, Rho_pow_I*h = (Rho_pow_I*h)%q.
 
-    std::pair<mpz_class, mpz_class> E_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
-    std::pair<mpz_class, mpz_class> E_h = ElGamal_dashed_encrypt(h, pk_E_dashed);
-    std::pair<mpz_class, mpz_class> E_Rho_h = ElGamal_dashed_mult_ct(E_Rho, E_h);
-    std::pair<mpz_class, mpz_class> E_Rho_pow_I = ElGamal_dashed_exp_ct(E_Rho, I, pk_E_dashed);
-    std::pair<mpz_class, mpz_class> E_Rho_pow_I__h = ElGamal_dashed_mult_ct(E_Rho_pow_I, E_h);
+    std::pair<mpz_class, mpz_class> E_dashed_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_dashed_h = ElGamal_dashed_encrypt(h, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_h = ElGamal_dashed_mult_ct(E_dashed_Rho, E_dashed_h);
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I = ElGamal_dashed_exp_ct(E_dashed_Rho, I, pk_E_dashed);
+    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I__h = ElGamal_dashed_mult_ct(E_dashed_Rho_pow_I, E_dashed_h);
 
-    mpz_class decrypted_Rho = ElGamal_dashed_decrypt(E_Rho, sk_E_dashed);
-    mpz_class decrypted_Rho_h = ElGamal_dashed_decrypt(E_Rho_h, sk_E_dashed);
-    mpz_class decrypted_Rho_pow_I = ElGamal_dashed_decrypt(E_Rho_pow_I, sk_E_dashed);
+    mpz_class decrypted_Rho = ElGamal_dashed_decrypt(E_dashed_Rho, sk_E_dashed);
+    mpz_class decrypted_Rho_h = ElGamal_dashed_decrypt(E_dashed_Rho_h, sk_E_dashed);
+    mpz_class decrypted_Rho_pow_I = ElGamal_dashed_decrypt(E_dashed_Rho_pow_I, sk_E_dashed);
     decrypted_Rho_pow_I = decrypted_Rho_pow_I % q;//Change the result from mod qp' to mod q
 
-    mpz_class decrypted_Rho_pow_I__h = ElGamal_dashed_decrypt(E_Rho_pow_I__h, sk_E_dashed);
+    mpz_class decrypted_Rho_pow_I__h = ElGamal_dashed_decrypt(E_dashed_Rho_pow_I__h, sk_E_dashed);
     decrypted_Rho_pow_I__h = decrypted_Rho_pow_I__h % q;//Change the result from mod qp' to mod q
    
     //Server beta decrypts and perform g^{decrypted_Rho_pow_I__h} mod p
