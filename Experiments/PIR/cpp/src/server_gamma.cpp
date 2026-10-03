@@ -269,6 +269,9 @@ static int OneTimeInit_gamma() {
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q.bin", q);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g.bin", g);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "p_dashed.bin", p_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "q_dashed.bin", q_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "qp_dashed.bin", qp_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "r.bin", r);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_GAMMA + "pk_E.bin", pk_E);

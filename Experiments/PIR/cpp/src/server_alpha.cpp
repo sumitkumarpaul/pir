@@ -291,6 +291,9 @@ static int OneTimeInit_alpha() {
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p.bin", p);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q.bin", q);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g.bin", g);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "p_dashed.bin", p_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "q_dashed.bin", q_dashed);
+    export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "qp_dashed.bin", qp_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "g_dashed.bin", g_dashed);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "r.bin", r);
     export_to_file_from_mpz_class(ONE_TIME_MATERIALS_LOCATION_ALPHA + "pk_E.bin", pk_E);

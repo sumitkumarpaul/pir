@@ -453,6 +453,9 @@ static int PerEpochOperations_beta(){
     p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
     q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
     g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "qp_dashed.bin");
     g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
     r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
     pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
@@ -479,10 +482,14 @@ static int PerEpochOperations_beta(){
     D_alpha.open(D_alpha_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
     D_gamma.open(D_gamma_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
-    // 1. Randomly choose Rho in ZZ_((q-1)/2)*
-    Rho = rng.get_z_range(((q-1)/2)) + 1;
+    // 1. Randomly choose Rho in GG'
+    /* First choose a random x first from ZZ*_q' and then raise that to g_dashed */
+    mpz_class x = rng.get_z_range(q_dashed-1)+1; //i.e., within ZZ*_q'
+    mpz_powm(Rho.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), qp_dashed.get_mpz_t());//Ideally Rho must be from GG'
+    #warning Ideally Rho must be chosen from GG'
+    Rho = rng.get_z_range(q-1)+1;;/* TODO: Temporary */
 
-    /* 2. TODO. And then prepare E_dashed(Rho) */
+    /* 2. And then prepare E_dashed(Rho) */
     E_dashed_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
 
     /* During each request, the client first fetches this from the server_beta, currently storing them in the disk */
@@ -1566,10 +1573,23 @@ static void TestBlindedExponentiation2() {
 
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in GG' parameters g_dashed: " + g_dashed.get_str()+ " pk_E_dashed: " + pk_E_dashed.get_str()+ " sk_E_dashed: " + sk_E_dashed.get_str());
 
-    Rho = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
-    mpz_class h = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
+    /* Since we are using ElGamal_dashed, hence Rho and h must be chosen from GG'. */
+    /* So, choose a random x first from ZZ*_q' and then raise that to g_dashed */
+    mpz_class x = rng.get_z_range(q_dashed-1)+1; //i.e., within ZZ*_q'
+    /* Then select Rho accordingly */
+    mpz_powm(Rho.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), qp_dashed.get_mpz_t());
+    #warning Rho must be chosen from GG'
+    Rho = rng.get_z_range(q-1)+1;//TODO: Temporary
+
+    x = rng.get_z_range(q_dashed-1)+1; //i.e., Again choose a random x within ZZ*_q'
+    /* Then select h accordingly */
+    mpz_class h;
+    mpz_powm(h.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), qp_dashed.get_mpz_t());
+
     mpz_class h_1;
-    mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), q.get_mpz_t());
+    //mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), q.get_mpz_t());
+    mpz_invert(h_1.get_mpz_t(), h.get_mpz_t(), qp_dashed.get_mpz_t());
+
 
     mpz_class alpha = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
     mpz_class alpha_1;
