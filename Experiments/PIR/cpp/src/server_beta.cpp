@@ -1670,6 +1670,186 @@ static void TestBlindedExponentiation2() {
     }
 }
 
+/* Verifying homomorphic determination of tag, based on no encryption on GG' or Z*_q. Algorithm updated on 5th October, 2026 */
+static void TestBlindedExponentiation3() {
+    int ret;
+
+    // "one_time_init" must run before this test function
+    
+    /* First of all retrieve all the one-time initialized materials from the saved location */
+    p = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p.bin");
+    q = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q.bin");
+    g = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g.bin");
+    p_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "p_dashed.bin");
+    q_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "q_dashed.bin");
+    qp_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "qp_dashed.bin");
+    g_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "g_dashed.bin");
+    r = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "r.bin");
+    pk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E.bin");
+    sk_E = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E.bin");
+    pk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_E_dashed.bin");
+    sk_E_dashed = import_from_file_to_mpz_class(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_E_dashed.bin");
+
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "FHEcryptoContext.bin", FHEcryptoContext, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "pk_F.bin", pk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "sk_F.bin", sk_F, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforElement_ct.bin", vectorOnesforElement_ct, SerType::BINARY);
+
+
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "vectorOnesforTag_ct.bin", vectorOnesforTag_ct, SerType::BINARY);
+    Serial::DeserializeFromFile(ONE_TIME_MATERIALS_LOCATION_BETA + "bitOne_ct.bin", bitOne_ct, SerType::BINARY);
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal parameters p: " + p.get_str() + " q: " + q.get_str()+ " g: " + g.get_str()+ " pk_E: " + pk_E.get_str()+ " sk_E: " + sk_E.get_str());
+    //Choose random message and random exponent
+    mpz_class m1 = ElGamal_randomGroupElement();
+    mpz_class m2 = ElGamal_randomGroupElement();
+    mpz_class exp = rng.get_z_range(q);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are m1: " + m1.get_str() + " m2: " + m2.get_str() + " exp: " + exp.get_str());
+
+    mpz_class m3 = (m1*m2)%p;
+    mpz_class m4;
+    mpz_powm(m4.get_mpz_t(), m1.get_mpz_t(), exp.get_mpz_t(), p.get_mpz_t());
+
+    mpz_class m5 = (m4*m2)%p;//(m1^exp)*m2
+
+    std::pair<mpz_class, mpz_class> E_m1 = ElGamal_encrypt(m1, pk_E);
+    std::pair<mpz_class, mpz_class> E_m2 = ElGamal_encrypt(m2, pk_E);
+    std::pair<mpz_class, mpz_class> E_m3 = ElGamal_mult_ct(E_m1, E_m2);
+    std::pair<mpz_class, mpz_class> E_m4 = ElGamal_exp_ct(E_m1, exp, pk_E);
+    std::pair<mpz_class, mpz_class> E_m5 = ElGamal_mult_ct(E_m4, E_m2);
+
+    mpz_class decrypted_m1 = ElGamal_decrypt(E_m1, sk_E);
+    mpz_class decrypted_m3 = ElGamal_decrypt(E_m3, sk_E);
+    mpz_class decrypted_m4 = ElGamal_decrypt(E_m4, sk_E);
+    mpz_class decrypted_m5 = ElGamal_decrypt(E_m5, sk_E);
+
+    if (decrypted_m1 == m1) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal encryption works");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal encryption is not working. Expected: " + m1.get_str() + " but got: " + decrypted_m1.get_str());
+    }
+
+    if (decrypted_m3 == m3) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication works");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication is not working. Expected: " + m3.get_str() + " but got: " + decrypted_m3.get_str());
+    }
+
+    if (decrypted_m4 == m4) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal exponentiation works");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal exponentiation is not working. Expected: " + m4.get_str() + " but got: " + decrypted_m4.get_str());
+    }
+
+    if (decrypted_m5 == m5) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation works");
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "El-Gamal multiplication after exponentiation is not working. Expected: " + m5.get_str() + " but got: " + decrypted_m5.get_str());
+    }
+
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "El-Gamal in GG' parameters g_dashed: " + g_dashed.get_str()+ " pk_E_dashed: " + pk_E_dashed.get_str()+ " sk_E_dashed: " + sk_E_dashed.get_str());
+
+    /* Choose Rho in ZZ*_q */
+    mpz_class Rho = rng.get_z_range(q-1)+1; //i.e., within ZZ*_q
+
+    /* Plaintext message */
+    mpz_class I = rng.get_z_range(N-1)+1;//i.e., A randomly chosen index
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are Rho: " + Rho.get_str() + " I: " + I.get_str());
+
+    /* Step 1.a: Client chooses h_C0 and h_C1 */
+    mpz_class h_C0 = rng.get_z_range(q-1)+1; //i.e., within ZZ*_q
+    mpz_class h_C1;
+    mpz_class h_C1_inv;
+    const mpz_class q_minus_one = q - 1;
+
+    /* For some reason, inverse is not working. So, keep trying till the inverse work */
+    do {
+        h_C1 = rng.get_z_range(q-2)+1; //i.e., within ZZ*_{q-1}
+        mpz_invert(h_C1_inv.get_mpz_t(), h_C1.get_mpz_t(), q_minus_one.get_mpz_t());//Compute the inverse of h_C1
+    } while (((h_C1*h_C1_inv)%q_minus_one) != 1);
+    
+
+    /* Step 1.b: Beta chooses h_beta0 */
+    mpz_class h_beta0;
+    mpz_class h_beta0_inv;
+    do {
+        h_beta0 = rng.get_z_range(q-2)+1; //i.e., within ZZ*_{q-1}
+        mpz_invert(h_beta0_inv.get_mpz_t(), h_beta0.get_mpz_t(), q_minus_one.get_mpz_t());//Compute the inverse of h_beta0
+    } while (((h_beta0*h_beta0_inv)%q_minus_one) != 1);
+
+    /* Step 2: */
+    mpz_class Rho_pow_h_beta0;
+    mpz_powm(Rho_pow_h_beta0.get_mpz_t(), Rho.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
+
+    /* Step 3: */
+    mpz_class h_C0_pow_h_C1;
+    mpz_powm(h_C0_pow_h_C1.get_mpz_t(), h_C0.get_mpz_t(), h_C1.get_mpz_t(), q.get_mpz_t());
+
+    /* Step 4: */
+    mpz_class h_C0_pow_h_beta0_h_C1;
+    mpz_powm(h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C0_pow_h_C1.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
+
+    /* Step 5: */
+    mpz_class h_C0_pow_h_beta0;
+    mpz_powm(h_C0_pow_h_beta0.get_mpz_t(), h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C1_inv.get_mpz_t(), q.get_mpz_t());//Apply the inverse
+    //Verify the result
+    mpz_class h_C0_pow_h_beta0_expected;
+    mpz_powm(h_C0_pow_h_beta0_expected.get_mpz_t(), h_C0.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());//Compute the expected result
+
+    if (h_C0_pow_h_beta0 == h_C0_pow_h_beta0_expected) {
+        /* TODO: It is working, when the inverse calculation is */
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Blind computation of h_C0_pow_h_beta0 is working and the value is: " + h_C0_pow_h_beta0.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Blind computation of h_C0_pow_h_beta0 is not working. Expected: " + h_C0_pow_h_beta0_expected.get_str() + " but got: " + h_C0_pow_h_beta0.get_str());
+    }
+
+    /* Step 6: */
+    mpz_class Rho_pow_I_h_beta0;
+    mpz_powm(Rho_pow_I_h_beta0.get_mpz_t(), Rho_pow_h_beta0.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());
+    mpz_class Rho_pow_I_h_C0__pow_h_beta0;
+    Rho_pow_I_h_C0__pow_h_beta0 = (Rho_pow_I_h_beta0 * h_C0_pow_h_beta0) % q;
+
+    /* Step 7: */
+    mpz_class Rho_pow_I_h_C0;
+    mpz_powm(Rho_pow_I_h_C0.get_mpz_t(), Rho_pow_I_h_C0__pow_h_beta0.get_mpz_t(), h_beta0_inv.get_mpz_t(), q.get_mpz_t());
+
+    //Verify the result
+    mpz_class Rho_pow_I_h_C0_expected;
+    mpz_class tmp;
+    mpz_powm(tmp.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());
+    Rho_pow_I_h_C0_expected = (tmp * h_C0)%q;
+
+    if (Rho_pow_I_h_C0 == Rho_pow_I_h_C0_expected) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Blind computation of Rho_pow_I_h_C0 is working and the value is: " + Rho_pow_I_h_C0.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Blind computation of Rho_pow_I_h_C0 is not working. Expected: " + Rho_pow_I_h_C0_expected.get_str() + " but got: " + Rho_pow_I_h_C0.get_str());
+    }
+
+    /* Step 8: */
+    mpz_class g_pow_Rho_pow_I__h_C0;
+    mpz_powm(g_pow_Rho_pow_I__h_C0.get_mpz_t(), g.get_mpz_t(), Rho_pow_I_h_C0.get_mpz_t(), p.get_mpz_t());/* This time it is a group element, hence mod p */
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_C0 = ElGamal_encrypt(g_pow_Rho_pow_I__h_C0, pk_E);
+
+    /* Step 9: */
+    mpz_class h_C0_inv;
+    mpz_invert(h_C0_inv.get_mpz_t(), h_C0.get_mpz_t(), q.get_mpz_t());//Compute the inverse of h_C0 in mod q
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h_C0, h_C0_inv, pk_E);
+
+    /* Verify the result */
+    mpz_class g_pow_Rho_pow_I = ElGamal_decrypt(E_g_pow_Rho_pow_I, sk_E);
+    mpz_class g_pow_Rho_pow_I_expected;
+    mpz_powm(tmp.get_mpz_t(), Rho.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());/* mod q, since the order of the group */
+    mpz_powm(g_pow_Rho_pow_I_expected.get_mpz_t(), g.get_mpz_t(), tmp.get_mpz_t(), p.get_mpz_t());/* mod p, since the member of the group */
+
+    if (g_pow_Rho_pow_I == g_pow_Rho_pow_I_expected) {
+        PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Blind computation of g_pow_Rho_pow_I is working and the value is: " + g_pow_Rho_pow_I.get_str());
+    } else {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Blind computation of g_pow_Rho_pow_I is not working. Expected: " + g_pow_Rho_pow_I_expected.get_str() + " but got: " + g_pow_Rho_pow_I.get_str());
+    }
+
+    return;
+}
+
 // Test function for FHE_bitwise_Enc_SDBElement and FHE_bitwise_Dec_SDBElement
 static void Test_FHE_DBElement() {
     /* First of all retrieve all the one-time initialized materials from the saved location */
