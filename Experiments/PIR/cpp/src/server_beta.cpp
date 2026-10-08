@@ -73,6 +73,7 @@ static void TestPKEOperations_beta();
 static void TestBlindedExponentiation();
 static void TestBlindedExponentiation1();
 static void TestBlindedExponentiation2();
+static void TestBlindedExponentiation3();
 static void Test_FHE_DBElement();
 static void TestSelShuffDBSearchTag_beta();
 static int TestShelterDPFSearch_beta();
@@ -2264,7 +2265,7 @@ static void TestSrv_beta()
 #endif
     //Test_FHE_DBElement();
     //Test_binFHE();
-    TestBlindedExponentiation2();
+    TestBlindedExponentiation3();
 }
 
 #if TEST_SHUFF_DB_FETCH
