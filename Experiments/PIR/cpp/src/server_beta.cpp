@@ -483,12 +483,8 @@ static int PerEpochOperations_beta(){
     D_alpha.open(D_alpha_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
     D_gamma.open(D_gamma_filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
 
-    // 1. Randomly choose Rho in GG'
-    /* First choose a random x first from ZZ*_q' and then raise that to g_dashed */
-    mpz_class x = rng.get_z_range(q_dashed-1)+1; //i.e., within ZZ*_q'
-    mpz_powm(Rho.get_mpz_t(), g_dashed.get_mpz_t(), x.get_mpz_t(), qp_dashed.get_mpz_t());//Ideally Rho must be from GG'
-    #warning Ideally Rho must be chosen from GG'
-    Rho = rng.get_z_range(q-1)+1;;/* TODO: Temporary */
+    // 1. Randomly choose Rho in ZZ*_q
+    mpz_class Rho = rng.get_z_range(q-1)+1; //i.e., within ZZ*_q
 
     /* 2. And then prepare E_dashed(Rho) */
     E_dashed_Rho = ElGamal_dashed_encrypt(Rho, pk_E_dashed);
@@ -772,49 +768,71 @@ static int ShelterTagDetermination_beta(){
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv = 0;
-    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I__mul__h_C;
+    const mpz_class q_minus_one = q - 1;
+    mpz_class Rho_pow_h_beta0;
+    mpz_class h_C0_pow_h_C1;
+    mpz_class h_C0_pow_h_beta0_h_C1;
+    mpz_class Rho_pow_I_h_C0__pow_h_beta0;
+    mpz_class Rho_pow_I_h_C0;
+    mpz_class g_pow_Rho_pow_I__h_C0;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_C0;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C;
-    mpz_class Rho_pow_I__mul__h_C;
-    mpz_class g_pow_Rho_pow_I__mul__h_C;
     mpz_class g_pow_Rho_pow_I__mul_a_mul_c;
-    mpz_class widehat_T_I;    
+    mpz_class widehat_T_I;
 
-    /* Step 2.3.2.1 of the sequence diagram */
-    // Receive E_dashed_Rho_pow_I__mul__h_C.first
+    /* Step 2.b: Chooses h_beta0 and its inverse */
+    mpz_class h_beta0;
+    mpz_class h_beta0_inv;
+    do {
+        h_beta0 = rng.get_z_range(q-2)+1; //i.e., within ZZ*_{q-1}
+        mpz_invert(h_beta0_inv.get_mpz_t(), h_beta0.get_mpz_t(), q_minus_one.get_mpz_t());//Compute the inverse of h_beta0
+    } while (((h_beta0*h_beta0_inv)%q_minus_one) != 1);
+
+    /* Step 3: Compute Rho_pow_h_beta0 and send that to the client */
+    /* Step 3.1: Compute Rho_pow_h_beta0 */
+    mpz_powm(Rho_pow_h_beta0.get_mpz_t(), Rho.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
+    /* Step 3.2.1: Send Rho_pow_h_beta0 to the Client */
+    (void)sendAll(sock_beta_client_con, Rho_pow_h_beta0.get_str().c_str(), Rho_pow_h_beta0.get_str().size());
+
+    /* Step 4.2.2: Receive h_C0_pow_h_C1 from the Server Beta */
     ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho_pow_I__mul__h_C.first from the client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive h_C0_pow_h_C1 from the client");
         return -1;
     }
-    /* From now on, starting client request processing */
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Beta starts client request processing from this point");
 
-    E_dashed_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
+    h_C0_pow_h_C1 = mpz_class(std::string(net_buf, received_sz));
 
-    /* Step 2.3.2.1 of the sequence diagram */
-    // Receive E_dashed_Rho_pow_I__mul__h_C.second
+    /* Step 5: Compute h_C0_pow_h_beta0_h_C1 and send to the client */
+    /* Step 5.1: Compute h_C0_pow_h_beta0_h_C1 first */
+    mpz_powm(h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C0_pow_h_C1.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
+    /* Step 5.2.1: Then send to the client */
+    (void)sendAll(sock_beta_client_con, h_C0_pow_h_beta0_h_C1.get_str().c_str(), h_C0_pow_h_beta0_h_C1.get_str().size());
+
+    /* Step 7.2.2 Receive Rho_pow_I_h_C0__pow_h_beta0 from the client */
     ret_recv = recvAll(sock_beta_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_dashed_Rho_pow_I__mul__h_C.second from the client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive Rho_pow_I_h_C0__pow_h_beta0 from the client");
         return -1;
     }
-    E_dashed_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
+    Rho_pow_I_h_C0__pow_h_beta0 = mpz_class(std::string(net_buf, received_sz));
 
-    /* Step 3 */
-    Rho_pow_I__mul__h_C = ElGamal_dashed_decrypt(E_dashed_Rho_pow_I__mul__h_C, sk_E_dashed);
+    /* Step 8: Compute Rho_pow_I_h_C0 */
+    mpz_powm(Rho_pow_I_h_C0.get_mpz_t(), Rho_pow_I_h_C0__pow_h_beta0.get_mpz_t(), h_beta0_inv.get_mpz_t(), q.get_mpz_t());
 
-    /* Step 4.1 perform g^{Rho_pow_I__mul__h_C} mod p */
-    mpz_powm(g_pow_Rho_pow_I__mul__h_C.get_mpz_t(), g.get_mpz_t(), Rho_pow_I__mul__h_C.get_mpz_t(), p.get_mpz_t());
-    /* Step 4.2 Encrypts under ElGamal encryption in GG */
-    E_g_pow_Rho_pow_I__mul__h_C = ElGamal_encrypt(g_pow_Rho_pow_I__mul__h_C, pk_E);
-    /* Step 4.3 Send both the coponents of the ciphtertext to Server alpha */
-    (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.first.get_str().size());
-    (void)sendAll(sock_beta_alpha_con, E_g_pow_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C.second.get_str().size());
+    /* Step 9. Compute and send E_g_pow_Rho_pow_I__h_C0 to the client */
+    /* Step 9.1 perform g^{Rho_pow_I__h_C0} mod p */
+    mpz_powm(g_pow_Rho_pow_I__h_C0.get_mpz_t(), g.get_mpz_t(), Rho_pow_I_h_C0.get_mpz_t(), p.get_mpz_t());/* This time it is a group element, hence mod p */
+    /* Step 9.2 Encrypt under ElGamal encryption in GG */
+    E_g_pow_Rho_pow_I__h_C0 = ElGamal_encrypt(g_pow_Rho_pow_I__h_C0, pk_E);
+    /* Step 9.3.1 Send the first coponent of the ciphtertext to Client */
+    (void)sendAll(sock_beta_client_con, E_g_pow_Rho_pow_I__h_C0.first.get_str().c_str(), E_g_pow_Rho_pow_I__h_C0.first.get_str().size());
+    /* Step 9.4.1 Send the second coponent of the ciphtertext to Client */
+    (void)sendAll(sock_beta_client_con, E_g_pow_Rho_pow_I__h_C0.second.get_str().c_str(), E_g_pow_Rho_pow_I__h_C0.second.get_str().size());
 
-    /* Step 10.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
+    /* Step 12.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
     ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -823,7 +841,7 @@ static int ShelterTagDetermination_beta(){
     }
     E_g_pow_Rho_pow_I__mul_a_mul_c.first = mpz_class(std::string(net_buf, received_sz));
 
-    /* Step 10.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
+    /* Step 12.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a_mul_c from Server Gamma */
     ret_recv = recvAll(sock_beta_gamma_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -832,13 +850,14 @@ static int ShelterTagDetermination_beta(){
     }
     E_g_pow_Rho_pow_I__mul_a_mul_c.second = mpz_class(std::string(net_buf, received_sz));
 
-    /* Step 11.1 Decrypt E_g_pow_Rho_pow_I__mul_a_mul_c  */
+    /* Step 13: Calculate widehat_T_I */
+    /* Step 13.1 Decrypt E_g_pow_Rho_pow_I__mul_a_mul_c  */
     g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_decrypt(E_g_pow_Rho_pow_I__mul_a_mul_c, sk_E);
 
-    /* Step 11.2 Determine the shelter tag, \widehat{T_I}  */
+    /* Step 13.2 Determine the shelter tag, \widehat{T_I}  */
     widehat_T_I = (g_pow_Rho_pow_I__mul_a_mul_c * b) % p;
 
-    /* Step 11.3 Determine \widehat{t_I} */
+    /* Step 13.3 Determine \widehat{t_I} */
     widehat_t_I = widehat_T_I % r;
 
     /* TODO: This step is only for verification */
@@ -1756,7 +1775,7 @@ static void TestBlindedExponentiation3() {
     mpz_class I = rng.get_z_range(N-1)+1;//i.e., A randomly chosen index
     PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Chosen plaintext messages are Rho: " + Rho.get_str() + " I: " + I.get_str());
 
-    /* Step 1.a: Client chooses h_C0 and h_C1 */
+    /* Step 1.a, 1.b: Client chooses h_C0 and h_C1 */
     mpz_class h_C0 = rng.get_z_range(q-1)+1; //i.e., within ZZ*_q
     mpz_class h_C1;
     mpz_class h_C1_inv;
@@ -1769,7 +1788,7 @@ static void TestBlindedExponentiation3() {
     } while (((h_C1*h_C1_inv)%q_minus_one) != 1);
     
 
-    /* Step 1.b: Beta chooses h_beta0 */
+    /* Step 2.b: Beta chooses h_beta0 */
     mpz_class h_beta0;
     mpz_class h_beta0_inv;
     do {
@@ -1777,19 +1796,19 @@ static void TestBlindedExponentiation3() {
         mpz_invert(h_beta0_inv.get_mpz_t(), h_beta0.get_mpz_t(), q_minus_one.get_mpz_t());//Compute the inverse of h_beta0
     } while (((h_beta0*h_beta0_inv)%q_minus_one) != 1);
 
-    /* Step 2: */
+    /* Step 3: */
     mpz_class Rho_pow_h_beta0;
     mpz_powm(Rho_pow_h_beta0.get_mpz_t(), Rho.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
 
-    /* Step 3: */
+    /* Step 4: */
     mpz_class h_C0_pow_h_C1;
     mpz_powm(h_C0_pow_h_C1.get_mpz_t(), h_C0.get_mpz_t(), h_C1.get_mpz_t(), q.get_mpz_t());
 
-    /* Step 4: */
+    /* Step 5: */
     mpz_class h_C0_pow_h_beta0_h_C1;
     mpz_powm(h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C0_pow_h_C1.get_mpz_t(), h_beta0.get_mpz_t(), q.get_mpz_t());
 
-    /* Step 5: */
+    /* Step 6: */
     mpz_class h_C0_pow_h_beta0;
     mpz_powm(h_C0_pow_h_beta0.get_mpz_t(), h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C1_inv.get_mpz_t(), q.get_mpz_t());//Apply the inverse
     //Verify the result
@@ -1803,7 +1822,7 @@ static void TestBlindedExponentiation3() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Blind computation of h_C0_pow_h_beta0 is not working. Expected: " + h_C0_pow_h_beta0_expected.get_str() + " but got: " + h_C0_pow_h_beta0.get_str());
     }
 
-    /* Step 6: */
+    /* Step 7: */
     mpz_class Rho_pow_I_h_beta0;
     mpz_powm(Rho_pow_I_h_beta0.get_mpz_t(), Rho_pow_h_beta0.get_mpz_t(), I.get_mpz_t(), q.get_mpz_t());
     mpz_class Rho_pow_I_h_C0__pow_h_beta0;
@@ -1825,12 +1844,12 @@ static void TestBlindedExponentiation3() {
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Blind computation of Rho_pow_I_h_C0 is not working. Expected: " + Rho_pow_I_h_C0_expected.get_str() + " but got: " + Rho_pow_I_h_C0.get_str());
     }
 
-    /* Step 8: */
+    /* Step 9: */
     mpz_class g_pow_Rho_pow_I__h_C0;
     mpz_powm(g_pow_Rho_pow_I__h_C0.get_mpz_t(), g.get_mpz_t(), Rho_pow_I_h_C0.get_mpz_t(), p.get_mpz_t());/* This time it is a group element, hence mod p */
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_C0 = ElGamal_encrypt(g_pow_Rho_pow_I__h_C0, pk_E);
 
-    /* Step 9: */
+    /* Step 10: */
     mpz_class h_C0_inv;
     mpz_invert(h_C0_inv.get_mpz_t(), h_C0.get_mpz_t(), q.get_mpz_t());//Compute the inverse of h_C0 in mod q
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h_C0, h_C0_inv, pk_E);

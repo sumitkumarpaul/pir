@@ -201,60 +201,101 @@ static int FinClient(){
 
 static int ShelterTagDetermination_Client(uint64_t I){
     int ret = -1;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C_h_alpha0;
-    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I;
-    mpz_class h_C, h_C_1;
-    std::pair<mpz_class, mpz_class> E_dashed_h_C;
-    std::pair<mpz_class, mpz_class> E_dashed_Rho_pow_I__mul__h_C;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_h_alpha0;
-
+    mpz_class mpz_I= mpz_class(I);
+    mpz_class h_C0;
+    mpz_class h_C0_inv;
+    mpz_class h_C1;
+    mpz_class h_C1_inv;
+    const mpz_class q_minus_one = q - 1;
+    mpz_class Rho_pow_h_beta0;
+    mpz_class h_C0_pow_h_C1;
+    mpz_class h_C0_pow_h_beta0_h_C1;
+    mpz_class h_C0_pow_h_beta0;
+    mpz_class Rho_pow_I_h_beta0;
+    mpz_class Rho_pow_I_h_C0__pow_h_beta0;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__h_C0;
+    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I;
     size_t received_sz = 0;
     int ret_recv = 0;
 
     PrintLog(LOG_LEVEL_SPECIAL, __FILE__, __LINE__, "Request fetching start");
-    
-    /* Step 1 */
-    E_dashed_Rho_pow_I = ElGamal_dashed_exp_ct(E_dashed_Rho, mpz_class(I), pk_E_dashed);
 
-    /* Step 2.1 */
-    h_C = rng.get_z_range(q-1)+1;//i.e., within ZZ_q*
-    /* Step 2.1.1 figure out its inverse */
-    mpz_invert(h_C_1.get_mpz_t(), h_C.get_mpz_t(), q.get_mpz_t());
+    /* Step 1.a: Choose h_C0 and the inverse of it */
+    h_C0 = rng.get_z_range(q-1)+1; //i.e., within ZZ*_q
+    mpz_invert(h_C0_inv.get_mpz_t(), h_C0.get_mpz_t(), q.get_mpz_t());//Compute the inverse of h_C0 in mod q
 
-    /* Step 2.2.1 */
-    E_dashed_h_C = ElGamal_dashed_encrypt(h_C, pk_E_dashed);
+    /* Step 2.a: Choose h_C1 and the inverse of it */
+    /* For some reason, inverse is not working. So, keep trying till the inverse work */
+    do {
+        h_C1 = rng.get_z_range(q-2)+1; //i.e., within ZZ*_{q-1}
+        mpz_invert(h_C1_inv.get_mpz_t(), h_C1.get_mpz_t(), q_minus_one.get_mpz_t());//Compute the inverse of h_C1
+    } while (((h_C1*h_C1_inv)%q_minus_one) != 1);
 
-    /* Step 2.2.2 */
-    E_dashed_Rho_pow_I__mul__h_C = ElGamal_dashed_mult_ct(E_dashed_Rho_pow_I, E_dashed_h_C);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    /* Step 2.3.1 */
-    (void)sendAll(sock_client_to_beta, E_dashed_Rho_pow_I__mul__h_C.first.get_str().c_str(), E_dashed_Rho_pow_I__mul__h_C.first.get_str().size());
-    (void)sendAll(sock_client_to_beta, E_dashed_Rho_pow_I__mul__h_C.second.get_str().c_str(), E_dashed_Rho_pow_I__mul__h_C.second.get_str().size());
-
-    // Step 6.1 Receive the first component of E_g_pow_Rho_pow_I__mul__h_C_h_alpha0
-    ret_recv = recvAll(sock_client_to_alpha, net_buf, sizeof(net_buf), &received_sz);
+    /* Step 3.2.2: Receive Rho_pow_h_beta0 from Server Beta */
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first from the Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive Rho_pow_h_beta0 from the Server Beta");
         return -1;
     }
-    E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first = mpz_class(std::string(net_buf, received_sz));
+    Rho_pow_h_beta0 = mpz_class(std::string(net_buf, received_sz));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    // Step 6.2 Receive the second component of E_g_pow_Rho_pow_I__mul__h_C_h_alpha0
-    ret_recv = recvAll(sock_client_to_alpha, net_buf, sizeof(net_buf), &received_sz);
+    /* Step 4: Compute and send h_C0_pow_h_C1 to the Server Beta */
+    /* Step 4.1: Compute h_C0_pow_h_C1 */
+    mpz_powm(h_C0_pow_h_C1.get_mpz_t(), h_C0.get_mpz_t(), h_C1.get_mpz_t(), q.get_mpz_t());
+    /* Step 4.2.1: Then send to the Server Beta */
+    (void)sendAll(sock_client_to_beta, h_C0_pow_h_C1.get_str().c_str(), h_C0_pow_h_C1.get_str().size());
+
+    /* Step 5.2.2: Receive h_C0_pow_h_beta0_h_C1 from Server Beta */
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second from the Server Alpha");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive h_C0_pow_h_beta0_h_C1 from the Server Beta");
         return -1;
     }
-    E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second = mpz_class(std::string(net_buf, received_sz));
+    h_C0_pow_h_beta0_h_C1 = mpz_class(std::string(net_buf, received_sz));
 
-    // Step 7.1 Semi-homomorphically raises that to h_C_1 under ElGamal encryption in GG to remove h_C
-    E_g_pow_Rho_pow_I__mul_h_alpha0 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul__h_C_h_alpha0, h_C_1, pk_E);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
+    /* Step 6: Compute h_C0_pow_h_beta0 */
+    mpz_powm(h_C0_pow_h_beta0.get_mpz_t(), h_C0_pow_h_beta0_h_C1.get_mpz_t(), h_C1_inv.get_mpz_t(), q.get_mpz_t());//Apply the inverse
 
-    /* Step 7.2 Send Both the components of the resulting ciphtext to server Alpha */
-    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I__mul_h_alpha0.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_h_alpha0.first.get_str().size());
-    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I__mul_h_alpha0.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_h_alpha0.second.get_str().size());
+    /* Step 7: Compute and send Rho_pow_I_h_C0__pow_h_beta0 to Server Beta */
+    /* Step 7.1: First compute Rho_pow_I_h_C0__pow_h_beta0 */
+    mpz_powm(Rho_pow_I_h_beta0.get_mpz_t(), Rho_pow_h_beta0.get_mpz_t(), mpz_I.get_mpz_t(), q.get_mpz_t());
+    Rho_pow_I_h_C0__pow_h_beta0 = (Rho_pow_I_h_beta0 * h_C0_pow_h_beta0) % q;
+    /* Step 7.2.1: Then send to the Server Beta */
+    (void)sendAll(sock_client_to_beta, Rho_pow_I_h_C0__pow_h_beta0.get_str().c_str(), Rho_pow_I_h_C0__pow_h_beta0.get_str().size());
+
+    /* Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__h_C0 */
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__h_C0.first from the Server Beta");
+        return -1;
+    }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
+    E_g_pow_Rho_pow_I__h_C0.first = mpz_class(std::string(net_buf, received_sz));
+
+    /* Step 9.4.2 Receive the second component of E_g_pow_Rho_pow_I__h_C0 */
+    ret_recv = recvAll(sock_client_to_beta, net_buf, sizeof(net_buf), &received_sz);
+    if (ret_recv != 0)
+    {
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__h_C0.second from the Server Beta");
+        return -1;
+    }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
+    E_g_pow_Rho_pow_I__h_C0.second = mpz_class(std::string(net_buf, received_sz));
+
+    /* Step 10: Homomorphically remove h_C0 and send E_g_pow_Rho_pow_I to Server Alpha */
+    /* Step 10.1: First compute E_g_pow_Rho_pow_I */
+    E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__h_C0, h_C0_inv, pk_E);
+    /* Step 10.2.1: Then send the first component of the ciphertext to the Server Alpha */
+    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I.first.get_str().c_str(), E_g_pow_Rho_pow_I.first.get_str().size());
+    /* Step 10.3.1: Then send the first component of the ciphertext to the Server Alpha */
+    (void)sendAll(sock_client_to_alpha, E_g_pow_Rho_pow_I.second.get_str().c_str(), E_g_pow_Rho_pow_I.second.get_str().size());
 
 
 

@@ -528,91 +528,48 @@ static int ShelterTagDetermination_alpha(){
     int ret = 0;
     size_t received_sz = 0;
     int ret_recv = 0;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C;
-    mpz_class Rho_pow_I__mul__h_C;
-    mpz_class g_pow_Rho_pow_I__mul__h_C;
-    mpz_class h_alpha0, h_alpha0_1;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul__h_C_h_alpha0;
-    std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_h_alpha0;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I;
-    std::pair<mpz_class, mpz_class> E_a;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;    
+    std::pair<mpz_class, mpz_class> E_a;
 
-    /* Step 4.3.1 of the sequence diagram */
-    // Receive the first component of E_g_pow_Rho_pow_I__mul__h_C
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C.first from the Server Beta");
-        return -1;
-    }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Alpha starts client request processing from this point");
-
-    E_g_pow_Rho_pow_I__mul__h_C.first = mpz_class(std::string(net_buf, received_sz));
-
-    // Step 4.3.2 Receive the second component of E_g_pow_Rho_pow_I__mul__h_C
-    ret_recv = recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
-    if (ret_recv != 0)
-    {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul__h_C.second from the Server Beta");
-        return -1;
-    }
-
-    E_g_pow_Rho_pow_I__mul__h_C.second = mpz_class(std::string(net_buf, received_sz));
-
-    // Step 5.1 Choose h_{\alpha 0} and its inverse
-    h_alpha0 = rng.get_z_range(q - 1) + 1; // i.e., within ZZ_q*
-    mpz_invert(h_alpha0_1.get_mpz_t(), h_alpha0.get_mpz_t(), q.get_mpz_t());
-
-    // Step 5.2 Semi-homomorphically raises that to the received ciphertext (under ElGamal encryption in GG)
-    E_g_pow_Rho_pow_I__mul__h_C_h_alpha0 = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul__h_C, h_alpha0, pk_E);
-
-    // Step 6.1 Send the first part to the client
-    (void)sendAll(sock_alpha_client_con, E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.first.get_str().size());
-
-    // Step 6.2 Send the second part to the client
-    (void)sendAll(sock_alpha_client_con, E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul__h_C_h_alpha0.second.get_str().size());
-
-    // Step 7.3.1 Receive the first component of E_g_pow_Rho_pow_I__mul_h_alpha0
+    // Step 10.2.2 Receive the first component of E_g_pow_Rho_pow_I
     ret_recv = recvAll(sock_alpha_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_h_alpha0.first from the Client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I.first from the Client");
         return -1;
     }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    E_g_pow_Rho_pow_I__mul_h_alpha0.first = mpz_class(std::string(net_buf, received_sz));
+    E_g_pow_Rho_pow_I.first = mpz_class(std::string(net_buf, received_sz));
 
-    // Step 7.3.2 Receive the second component of E_g_pow_Rho_pow_I__mul_h_alpha0
+    // Step 10.3.2 Receive the second component of E_g_pow_Rho_pow_I
     ret_recv = recvAll(sock_alpha_client_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
-        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_h_alpha0.second from the Client");
+        PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I.second from the Client");
         return -1;
     }
+    E_g_pow_Rho_pow_I.second = mpz_class(std::string(net_buf, received_sz));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    E_g_pow_Rho_pow_I__mul_h_alpha0.second = mpz_class(std::string(net_buf, received_sz));
-
-    // Step 8. Semi-homomorphically raises that to h_alpha0_1 under ElGamal encryption in GG to remove h_alpha0
-    E_g_pow_Rho_pow_I = ElGamal_exp_ct(E_g_pow_Rho_pow_I__mul_h_alpha0, h_alpha0_1, pk_E);
-    // Assign it to E_T_I, to be used later in SelShuffDBSearchTag_alpha()
-    E_T_I = E_g_pow_Rho_pow_I;
-
-    // Step 9.1. Compute the ciphertext of a
+    /* Step 11: Compute and send E_g_pow_Rho_pow_I__mul_a to Server Gamma */
+    // Step 11.1. Compute the ciphertext of a
     E_a = ElGamal_encrypt(a, pk_E);
 
-    // Step 9.2. Multiply homomorphically
+    // Step 11.2. Multiply homomorphically
     E_g_pow_Rho_pow_I__mul_a = ElGamal_mult_ct(E_g_pow_Rho_pow_I, E_a);
 
-    // Step 9.3.1 Send the first part of the ciphertext to the Server Gamma
+    // Step 11.3.1 Send the first part of the ciphertext to the Server Gamma
     (void)sendAll(sock_alpha_to_gamma, E_g_pow_Rho_pow_I__mul_a.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a.first.get_str().size());
 
-    // Step 9.4.1 Send the second part of the ciphertext to the Server Gamma
+    // Step 11.4.1 Send the second part of the ciphertext to the Server Gamma
     (void)sendAll(sock_alpha_to_gamma, E_g_pow_Rho_pow_I__mul_a.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a.second.get_str().size());
 
     /* This is only for experimentation purpose */
-    //PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen a is: " + a.get_str());
+    PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Chosen a is: " + a.get_str());
 
     return ret;
 }
@@ -1136,20 +1093,24 @@ static int SelShuffDBSearchTag_alpha(){
     /* 1.a.1.2 Also find its inverse */
     mpz_class h_alpha1_1;
     mpz_invert(h_alpha1_1.get_mpz_t(), h_alpha1.get_mpz_t(), p.get_mpz_t());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 1.a.2.1 Select random h_{alpha2} */
     mpz_class h_alpha2 = ElGamal_randomGroupElement();
     /* 1.a.2.2 Also find its inverse */
     mpz_class h_alpha2_1;
     mpz_invert(h_alpha2_1.get_mpz_t(), h_alpha2.get_mpz_t(), p.get_mpz_t());
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 2.1 Compute E(T_I.h_{\alpha 1}) to server beta */
     std::pair<mpz_class, mpz_class> E_T_I_h_alpha1 = ElGamal_mult_ct(E_T_I, ElGamal_encrypt(h_alpha1, pk_E));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 2.2 Send both the componets of E(T_I.h_{\alpha 1}) */
     (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.first.get_str().c_str(), E_T_I_h_alpha1.first.get_str().size());
     (void)sendAll(sock_alpha_to_beta, E_T_I_h_alpha1.second.get_str().c_str(), E_T_I_h_alpha1.second.get_str().size());
 
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
     /* 4.a.1 Receive T_I.h_{\alpha 1}h_{\beta 0} */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
@@ -1157,11 +1118,13 @@ static int SelShuffDBSearchTag_alpha(){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive T_I.h_{\\alpha 1}h_{\\beta 0} from Server Beta");
         return ret;
     }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 5. Remove h_{\alpha 1} and determine T_I_h_beta0 */
     mpz_class T_I_h_alpha1_h_beta0 = mpz_class(std::string(net_buf, received_sz));
     mpz_class T_I_h_beta0 = (T_I_h_alpha1_h_beta0 * h_alpha1_1) % p;
 
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
     //PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "Determined T_I.h_{\\beta 0}: " + T_I_h_beta0.get_str());
 
     /* 6.1 Determine T_I.h_{\\alpha 2}.h_{\\beta 0} */
@@ -1173,6 +1136,7 @@ static int SelShuffDBSearchTag_alpha(){
     /* 9.a Send h_{\alpha 2} to server gamma */
     (void)sendAll(sock_alpha_to_gamma, h_alpha2.get_str().c_str(), h_alpha2.get_str().size());
 
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
     // 10.a Receive FHE Ciphertext of T_phi.h_{\\alpha 2}.h_{\\beta 0}
     ret = recvFile(sock_alpha_to_gamma, net_buf, sizeof(net_buf), TMP_FILE);
     if (ret != 0)
@@ -1182,6 +1146,7 @@ static int SelShuffDBSearchTag_alpha(){
     }
     Ciphertext<DCRTPoly> FHE_ct_T_phi_h_alpha2_h_beta0;
     Serial::DeserializeFromFile(TMP_FILE, FHE_ct_T_phi_h_alpha2_h_beta0, SerType::BINARY);
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 11.a.1 Homomorphically select T_*h_{\\alpha 2}h_{\\beta 0} */
     Ciphertext<DCRTPoly> FHE_ct_T_star_h_alpha2_h_beta0 = FHE_Select(fnd_ct, FHE_ct_T_I_h_alpha2_h_beta0, FHE_ct_T_phi_h_alpha2_h_beta0);
@@ -1190,6 +1155,7 @@ static int SelShuffDBSearchTag_alpha(){
     Serial::SerializeToFile(TMP_FILE, FHE_ct_T_star_h_alpha2_h_beta0, SerType::BINARY);
     (void)sendFile(sock_alpha_to_beta, net_buf, sizeof(net_buf), TMP_FILE);
 
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
     /* 13.a Receive T_star.h_{\alpha 2} from the server beta */
     (void)recvAll(sock_alpha_to_beta, net_buf, sizeof(net_buf), &received_sz);
     if (ret != 0)
@@ -1198,6 +1164,7 @@ static int SelShuffDBSearchTag_alpha(){
         return -1;
     }
     mpz_class T_star_h_alpha2 = mpz_class(std::string(net_buf, received_sz));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
     /* 14.a.1 Extract T_* */
     T_star = (T_star_h_alpha2 * h_alpha2_1) % p;

@@ -468,8 +468,9 @@ static int ShelterTagDetermination_gamma(){
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a;
     std::pair<mpz_class, mpz_class> E_g_pow_Rho_pow_I__mul_a_mul_c;
     std::pair<mpz_class, mpz_class> E_c;
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    // Step 9.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
+    // Step 11.3.2 Receive the first component of E_g_pow_Rho_pow_I__mul_a
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Waiting to receive data from server Alpha on socket: " + std::to_string(sock_gamma_to_alpha_con));
     ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
@@ -477,11 +478,13 @@ static int ShelterTagDetermination_gamma(){
         PrintLog(LOG_LEVEL_ERROR, __FILE__, __LINE__, "Failed to receive E_g_pow_Rho_pow_I__mul_a.first from the Server Alpha");
         return -1;
     }
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
+
     PrintLog(LOG_LEVEL_TRACE, __FILE__, __LINE__, "Server Gamma starts client request processing from this point");
 
     E_g_pow_Rho_pow_I__mul_a.first = mpz_class(std::string(net_buf, received_sz));
 
-    // Step 9.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a
+    // Step 11.4.2 Receive the second component of E_g_pow_Rho_pow_I__mul_a
     ret_recv = recvAll(sock_gamma_to_alpha_con, net_buf, sizeof(net_buf), &received_sz);
     if (ret_recv != 0)
     {
@@ -489,17 +492,19 @@ static int ShelterTagDetermination_gamma(){
         return -1;
     }
     E_g_pow_Rho_pow_I__mul_a.second = mpz_class(std::string(net_buf, received_sz));
+    PrintLog(LOG_LEVEL_INFO, __FILE__, __LINE__, "HERE");
 
-    // Step 10.1 Compute the ciphertext of c
+    /* Step 12: Compute and send E_g_pow_Rho_pow_I__mul_a_mul_c to the Server Beta */
+    // Step 12.1 Compute the ciphertext of c
     E_c = ElGamal_encrypt(c, pk_E);
 
-    // Step 10.2. Multiply homomorphically
+    // Step 12.2. Multiply homomorphically
     E_g_pow_Rho_pow_I__mul_a_mul_c = ElGamal_mult_ct(E_g_pow_Rho_pow_I__mul_a, E_c);
 
-    // Step 10.3.1 Send the first part to the server Beta
+    // Step 12.3.1 Send the first part to the server Beta
     (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.first.get_str().size());
 
-    // Step 10.4.1 Send the second part to the server Beta
+    // Step 12.4.1 Send the second part to the server Beta
     (void)sendAll(sock_gamma_to_beta, E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().c_str(), E_g_pow_Rho_pow_I__mul_a_mul_c.second.get_str().size());
 
     /* This is only for experimentation purpose */
